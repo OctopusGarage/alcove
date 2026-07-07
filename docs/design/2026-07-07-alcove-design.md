@@ -4,7 +4,7 @@ Date: 2026-07-07
 
 ## Summary
 
-Alcove is a local-first personal information core for knowledge, pins, tasks, mounted archives, and agent-readable memory. It lives at `~/programming/OctopusGarage/alcove`, exposes an `alcove` CLI, and runs a local MCP server for Codex, Claude Code, Cursor, and similar agents.
+Alcove is a local-first personal information core for knowledge, pins, tasks, mounted archives, and agent-readable memory. It lives at `~/programming/OctopusGarage/alcove`, exposes an `alcove` CLI, and is intended to run a local MCP server for Codex, Claude Code, Cursor, and similar agents in a later phase.
 
 The first version should productize the existing `social_media_posts` knowledge workflow without turning Alcove into only a knowledge-base script. The architecture must leave clean room for personal pinned notes, task management, Apple Notes export, browser/bookmark sources, local folder mounts, GitHub repo mounts, and starred-repo indexes.
 
@@ -384,20 +384,40 @@ Implementation can start with file scanning and a simple SQLite cache. The cache
 
 ## CLI Surface
 
-MVP commands:
+### Current Implemented Phase 1 Commands
+
+The current Phase 1 CLI in HEAD implements this narrower command set:
 
 ```bash
 alcove init [path]
-alcove status [path]
+alcove status [path] [--json]
 
-alcove inbox peek
+alcove inbox --workspace PATH peek
+alcove inbox --workspace PATH note NAME TOPIC --summary SUMMARY [--tag TAG]
+
+alcove knowledge --workspace PATH note-source --platform PLATFORM --title TITLE --topic TOPIC [--resource RESOURCE] --summary SUMMARY [--tag TAG]
+
+alcove search QUERY --workspace PATH [--json]
+```
+
+### Planned Future CLI Surface
+
+The following commands describe the roadmap surface for later phases. They are not all implemented in the current Phase 1 CLI.
+
+```bash
+alcove init [path]
+alcove status [path] [--json]
+
+alcove inbox --workspace PATH peek
 alcove inbox read <name>
 alcove inbox classify <name> [topic]
 alcove inbox archive <name> <domain/topic> [--summary ...] [--tags ...]
-alcove inbox note <name> <domain/topic> --summary ... [--tags ...]
+alcove inbox --workspace PATH note <name> <domain/topic> --summary ... [--tags ...]
 alcove inbox delete <name> [--confirm]
 
-alcove search <query> [--type ...] [--topic ...] [--tag ...]
+alcove knowledge --workspace PATH note-source --platform PLATFORM --title TITLE --topic TOPIC [--resource RESOURCE] --summary SUMMARY [--tag TAG]
+
+alcove search <query> --workspace PATH [--json] [--type ...] [--topic ...] [--tag ...]
 alcove recent [n]
 alcove gardener [--prune]
 
