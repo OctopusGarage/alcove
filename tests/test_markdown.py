@@ -1,3 +1,5 @@
+import pytest
+
 from alcove.markdown import MarkdownDoc, MarkdownRepository, normalize_slug
 
 
@@ -38,6 +40,19 @@ def test_read_doc_treats_non_dict_frontmatter_as_body(tmp_path):
     repo = MarkdownRepository()
     path = tmp_path / "list-frontmatter.md"
     content = "---\n- Pin\n---\n# Body\n"
+    path.write_text(content, encoding="utf-8")
+
+    loaded = repo.read_doc(path)
+
+    assert loaded.frontmatter == {}
+    assert loaded.body == content
+
+
+@pytest.mark.parametrize("frontmatter_text", ["[]", "false", "0"])
+def test_read_doc_treats_falsy_non_dict_frontmatter_as_body(tmp_path, frontmatter_text):
+    repo = MarkdownRepository()
+    path = tmp_path / "falsy-frontmatter.md"
+    content = f"---\n{frontmatter_text}\n---\n# Body\n"
     path.write_text(content, encoding="utf-8")
 
     loaded = repo.read_doc(path)

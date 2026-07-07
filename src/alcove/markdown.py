@@ -89,9 +89,11 @@ class MarkdownRepository:
         if len(parts) < 3:
             return {}, content
         try:
-            frontmatter = yaml.safe_load(parts[1]) or {}
+            frontmatter = yaml.safe_load(parts[1])
         except yaml.YAMLError:
             return {}, content
+        if frontmatter is None:
+            frontmatter = {}
         if not isinstance(frontmatter, dict):
             return {}, content
         body = parts[2].lstrip("\n")
