@@ -7,6 +7,11 @@ from alcove.markdown import MarkdownRepository
 from alcove.workspace import Workspace
 
 
+class RaisingKnowledge:
+    def note_source(self, request):
+        raise RuntimeError("knowledge write failed")
+
+
 def _write_post(root, platform, name, files):
     folder = root / "inbox" / platform / name
     folder.mkdir(parents=True)
@@ -162,6 +167,48 @@ def test_archive_destination_collision_gets_numeric_suffix(tmp_path):
     assert result.archive_path == tmp_path / "archive" / "agent-harness" / "[xhs] 20260706-old-2"
     assert result.archive_path.is_dir()
     assert collision.is_dir()
+
+
+def test_note_rolls_back_archive_move_when_knowledge_write_fails(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    _write_xhs_post(tmp_path, "20260706-old")
+    archive_path = tmp_path / "archive" / "agent-harness" / "[xhs] 20260706-old"
+
+    with pytest.raises(RuntimeError, match="knowledge write failed"):
+        InboxModule(workspace, knowledge=RaisingKnowledge()).note(
+            InboxNoteRequest(
+                name="20260706-old",
+                topic="agent-engineering/agent-harness",
+                summary="Summary.",
+            )
+        )
+
+    assert (tmp_path / "inbox" / "xhs" / "20260706-old").is_dir()
+    assert not archive_path.exists()
+
+
+def test_platform_name_identifier_disambiguates_duplicate_folder_names(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    _write_post(tmp_path, "web", "20260706-same", {"article.md": "# Web Post\n\nBody"})
+    _write_post(tmp_path, "x", "20260706-same", {"post.md": "# X Post\n\nBody"})
+
+    with pytest.raises(ValueError, match="Ambiguous inbox item.*platform/name"):
+        InboxModule(workspace).archive(
+            "20260706-same",
+            "agent-engineering/agent-harness",
+            summary="Manual summary.",
+        )
+
+    result = InboxModule(workspace).archive(
+        "x/20260706-same",
+        "agent-engineering/agent-harness",
+        summary="Manual summary.",
+    )
+
+    assert result.archive_path == tmp_path / "archive" / "agent-harness" / "[x] 20260706-same"
+    assert result.archive_path.is_dir()
+    assert (tmp_path / "inbox" / "web" / "20260706-same").is_dir()
+    assert not (tmp_path / "inbox" / "x" / "20260706-same").exists()
 
 
 def test_missing_content_file_raises_file_not_found(tmp_path):

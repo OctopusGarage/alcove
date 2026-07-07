@@ -56,31 +56,32 @@ class InboxModule:
         entries = self._entries()
         if not entries:
             return None
-        return self.read(entries[0].name)
+        return self._read_path(entries[0])
 
     def read(self, name: str) -> InboxPost:
-        for entry in self._entries():
-            if entry.name == name:
-                return self._read_path(entry)
-        raise FileNotFoundError(f"Inbox item not found: {name}")
+        return self._read_path(self._find_entry(name))
 
     def note(self, request: InboxNoteRequest) -> InboxProcessResult:
         post = self.read(request.name)
         archive_path = self._archive_post(post, request.topic)
         archive_reference = self._legacy_path(archive_path)
-        result = self.knowledge.note_source(
-            NoteSourceRequest(
-                platform=post.platform,
-                title=post.title or post.name,
-                topic=request.topic,
-                resource=post.source or archive_reference,
-                summary=request.summary,
-                tags=request.tags,
-                published_date=post.date,
-                legacy_path=archive_reference,
-                create_concept=True,
+        try:
+            result = self.knowledge.note_source(
+                NoteSourceRequest(
+                    platform=post.platform,
+                    title=post.title or post.name,
+                    topic=request.topic,
+                    resource=post.source or archive_reference,
+                    summary=request.summary,
+                    tags=request.tags,
+                    published_date=post.date,
+                    legacy_path=archive_reference,
+                    create_concept=True,
+                )
             )
-        )
+        except Exception:
+            self._rollback_archive(post, archive_path)
+            raise
         return InboxProcessResult(archive_path, result.source_path, result.concept_path)
 
     def archive(
@@ -93,19 +94,23 @@ class InboxModule:
         post = self.read(name)
         archive_path = self._archive_post(post, topic)
         archive_reference = self._legacy_path(archive_path)
-        result = self.knowledge.note_source(
-            NoteSourceRequest(
-                platform=post.platform,
-                title=post.title or post.name,
-                topic=topic,
-                resource=post.source or archive_reference,
-                summary=summary or post.content,
-                tags=tags or [],
-                published_date=post.date,
-                legacy_path=archive_reference,
-                create_concept=False,
+        try:
+            result = self.knowledge.note_source(
+                NoteSourceRequest(
+                    platform=post.platform,
+                    title=post.title or post.name,
+                    topic=topic,
+                    resource=post.source or archive_reference,
+                    summary=summary or post.content,
+                    tags=tags or [],
+                    published_date=post.date,
+                    legacy_path=archive_reference,
+                    create_concept=False,
+                )
             )
-        )
+        except Exception:
+            self._rollback_archive(post, archive_path)
+            raise
         return InboxProcessResult(archive_path, result.source_path, result.concept_path)
 
     def _entries(self) -> list[Path]:
@@ -123,6 +128,25 @@ class InboxModule:
     def _sort_key(self, name: str) -> tuple[str, str]:
         match = re.match(r"^(\d{8})(?!\d)", name)
         return (match.group(1) if match else "99999999", name)
+
+    def _find_entry(self, name: str) -> Path:
+        if "/" in name:
+            platform, item_name = name.split("/", 1)
+            if platform and item_name:
+                entry = self.paths.inbox / platform / item_name
+                if entry.is_dir():
+                    return entry
+            raise FileNotFoundError(f"Inbox item not found: {name}")
+
+        matches = [entry for entry in self._entries() if entry.name == name]
+        if not matches:
+            raise FileNotFoundError(f"Inbox item not found: {name}")
+        if len(matches) > 1:
+            identifiers = ", ".join(f"{entry.parent.name}/{entry.name}" for entry in matches)
+            raise ValueError(
+                f"Ambiguous inbox item {name!r}; use platform/name. Matches: {identifiers}"
+            )
+        return matches[0]
 
     def _read_path(self, path: Path) -> InboxPost:
         platform = path.parent.name
@@ -168,6 +192,12 @@ class InboxModule:
             counter += 1
         shutil.move(str(post.path), str(dest))
         return dest
+
+    def _rollback_archive(self, post: InboxPost, archive_path: Path) -> None:
+        if not archive_path.exists() or post.path.exists():
+            return
+        post.path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(archive_path), str(post.path))
 
     def _archive_topic_slug(self, topic: str) -> str:
         return normalize_slug(topic.rsplit("/", 1)[-1])
