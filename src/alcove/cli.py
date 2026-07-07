@@ -27,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     inbox = sub.add_parser("inbox", help="Work with inbox items")
     inbox.add_argument("--workspace", required=True)
-    inbox_sub = inbox.add_subparsers(dest="inbox_command")
+    inbox_sub = inbox.add_subparsers(dest="inbox_command", required=True)
     inbox_sub.add_parser("peek", help="Show the oldest inbox item")
     inbox_note = inbox_sub.add_parser("note", help="Archive an inbox item into knowledge")
     inbox_note.add_argument("name")
@@ -37,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     knowledge = sub.add_parser("knowledge", help="Work with knowledge notes")
     knowledge.add_argument("--workspace", required=True)
-    knowledge_sub = knowledge.add_subparsers(dest="knowledge_command")
+    knowledge_sub = knowledge.add_subparsers(dest="knowledge_command", required=True)
     note_source = knowledge_sub.add_parser("note-source", help="Record a source note")
     note_source.add_argument("--platform", required=True)
     note_source.add_argument("--title", required=True)
@@ -68,13 +68,24 @@ def _print_path(label: str, path: Path | None) -> None:
         print(f"{label}: {path}")
 
 
+def _argument_error(parser: argparse.ArgumentParser, message: str) -> int:
+    parser.print_usage(sys.stderr)
+    print(f"{parser.prog}: error: {message}", file=sys.stderr)
+    return 2
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        return int(exc.code) if isinstance(exc.code, int) else 2
     try:
         if args.version:
             print(f"alcove {__version__}")
             return 0
+        if args.command is None:
+            return _argument_error(parser, "the following arguments are required: command")
         if args.command == "init":
             workspace = Workspace.init(Path(args.path))
             print(f"Initialized Alcove workspace at {workspace.root}")
@@ -110,8 +121,7 @@ def main(argv: list[str] | None = None) -> int:
                 _print_path("source", result.source_path)
                 _print_path("concept", result.concept_path)
                 return 0
-            parser.print_help()
-            return 0
+            return _argument_error(parser, "the following arguments are required: inbox_command")
         if args.command == "knowledge":
             workspace = Workspace.discover(Path(args.workspace))
             knowledge = KnowledgeModule(workspace)
@@ -129,8 +139,10 @@ def main(argv: list[str] | None = None) -> int:
                 _print_path("source", result.source_path)
                 _print_path("concept", result.concept_path)
                 return 0
-            parser.print_help()
-            return 0
+            return _argument_error(
+                parser,
+                "the following arguments are required: knowledge_command",
+            )
         if args.command == "search":
             workspace = Workspace.discover(Path(args.workspace))
             results = SearchModule(workspace).search(SearchRequest(query=args.query))
@@ -143,8 +155,7 @@ def main(argv: list[str] | None = None) -> int:
                         f"{row.get('title')} | {row.get('path')}"
                     )
             return 0
-        parser.print_help()
-        return 0
+        return _argument_error(parser, "the following arguments are required: command")
     except (AlcoveError, FileNotFoundError, ValueError) as exc:
         print(f"alcove: {exc}", file=sys.stderr)
         return 2

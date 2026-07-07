@@ -63,6 +63,45 @@ def test_cli_init_existing_file_returns_controlled_error(tmp_path, capsys):
     assert "alcove: Could not initialize" in captured.err
 
 
+def test_cli_missing_top_level_command_returns_error(capsys):
+    code = main([])
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "error" in captured.err
+
+
+def test_cli_missing_inbox_subcommand_returns_error_before_workspace_discovery(tmp_path, capsys):
+    code = main(["inbox", "--workspace", str(tmp_path)])
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "error" in captured.err
+
+
+def test_cli_missing_knowledge_subcommand_returns_error_before_workspace_discovery(
+    tmp_path, capsys
+):
+    code = main(["knowledge", "--workspace", str(tmp_path)])
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "error" in captured.err
+
+
+def test_cli_malformed_config_returns_controlled_error(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+    (tmp_path / ".alcove" / "config.yml").write_text("paths: [unterminated\n")
+
+    code = main(["status", str(tmp_path)])
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "alcove:" in captured.err
+    assert str(tmp_path / ".alcove" / "config.yml") in captured.err
+
+
 def test_cli_inbox_peek_outputs_oldest_post_title_and_content_source(tmp_path, capsys):
     main(["init", str(tmp_path)])
     capsys.readouterr()
@@ -168,6 +207,32 @@ def test_cli_search_json_outputs_valid_json_with_title_and_path(tmp_path, capsys
     matching_paths = [row["path"] for row in rows if row["title"] == "JSON Source"]
     assert matching_paths
     assert any(path.endswith(".md") for path in matching_paths)
+
+
+def test_cli_search_json_handles_yaml_native_frontmatter_values(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+    source_path = tmp_path / "knowledge" / "sources" / "web" / "date-title.md"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text(
+        "---\n"
+        "type: Source\n"
+        "title: 2026-07-07\n"
+        "topic: agent-harness\n"
+        "tags:\n"
+        "  - code-intelligence\n"
+        "---\n"
+        "# 2026-07-07\n\nNeedle date title.\n",
+        encoding="utf-8",
+    )
+
+    code = main(["search", "Needle", "--workspace", str(tmp_path), "--json"])
+    captured = capsys.readouterr()
+
+    assert code == 0
+    rows = json.loads(captured.out)
+    assert rows[0]["title"] == "2026-07-07"
+    assert rows[0]["path"] == "sources/web/date-title.md"
 
 
 def test_cli_inbox_note_moves_item_and_prints_paths(tmp_path, capsys):

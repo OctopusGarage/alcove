@@ -82,11 +82,12 @@ class SearchModule:
     def _row(self, doc: MarkdownDoc) -> dict:
         frontmatter = doc.frontmatter
         assert doc.path is not None
+        title = self._string_or_none(frontmatter.get("title")) or doc.path.stem
         return {
             "root": "knowledge",
-            "type": frontmatter.get("type"),
-            "title": frontmatter.get("title") or doc.path.stem,
-            "topic": frontmatter.get("topic"),
+            "type": self._string_or_none(frontmatter.get("type")),
+            "title": title,
+            "topic": self._string_or_none(frontmatter.get("topic")),
             "tags": self._tags(frontmatter.get("tags")),
             "path": self._relative_path(doc),
         }
@@ -122,3 +123,8 @@ class SearchModule:
         if value:
             return [str(value)]
         return []
+
+    def _string_or_none(self, value: object) -> str | None:
+        if value is None:
+            return None
+        return str(value)

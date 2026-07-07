@@ -3,7 +3,11 @@ from pathlib import Path
 import yaml
 import pytest
 
-from alcove.errors import WorkspaceInitializationError, WorkspaceNotFoundError
+from alcove.errors import (
+    WorkspaceConfigError,
+    WorkspaceInitializationError,
+    WorkspaceNotFoundError,
+)
 from alcove.workspace import DATA_DIRS, Workspace
 
 
@@ -76,3 +80,12 @@ def test_workspace_paths_honor_configured_paths(tmp_path):
     assert paths.todo == tmp_path / "next-actions"
     assert status["paths"]["knowledge"] == str(tmp_path / "vault" / "knowledge")
     assert status["paths"]["todo"] == str(tmp_path / "next-actions")
+
+
+def test_workspace_load_config_malformed_yaml_raises_controlled_error(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    config_path = tmp_path / ".alcove" / "config.yml"
+    config_path.write_text("paths: [unterminated\n")
+
+    with pytest.raises(WorkspaceConfigError, match=str(config_path)):
+        workspace.load_config()

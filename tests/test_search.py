@@ -1,4 +1,5 @@
 import json
+from datetime import date
 
 from alcove.knowledge import KnowledgeModule, NoteSourceRequest
 from alcove.markdown import MarkdownDoc, MarkdownRepository
@@ -222,3 +223,38 @@ def test_search_uses_path_stem_when_title_missing_and_skips_docs_without_path(tm
             "path": "untitled-doc.md",
         }
     ]
+
+
+def test_search_rows_coerce_frontmatter_values_to_json_safe_schema(tmp_path):
+    workspace = Workspace.init(tmp_path)
+
+    class NativeValueRepository(MarkdownRepository):
+        def list_docs(self, root, type_filter=None):
+            return [
+                MarkdownDoc(
+                    frontmatter={
+                        "type": 123,
+                        "title": date(2026, 7, 7),
+                        "topic": 456,
+                        "tags": ["tag", date(2026, 7, 8)],
+                    },
+                    body="Needle",
+                    path=workspace.paths().knowledge / "native-values.md",
+                )
+            ]
+
+    rows = SearchModule(workspace, repo=NativeValueRepository()).search(
+        SearchRequest(query="needle")
+    )
+
+    assert rows == [
+        {
+            "root": "knowledge",
+            "type": "123",
+            "title": "2026-07-07",
+            "topic": "456",
+            "tags": ["tag", "2026-07-08"],
+            "path": "native-values.md",
+        }
+    ]
+    json.dumps(rows, ensure_ascii=False)

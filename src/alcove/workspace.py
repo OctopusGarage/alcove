@@ -6,7 +6,11 @@ from typing import Any
 
 import yaml
 
-from alcove.errors import WorkspaceInitializationError, WorkspaceNotFoundError
+from alcove.errors import (
+    WorkspaceConfigError,
+    WorkspaceInitializationError,
+    WorkspaceNotFoundError,
+)
 
 
 WORKSPACE_DIR = ".alcove"
@@ -92,7 +96,10 @@ class Workspace:
 
     def load_config(self) -> dict[str, Any]:
         path = self.root / WORKSPACE_DIR / CONFIG_FILE
-        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        try:
+            return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as exc:
+            raise WorkspaceConfigError(f"Could not parse Alcove config at {path}: {exc}") from exc
 
     def _configured_data_paths(self) -> dict[str, str]:
         paths = self.load_config().get("paths", {})

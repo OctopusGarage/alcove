@@ -13,5 +13,9 @@ class WorkspaceInitializationError(AlcoveError):
     """Raised when a workspace cannot be initialized."""
 
 
+class WorkspaceConfigError(AlcoveError):
+    """Raised when a workspace config cannot be loaded."""
+
+
 class AmbiguousIdError(AlcoveError):
     """Raised when an id prefix matches more than one object."""
