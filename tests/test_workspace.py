@@ -3,8 +3,8 @@ from pathlib import Path
 import yaml
 import pytest
 
-from alcove.errors import WorkspaceInitializationError
-from alcove.workspace import Workspace
+from alcove.errors import WorkspaceInitializationError, WorkspaceNotFoundError
+from alcove.workspace import DATA_DIRS, Workspace
 
 
 def test_workspace_init_creates_expected_directories(tmp_path):
@@ -12,6 +12,8 @@ def test_workspace_init_creates_expected_directories(tmp_path):
 
     assert workspace.root == tmp_path
     assert (tmp_path / ".alcove" / "config.yml").is_file()
+    assert (tmp_path / ".alcove" / "connectors").is_dir()
+    assert (tmp_path / ".alcove" / "logs").is_dir()
     assert (tmp_path / "knowledge").is_dir()
     assert (tmp_path / "inbox").is_dir()
     assert (tmp_path / "archive").is_dir()
@@ -23,6 +25,7 @@ def test_workspace_init_creates_expected_directories(tmp_path):
     config = yaml.safe_load((tmp_path / ".alcove" / "config.yml").read_text())
     assert config["version"] == 1
     assert config["workspace"] == {"name": tmp_path.name}
+    assert config["paths"] == {name: name for name in DATA_DIRS}
 
 
 def test_workspace_discover_walks_up_from_child(tmp_path):
@@ -33,6 +36,11 @@ def test_workspace_discover_walks_up_from_child(tmp_path):
     discovered = Workspace.discover(child)
 
     assert discovered.root == tmp_path
+
+
+def test_workspace_discover_raises_when_no_workspace_exists(tmp_path):
+    with pytest.raises(WorkspaceNotFoundError, match="No Alcove workspace found"):
+        Workspace.discover(tmp_path)
 
 
 def test_workspace_status_reports_initialized_paths(tmp_path):
