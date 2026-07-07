@@ -16,6 +16,12 @@ class SearchRequest:
     limit: int = 20
 
 
+@dataclass(frozen=True)
+class TopicFilter:
+    topic: str
+    domain: str | None = None
+
+
 class SearchModule:
     def __init__(self, workspace: Workspace, repo: MarkdownRepository | None = None) -> None:
         self.workspace = workspace
@@ -51,7 +57,7 @@ class SearchModule:
         self,
         doc: MarkdownDoc,
         tag_filter: str | None,
-        topic_filter: str | None,
+        topic_filter: TopicFilter | None,
     ) -> bool:
         frontmatter = doc.frontmatter
         if (
@@ -59,8 +65,14 @@ class SearchModule:
             and tag_filter not in self._normalized_tags(frontmatter.get("tags"))
         ):
             return False
-        if topic_filter is not None and frontmatter.get("topic") != topic_filter:
-            return False
+        if topic_filter is not None:
+            if frontmatter.get("topic") != topic_filter.topic:
+                return False
+            if (
+                topic_filter.domain is not None
+                and frontmatter.get("domain") != topic_filter.domain
+            ):
+                return False
         return True
 
     def _search_text(self, doc: MarkdownDoc) -> str:
@@ -91,12 +103,13 @@ class SearchModule:
             return None
         return normalize_tag(tag, self.taxonomy)
 
-    def _normalize_topic_filter(self, topic: str | None) -> str | None:
+    def _normalize_topic_filter(self, topic: str | None) -> TopicFilter | None:
         if topic is None:
             return None
         if "/" in topic:
-            return split_domain_topic(topic, self.taxonomy)[1]
-        return normalize_topic(topic, self.taxonomy)
+            domain, topic_slug = split_domain_topic(topic, self.taxonomy)
+            return TopicFilter(topic=topic_slug, domain=domain)
+        return TopicFilter(topic=normalize_topic(topic, self.taxonomy))
 
     def _normalized_tags(self, value: object) -> list[str]:
         return [normalize_tag(tag, self.taxonomy) for tag in self._tags(value)]

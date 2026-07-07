@@ -122,6 +122,46 @@ def test_search_normalizes_tag_and_domain_topic_filters(tmp_path):
     assert [row["title"] for row in rows] == ["Normalized Filters"]
 
 
+def test_search_domain_topic_filter_respects_domain_when_topics_share_slug(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    repo = MarkdownRepository()
+    knowledge = workspace.paths().knowledge
+    repo.write_doc(
+        knowledge / "agent-shared.md",
+        MarkdownDoc(
+            frontmatter={
+                "type": "Source",
+                "title": "Agent Shared",
+                "domain": "agent-engineering",
+                "topic": "shared",
+                "tags": [],
+            },
+            body="# Agent Shared\n",
+        ),
+    )
+    repo.write_doc(
+        knowledge / "software-shared.md",
+        MarkdownDoc(
+            frontmatter={
+                "type": "Source",
+                "title": "Software Shared",
+                "domain": "software-engineering",
+                "topic": "shared",
+                "tags": [],
+            },
+            body="# Software Shared\n",
+        ),
+    )
+
+    domain_rows = SearchModule(workspace).search(
+        SearchRequest(query="", topic="agent-engineering/shared")
+    )
+    topic_rows = SearchModule(workspace).search(SearchRequest(query="", topic="shared"))
+
+    assert [row["title"] for row in domain_rows] == ["Agent Shared"]
+    assert [row["title"] for row in topic_rows] == ["Agent Shared", "Software Shared"]
+
+
 def test_search_empty_query_matches_all_docs_subject_to_limit_and_skips_reserved_docs(tmp_path):
     workspace = Workspace.init(tmp_path)
     repo = MarkdownRepository()
