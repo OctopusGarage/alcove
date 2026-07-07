@@ -1,3 +1,5 @@
+import json
+
 from alcove.knowledge import KnowledgeModule, NoteSourceRequest
 from alcove.markdown import MarkdownDoc, MarkdownRepository
 from alcove.search import SearchModule, SearchRequest
@@ -25,8 +27,9 @@ def test_search_finds_knowledge_doc_by_body_text_from_note_source(tmp_path):
         "title": "代码图谱",
         "topic": "agent-harness",
         "tags": ["code-intelligence"],
-        "path": tmp_path / "knowledge" / "sources" / "web" / "agent-engineering" / "代码图谱.md",
+        "path": "sources/web/agent-engineering/代码图谱.md",
     } in rows
+    json.dumps(rows, ensure_ascii=False)
 
 
 def test_search_filters_by_type_tag_and_topic(tmp_path):
@@ -94,6 +97,31 @@ def test_search_filters_by_type_tag_and_topic(tmp_path):
     assert [row["title"] for row in rows] == ["Matching"]
 
 
+def test_search_normalizes_tag_and_domain_topic_filters(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    KnowledgeModule(workspace).note_source(
+        NoteSourceRequest(
+            platform="web",
+            title="Normalized Filters",
+            topic="agent-engineering/agent-harness",
+            resource="https://example.test/normalized-filters",
+            summary="Needle body.",
+            tags=["code-intelligence"],
+            create_concept=False,
+        )
+    )
+
+    rows = SearchModule(workspace).search(
+        SearchRequest(
+            query="needle",
+            tag="代码图谱",
+            topic="agent-engineering/agent-harness",
+        )
+    )
+
+    assert [row["title"] for row in rows] == ["Normalized Filters"]
+
+
 def test_search_empty_query_matches_all_docs_subject_to_limit_and_skips_reserved_docs(tmp_path):
     workspace = Workspace.init(tmp_path)
     repo = MarkdownRepository()
@@ -151,6 +179,6 @@ def test_search_uses_path_stem_when_title_missing_and_skips_docs_without_path(tm
             "title": "untitled-doc",
             "topic": "topic",
             "tags": ["tag"],
-            "path": workspace.paths().knowledge / "untitled-doc.md",
+            "path": "untitled-doc.md",
         }
     ]
