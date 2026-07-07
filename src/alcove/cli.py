@@ -7,6 +7,9 @@ from pathlib import Path
 
 from alcove import __version__
 from alcove.errors import AlcoveError
+from alcove.inbox import InboxModule, InboxNoteRequest
+from alcove.knowledge import KnowledgeModule, NoteSourceRequest
+from alcove.search import SearchModule, SearchRequest
 from alcove.workspace import Workspace
 
 
@@ -21,7 +24,48 @@ def build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status", help="Show workspace status")
     status.add_argument("path", nargs="?", default=".")
     status.add_argument("--json", action="store_true")
+
+    inbox = sub.add_parser("inbox", help="Work with inbox items")
+    inbox.add_argument("--workspace", required=True)
+    inbox_sub = inbox.add_subparsers(dest="inbox_command")
+    inbox_sub.add_parser("peek", help="Show the oldest inbox item")
+    inbox_note = inbox_sub.add_parser("note", help="Archive an inbox item into knowledge")
+    inbox_note.add_argument("name")
+    inbox_note.add_argument("topic")
+    inbox_note.add_argument("--summary", required=True)
+    inbox_note.add_argument("--tag", action="append", default=[])
+
+    knowledge = sub.add_parser("knowledge", help="Work with knowledge notes")
+    knowledge.add_argument("--workspace", required=True)
+    knowledge_sub = knowledge.add_subparsers(dest="knowledge_command")
+    note_source = knowledge_sub.add_parser("note-source", help="Record a source note")
+    note_source.add_argument("--platform", required=True)
+    note_source.add_argument("--title", required=True)
+    note_source.add_argument("--topic", required=True)
+    note_source.add_argument("--resource", default="")
+    note_source.add_argument("--summary", required=True)
+    note_source.add_argument("--tag", action="append", default=[])
+
+    search = sub.add_parser("search", help="Search knowledge")
+    search.add_argument("query")
+    search.add_argument("--workspace", required=True)
+    search.add_argument("--json", action="store_true")
     return parser
+
+
+def _print_inbox_post(post) -> None:
+    date = post.date or ""
+    print(f"{post.platform} | {date} | {post.title}")
+    print(f"path: {post.path}")
+    print(f"source: {post.source or ''}")
+    print(f"content_source: {post.content_source}")
+    print()
+    print(post.content)
+
+
+def _print_path(label: str, path: Path | None) -> None:
+    if path is not None:
+        print(f"{label}: {path}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -43,9 +87,65 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(f"Alcove workspace: {status['root']}")
             return 0
+        if args.command == "inbox":
+            workspace = Workspace.discover(Path(args.workspace))
+            inbox = InboxModule(workspace)
+            if args.inbox_command == "peek":
+                post = inbox.peek()
+                if post is None:
+                    print("Inbox is empty.")
+                else:
+                    _print_inbox_post(post)
+                return 0
+            if args.inbox_command == "note":
+                result = inbox.note(
+                    InboxNoteRequest(
+                        name=args.name,
+                        topic=args.topic,
+                        summary=args.summary,
+                        tags=args.tag,
+                    )
+                )
+                _print_path("archive", result.archive_path)
+                _print_path("source", result.source_path)
+                _print_path("concept", result.concept_path)
+                return 0
+            parser.print_help()
+            return 0
+        if args.command == "knowledge":
+            workspace = Workspace.discover(Path(args.workspace))
+            knowledge = KnowledgeModule(workspace)
+            if args.knowledge_command == "note-source":
+                result = knowledge.note_source(
+                    NoteSourceRequest(
+                        platform=args.platform,
+                        title=args.title,
+                        topic=args.topic,
+                        resource=args.resource,
+                        summary=args.summary,
+                        tags=args.tag,
+                    )
+                )
+                _print_path("source", result.source_path)
+                _print_path("concept", result.concept_path)
+                return 0
+            parser.print_help()
+            return 0
+        if args.command == "search":
+            workspace = Workspace.discover(Path(args.workspace))
+            results = SearchModule(workspace).search(SearchRequest(query=args.query))
+            if args.json:
+                print(json.dumps(results, ensure_ascii=False, indent=2))
+            else:
+                for row in results:
+                    print(
+                        f"{row.get('type')} | {row.get('topic')} | "
+                        f"{row.get('title')} | {row.get('path')}"
+                    )
+            return 0
         parser.print_help()
         return 0
-    except AlcoveError as exc:
+    except (AlcoveError, FileNotFoundError, ValueError) as exc:
         print(f"alcove: {exc}", file=sys.stderr)
         return 2
 
