@@ -145,6 +145,20 @@ def test_cli_inbox_peek_xhs_outputs_summary_content_source(tmp_path, capsys):
     assert "summary.md" in captured.out
 
 
+def test_cli_inbox_peek_json_outputs_post_payload(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+    _write_xhs_post(tmp_path)
+
+    code = main(["inbox", "--workspace", str(tmp_path), "peek", "--json"])
+    captured = capsys.readouterr()
+
+    assert code == 0
+    payload = json.loads(captured.out)
+    assert payload["title"] == "代码图谱怎么选"
+    assert payload["content_source"] == "summary.md"
+
+
 def test_cli_inbox_empty_prints_message(tmp_path, capsys):
     main(["init", str(tmp_path)])
     capsys.readouterr()
@@ -301,3 +315,163 @@ def test_cli_inbox_note_ambiguous_name_returns_controlled_error(tmp_path, capsys
 
     assert code == 2
     assert "Ambiguous inbox item" in captured.err
+
+
+def test_cli_inbox_archive_classify_todo_and_delete(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+    _write_post(
+        tmp_path,
+        "web",
+        "20260707-archive",
+        {"article.md": "# Archive Me\n\nSource URL: https://example.test/a\n\nBody"},
+    )
+    _write_post(tmp_path, "web", "20260707-todo", {"article.md": "# Todo Me\n\nBody"})
+    _write_post(tmp_path, "web", "20260707-delete", {"article.md": "# Delete Me\n\nBody"})
+
+    classify_code = main(
+        [
+            "inbox",
+            "--workspace",
+            str(tmp_path),
+            "classify",
+            "20260707-archive",
+            "agent-engineering/agent-harness",
+        ]
+    )
+    classify_output = capsys.readouterr()
+    archive_code = main(
+        [
+            "inbox",
+            "--workspace",
+            str(tmp_path),
+            "archive",
+            "20260707-archive",
+            "agent-engineering/agent-harness",
+            "--summary",
+            "Archive summary.",
+            "--json",
+        ]
+    )
+    archive_output = capsys.readouterr()
+    todo_code = main(
+        ["inbox", "--workspace", str(tmp_path), "todo", "20260707-todo", "Need review"]
+    )
+    todo_output = capsys.readouterr()
+    preview_code = main(["inbox", "--workspace", str(tmp_path), "delete", "20260707-delete"])
+    preview_output = capsys.readouterr()
+    delete_code = main(
+        ["inbox", "--workspace", str(tmp_path), "delete", "20260707-delete", "--confirm"]
+    )
+    delete_output = capsys.readouterr()
+
+    assert classify_code == 0
+    assert json.loads(classify_output.out)["topic"] == "agent-harness"
+    assert archive_code == 0
+    assert json.loads(archive_output.out)["concept"] == ""
+    assert todo_code == 0
+    assert json.loads(todo_output.out)["status"] == "todo"
+    assert preview_code == 0
+    assert json.loads(preview_output.out)["confirm_required"] is True
+    assert delete_code == 0
+    assert json.loads(delete_output.out)["status"] == "deleted"
+
+
+def test_cli_knowledge_question_entity_promote_refresh_validate_gardener(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+    main(
+        [
+            "knowledge",
+            "--workspace",
+            str(tmp_path),
+            "note-source",
+            "--platform",
+            "web",
+            "--title",
+            "Refresh Source",
+            "--topic",
+            "agent-engineering/agent-harness",
+            "--resource",
+            "https://example.test/refresh",
+            "--summary",
+            "Refresh source summary.",
+            "--tag",
+            "agent-harness",
+        ]
+    )
+    capsys.readouterr()
+
+    question_code = main(
+        [
+            "knowledge",
+            "--workspace",
+            str(tmp_path),
+            "add-question",
+            "agent-engineering/agent-harness",
+            "怎么刷新 topic？",
+            "--answer",
+            "汇总 active sources。",
+            "--source-ref",
+            "/sources/web/agent-engineering/refresh-source.md",
+        ]
+    )
+    question_output = capsys.readouterr()
+    entity_code = main(
+        [
+            "knowledge",
+            "--workspace",
+            str(tmp_path),
+            "add-entity",
+            "agent-engineering/agent-harness",
+            "Alcove",
+            "--kind",
+            "tool",
+            "--summary",
+            "个人知识库工具。",
+            "--use-cases",
+            "处理 inbox。",
+        ]
+    )
+    entity_output = capsys.readouterr()
+    promote_code = main(
+        [
+            "knowledge",
+            "--workspace",
+            str(tmp_path),
+            "promote",
+            "sources/web/agent-engineering/refresh-source.md",
+        ]
+    )
+    promote_output = capsys.readouterr()
+    refresh_code = main(
+        [
+            "knowledge",
+            "--workspace",
+            str(tmp_path),
+            "refresh",
+            "agent-engineering/agent-harness",
+        ]
+    )
+    refresh_output = capsys.readouterr()
+    topics_code = main(["knowledge", "--workspace", str(tmp_path), "topics"])
+    topics_output = capsys.readouterr()
+    validate_code = main(["validate", "--workspace", str(tmp_path), "--json"])
+    validate_output = capsys.readouterr()
+    gardener_code = main(["gardener", "--workspace", str(tmp_path), "--json"])
+    gardener_output = capsys.readouterr()
+
+    assert question_code == 0
+    assert "okf_question" in json.loads(question_output.out)
+    assert entity_code == 0
+    assert "okf_entity" in json.loads(entity_output.out)
+    assert promote_code == 0
+    assert "okf_concept" in json.loads(promote_output.out)
+    assert refresh_code == 0
+    assert json.loads(refresh_output.out)["status"] == "refreshed"
+    assert topics_code == 0
+    assert "agent-harness" in json.loads(topics_output.out)["topics"]
+    assert validate_code in {0, 1}
+    assert "issues" in json.loads(validate_output.out)
+    assert gardener_code == 0
+    assert "issues" in json.loads(gardener_output.out)
