@@ -3,8 +3,9 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime
+from pathlib import Path
 
-from alcove.markdown import MarkdownDoc, MarkdownRepository, normalize_slug
+from alcove.markdown import MarkdownDoc, MarkdownRepository
 from alcove.validate import ValidateModule
 from alcove.workspace import Workspace
 
@@ -65,10 +66,10 @@ class GardenerModule:
         if prune:
             for issue in issues:
                 if issue["kind"] == "empty_tag":
-                    path = self.paths.knowledge / "tags" / f"{normalize_slug(issue['message'].split()[1].strip(repr('')))}.md"
                     issue_path = issue.get("path")
-                    if issue_path:
-                        path = type(self.paths.knowledge)(issue_path)
+                    if not issue_path:
+                        continue
+                    path = Path(issue_path)
                     if path.exists():
                         path.unlink()
                         actions.append({"action": "deleted_empty_tag", "path": str(path)})
