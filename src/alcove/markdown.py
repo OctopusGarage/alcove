@@ -73,12 +73,12 @@ class MarkdownRepository:
     def unique_path(self, directory: Path | str, slug: str) -> Path:
         directory_path = Path(directory)
         candidate = directory_path / f"{normalize_slug(slug)}.md"
-        if not candidate.exists():
+        if not candidate.exists() and candidate.name not in RESERVED_FILENAMES:
             return candidate
         counter = 2
         while True:
             candidate = directory_path / f"{normalize_slug(slug)}-{counter}.md"
-            if not candidate.exists():
+            if not candidate.exists() and candidate.name not in RESERVED_FILENAMES:
                 return candidate
             counter += 1
 
@@ -91,6 +91,8 @@ class MarkdownRepository:
         try:
             frontmatter = yaml.safe_load(parts[1]) or {}
         except yaml.YAMLError:
+            return {}, content
+        if not isinstance(frontmatter, dict):
             return {}, content
         body = parts[2].lstrip("\n")
         return frontmatter, body

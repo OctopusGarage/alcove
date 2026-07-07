@@ -34,6 +34,18 @@ def test_read_doc_treats_malformed_frontmatter_as_body(tmp_path):
     assert loaded.body == content
 
 
+def test_read_doc_treats_non_dict_frontmatter_as_body(tmp_path):
+    repo = MarkdownRepository()
+    path = tmp_path / "list-frontmatter.md"
+    content = "---\n- Pin\n---\n# Body\n"
+    path.write_text(content, encoding="utf-8")
+
+    loaded = repo.read_doc(path)
+
+    assert loaded.frontmatter == {}
+    assert loaded.body == content
+
+
 def test_unique_path_adds_numeric_suffix(tmp_path):
     repo = MarkdownRepository()
     first = repo.unique_path(tmp_path, "hello")
@@ -42,3 +54,10 @@ def test_unique_path_adds_numeric_suffix(tmp_path):
     second = repo.unique_path(tmp_path, "hello")
 
     assert second.name == "hello-2.md"
+
+
+def test_unique_path_avoids_reserved_filenames(tmp_path):
+    repo = MarkdownRepository()
+
+    assert repo.unique_path(tmp_path, "index").name == "index-2.md"
+    assert repo.unique_path(tmp_path, "log").name == "log-2.md"
