@@ -88,6 +88,9 @@ class MarkdownRepository:
         parts = re.split(r"^---\s*$", content, maxsplit=2, flags=re.MULTILINE)
         if len(parts) < 3:
             return {}, content
-        frontmatter = yaml.safe_load(parts[1]) or {}
+        try:
+            frontmatter = yaml.safe_load(parts[1]) or {}
+        except yaml.YAMLError:
+            return {}, content
         body = parts[2].lstrip("\n")
         return frontmatter, body
