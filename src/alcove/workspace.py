@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 
-from alcove.errors import WorkspaceNotFoundError
+from alcove.errors import WorkspaceInitializationError, WorkspaceNotFoundError
 
 
 WORKSPACE_DIR = ".alcove"
@@ -36,22 +36,28 @@ class Workspace:
 
     @classmethod
     def init(cls, root: Path | str) -> "Workspace":
-        root_path = Path(root).expanduser().resolve()
-        root_path.mkdir(parents=True, exist_ok=True)
-        state = root_path / WORKSPACE_DIR
-        state.mkdir(exist_ok=True)
-        (state / "connectors").mkdir(exist_ok=True)
-        (state / "logs").mkdir(exist_ok=True)
-        for name in DATA_DIRS:
-            (root_path / name).mkdir(exist_ok=True)
-        config_path = state / CONFIG_FILE
-        if not config_path.exists():
-            config = {
-                "version": 1,
-                "workspace": {"name": root_path.name},
-                "paths": {name: name for name in DATA_DIRS},
-            }
-            config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+        root_path = Path(root).expanduser()
+        try:
+            root_path = root_path.resolve()
+            root_path.mkdir(parents=True, exist_ok=True)
+            state = root_path / WORKSPACE_DIR
+            state.mkdir(exist_ok=True)
+            (state / "connectors").mkdir(exist_ok=True)
+            (state / "logs").mkdir(exist_ok=True)
+            for name in DATA_DIRS:
+                (root_path / name).mkdir(exist_ok=True)
+            config_path = state / CONFIG_FILE
+            if not config_path.exists():
+                config = {
+                    "version": 1,
+                    "workspace": {"name": root_path.name},
+                    "paths": {name: name for name in DATA_DIRS},
+                }
+                config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+        except OSError as exc:
+            raise WorkspaceInitializationError(
+                f"Could not initialize Alcove workspace at {root_path}: {exc}"
+            ) from exc
         return cls(root_path)
 
     @classmethod
@@ -68,24 +74,37 @@ class Workspace:
 
     def paths(self) -> WorkspacePaths:
         state = self.root / WORKSPACE_DIR
+        configured_paths = self._configured_data_paths()
         return WorkspacePaths(
             root=self.root,
             state=state,
             config=state / CONFIG_FILE,
-            knowledge=self.root / "knowledge",
-            inbox=self.root / "inbox",
-            archive=self.root / "archive",
-            pins=self.root / "pins",
-            tasks=self.root / "tasks",
-            mounts=self.root / "mounts",
-            todo=self.root / "todo",
+            knowledge=self._resolve_data_path("knowledge", configured_paths),
+            inbox=self._resolve_data_path("inbox", configured_paths),
+            archive=self._resolve_data_path("archive", configured_paths),
+            pins=self._resolve_data_path("pins", configured_paths),
+            tasks=self._resolve_data_path("tasks", configured_paths),
+            mounts=self._resolve_data_path("mounts", configured_paths),
+            todo=self._resolve_data_path("todo", configured_paths),
             index=state / "index.sqlite",
             logs=state / "logs",
         )
 
     def load_config(self) -> dict[str, Any]:
-        path = self.paths().config
+        path = self.root / WORKSPACE_DIR / CONFIG_FILE
         return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+    def _configured_data_paths(self) -> dict[str, str]:
+        paths = self.load_config().get("paths", {})
+        if not isinstance(paths, dict):
+            return {}
+        return {str(name): str(path) for name, path in paths.items()}
+
+    def _resolve_data_path(self, name: str, configured_paths: dict[str, str]) -> Path:
+        configured_path = Path(configured_paths.get(name, name)).expanduser()
+        if configured_path.is_absolute():
+            return configured_path
+        return self.root / configured_path
 
     def status(self) -> dict[str, Any]:
         paths = self.paths()

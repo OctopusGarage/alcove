@@ -9,5 +9,9 @@ class WorkspaceNotFoundError(AlcoveError):
     """Raised when no .alcove workspace can be found."""
 
 
+class WorkspaceInitializationError(AlcoveError):
+    """Raised when a workspace cannot be initialized."""
+
+
 class AmbiguousIdError(AlcoveError):
     """Raised when an id prefix matches more than one object."""

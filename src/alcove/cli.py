@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from alcove import __version__
@@ -45,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
     except AlcoveError as exc:
-        parser.exit(2, f"alcove: {exc}\n")
+        print(f"alcove: {exc}", file=sys.stderr)
         return 2
 
 

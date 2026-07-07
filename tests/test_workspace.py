@@ -1,7 +1,9 @@
 from pathlib import Path
 
 import yaml
+import pytest
 
+from alcove.errors import WorkspaceInitializationError
 from alcove.workspace import Workspace
 
 
@@ -40,3 +42,29 @@ def test_workspace_status_reports_initialized_paths(tmp_path):
     assert status["initialized"] is True
     assert status["root"] == str(tmp_path)
     assert status["paths"]["knowledge"] == str(tmp_path / "knowledge")
+
+
+def test_workspace_init_existing_file_raises_alcove_error(tmp_path):
+    target = tmp_path / "not-a-directory"
+    target.write_text("content")
+
+    with pytest.raises(WorkspaceInitializationError, match="Could not initialize"):
+        Workspace.init(target)
+
+
+def test_workspace_paths_honor_configured_paths(tmp_path):
+    Workspace.init(tmp_path)
+    config_path = tmp_path / ".alcove" / "config.yml"
+    config = yaml.safe_load(config_path.read_text())
+    config["paths"]["knowledge"] = "vault/knowledge"
+    config["paths"]["todo"] = "next-actions"
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+
+    workspace = Workspace.discover(tmp_path)
+    paths = workspace.paths()
+    status = workspace.status()
+
+    assert paths.knowledge == tmp_path / "vault" / "knowledge"
+    assert paths.todo == tmp_path / "next-actions"
+    assert status["paths"]["knowledge"] == str(tmp_path / "vault" / "knowledge")
+    assert status["paths"]["todo"] == str(tmp_path / "next-actions")

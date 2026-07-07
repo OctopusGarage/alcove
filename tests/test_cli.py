@@ -30,3 +30,14 @@ def test_cli_status_json_reports_workspace(tmp_path, capsys):
     data = json.loads(captured.out)
     assert data["initialized"] is True
     assert data["root"] == str(tmp_path.resolve())
+
+
+def test_cli_init_existing_file_returns_controlled_error(tmp_path, capsys):
+    target = tmp_path / "not-a-directory"
+    target.write_text("content")
+
+    code = main(["init", str(target)])
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "alcove: Could not initialize" in captured.err
