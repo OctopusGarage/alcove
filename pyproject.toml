@@ -1,0 +1,24 @@
+[project]
+name = "alcove"
+version = "0.1.0"
+description = "Local-first personal information alcove for knowledge, pins, tasks, mounts, and agent-readable memory."
+requires-python = ">=3.12"
+dependencies = [
+    "pyyaml>=6.0.3",
+]
+
+[project.scripts]
+alcove = "alcove.cli:entrypoint"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
