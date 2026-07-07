@@ -53,6 +53,9 @@ def build_parser() -> argparse.ArgumentParser:
     inbox_archive.add_argument("--summary", default="")
     inbox_archive.add_argument("--tag", action="append", default=[])
     inbox_archive.add_argument("--tags", default="")
+    inbox_archive.add_argument("--no-auto-tags", action="store_true")
+    inbox_archive.add_argument("--supersede-similar", action="store_true")
+    inbox_archive.add_argument("--validate", action="store_true")
     inbox_archive.add_argument("--json", action="store_true")
     inbox_note = inbox_sub.add_parser("note", help="Archive an inbox item into knowledge")
     inbox_note.add_argument("name")
@@ -67,6 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     inbox_note.add_argument("--personal-note", default="")
     inbox_note.add_argument("--no-auto-tags", action="store_true")
     inbox_note.add_argument("--supersede-similar", action="store_true")
+    inbox_note.add_argument("--validate", action="store_true")
     inbox_note.add_argument("--json", action="store_true")
     inbox_todo = inbox_sub.add_parser("todo", help="Move an inbox item to todo")
     inbox_todo.add_argument("name")
@@ -179,6 +183,12 @@ def _process_result_dict(result) -> dict:
     }
 
 
+def _with_validation(payload: dict, workspace: Workspace, enabled: bool) -> dict:
+    if enabled:
+        return {**payload, "validation": ValidateModule(workspace).validate()}
+    return payload
+
+
 def _argument_error(parser: argparse.ArgumentParser, message: str) -> int:
     parser.print_usage(sys.stderr)
     print(f"{parser.prog}: error: {message}", file=sys.stderr)
@@ -242,8 +252,10 @@ def main(argv: list[str] | None = None) -> int:
                     args.topic,
                     summary=args.summary,
                     tags=_tags(args) or None,
+                    no_auto_tags=args.no_auto_tags,
+                    supersede_similar=args.supersede_similar,
                 )
-                payload = _process_result_dict(result)
+                payload = _with_validation(_process_result_dict(result), workspace, args.validate)
                 if args.json:
                     print(json.dumps(payload, ensure_ascii=False, default=str))
                 else:
@@ -267,7 +279,7 @@ def main(argv: list[str] | None = None) -> int:
                         supersede_similar=args.supersede_similar,
                     )
                 )
-                payload = _process_result_dict(result)
+                payload = _with_validation(_process_result_dict(result), workspace, args.validate)
                 if args.json:
                     print(json.dumps(payload, ensure_ascii=False, default=str))
                 else:

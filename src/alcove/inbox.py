@@ -122,12 +122,21 @@ class InboxModule:
         topic: str,
         summary: str = "",
         tags: list[str] | None = None,
+        no_auto_tags: bool = False,
+        supersede_similar: bool = False,
     ) -> InboxProcessResult:
         post = self.read(name)
         archive_path = self._archive_post(post, topic)
         archive_reference = self._legacy_path(archive_path)
-        resolved_tags = tags or self._resolve_tags(post, topic, [], False)
+        resolved_tags = tags or self._resolve_tags(post, topic, [], no_auto_tags)
         confidence = self._score_confidence(post)
+        supersedes = self._similar_sources_to_supersede(
+            post,
+            topic,
+            summary or post.content[:500],
+            confidence["confidence"],
+            supersede_similar,
+        )
         try:
             result = self.knowledge.note_source(
                 NoteSourceRequest(
@@ -142,18 +151,21 @@ class InboxModule:
                     create_concept=False,
                     confidence=confidence["confidence"],
                     status="active",
+                    supersedes=supersedes,
                     last_verified=post.date,
                 )
             )
         except Exception:
             self._rollback_archive(post, archive_path)
             raise
+        superseded = self._mark_superseded(result.source_path, supersedes)
         return InboxProcessResult(
             archive_path,
             result.source_path,
             result.concept_path,
             tags=resolved_tags,
             confidence=confidence,
+            superseded=superseded,
         )
 
     def todo(self, name: str, reason: str = "") -> Path:

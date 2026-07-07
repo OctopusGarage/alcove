@@ -377,6 +377,56 @@ def test_cli_inbox_archive_classify_todo_and_delete(tmp_path, capsys):
     assert json.loads(delete_output.out)["status"] == "deleted"
 
 
+def test_cli_inbox_archive_supports_supersede_no_auto_tags_and_validate(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+    source_dir = tmp_path / "knowledge" / "sources" / "web" / "agent-engineering"
+    source_dir.mkdir(parents=True)
+    (source_dir / "old.md").write_text(
+        "---\n"
+        "type: Source\n"
+        "title: Same Source\n"
+        "domain: agent-engineering\n"
+        "topic: agent-harness\n"
+        "tags: [agent-harness]\n"
+        "status: active\n"
+        "confidence: 0.1\n"
+        "---\n"
+        "# 摘要\n\nSame Source body.\n",
+        encoding="utf-8",
+    )
+    _write_post(
+        tmp_path,
+        "web",
+        "20260707-same-source",
+        {"article.md": "# Same Source\n\nSource URL: https://example.test/same\n\nSame Source body."},
+    )
+
+    code = main(
+        [
+            "inbox",
+            "--workspace",
+            str(tmp_path),
+            "archive",
+            "20260707-same-source",
+            "agent-engineering/agent-harness",
+            "--summary",
+            "Same Source body.",
+            "--no-auto-tags",
+            "--supersede-similar",
+            "--validate",
+            "--json",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert code == 0
+    payload = json.loads(captured.out)
+    assert payload["tags"] == []
+    assert payload["superseded"] == ["sources/web/agent-engineering/old.md"]
+    assert "validation" in payload
+
+
 def test_cli_knowledge_question_entity_promote_refresh_validate_gardener(tmp_path, capsys):
     main(["init", str(tmp_path)])
     capsys.readouterr()
