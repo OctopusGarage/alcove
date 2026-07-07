@@ -1,5 +1,5 @@
 from alcove.knowledge import KnowledgeModule, NoteSourceRequest, AddQuestionRequest, AddEntityRequest
-from alcove.markdown import MarkdownRepository
+from alcove.markdown import MarkdownDoc, MarkdownRepository
 from alcove.taxonomy import load_taxonomy, split_domain_topic
 from alcove.workspace import Workspace
 
@@ -151,3 +151,73 @@ def test_note_source_reuses_existing_concept_and_appends_unique_provenance(tmp_p
         "/sources/xhs/agent-engineering/same-concept-2.md",
     ]
     assert concept.frontmatter["legacy_paths"] == ["archive/one", "archive/two"]
+
+
+def test_note_source_avoids_reserved_concept_filename_and_indexes_it(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    module = KnowledgeModule(workspace)
+
+    result = module.note_source(
+        NoteSourceRequest(
+            platform="xhs",
+            title="Index",
+            topic="agent-engineering/agent-harness",
+            resource="https://example.test/index-title",
+            summary="Reserved filename concept.",
+        )
+    )
+
+    index = MarkdownRepository().read_doc(tmp_path / "knowledge" / "index.md")
+
+    assert result.concept_path is not None
+    assert result.concept_path.name != "index.md"
+    assert result.concept_path.name == "index-2.md"
+    assert (
+        "- [Knowledge Concept] [Index]"
+        "(concepts/agent-engineering/agent-harness/index-2.md)"
+    ) in index.body
+
+
+def test_note_source_migrates_old_source_to_normalized_source_refs(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    repo = MarkdownRepository()
+    old_concept_path = (
+        tmp_path
+        / "knowledge"
+        / "concepts"
+        / "agent-engineering"
+        / "agent-harness"
+        / "legacy-source.md"
+    )
+    repo.write_doc(
+        old_concept_path,
+        MarkdownDoc(
+            frontmatter={
+                "type": "Knowledge Concept",
+                "title": "Legacy Source",
+                "domain": "agent-engineering",
+                "topic": "agent-harness",
+                "source": "sources/xhs/agent-engineering/legacy-source.md",
+            },
+            body="# Legacy Source\n\nExisting concept.\n",
+        ),
+    )
+    module = KnowledgeModule(workspace)
+
+    result = module.note_source(
+        NoteSourceRequest(
+            platform="xhs",
+            title="Legacy Source",
+            topic="agent-engineering/agent-harness",
+            resource="https://example.test/legacy-source",
+            summary="Migrated concept.",
+        )
+    )
+
+    concept = repo.read_doc(result.concept_path)
+
+    assert result.concept_path == old_concept_path
+    assert "source" not in concept.frontmatter
+    assert concept.frontmatter["source_refs"] == [
+        "/sources/xhs/agent-engineering/legacy-source.md"
+    ]

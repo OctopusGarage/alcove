@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from alcove.markdown import MarkdownDoc, MarkdownRepository, normalize_slug
+from alcove.markdown import RESERVED_FILENAMES, MarkdownDoc, MarkdownRepository, normalize_slug
 from alcove.taxonomy import load_taxonomy, normalize_tag, split_domain_topic
 from alcove.workspace import Workspace
 
@@ -165,17 +165,12 @@ class KnowledgeModule:
         tags: list[str],
         source_path: Path,
     ) -> Path:
-        path = (
-            self.knowledge_root
-            / "concepts"
-            / domain
-            / topic
-            / f"{normalize_slug(request.title)}.md"
-        )
+        concept_dir = self.knowledge_root / "concepts" / domain / topic
+        path = self._concept_path(concept_dir, request.title, domain, topic)
         source_ref = f"/{source_path.relative_to(self.knowledge_root).as_posix()}"
         if path.exists():
             doc = self.repository.read_doc(path)
-            source_refs = self._append_unique(
+            source_refs = self._append_unique_source_ref(
                 doc.frontmatter.get("source_refs") or doc.frontmatter.get("source"),
                 source_ref,
             )
@@ -216,9 +211,43 @@ class KnowledgeModule:
             MarkdownDoc(frontmatter=frontmatter, body=f"# {request.title}\n\n{request.summary}\n"),
         )
 
+    def _concept_path(self, directory: Path, title: str, domain: str, topic: str) -> Path:
+        slug = normalize_slug(title)
+        candidate = directory / f"{slug}.md"
+        if candidate.name not in RESERVED_FILENAMES:
+            return candidate
+        if directory.exists():
+            for path in sorted(directory.glob(f"{slug}-*.md"), key=lambda item: item.name):
+                doc = self.repository.read_doc(path)
+                if (
+                    doc.frontmatter.get("type") == "Knowledge Concept"
+                    and doc.frontmatter.get("title") == title
+                    and doc.frontmatter.get("domain") == domain
+                    and doc.frontmatter.get("topic") == topic
+                ):
+                    return path
+        return self.repository.unique_path(directory, slug)
+
     def _normalize_tags(self, tags: list[str]) -> list[str]:
         normalized = {normalize_tag(tag, self.taxonomy) for tag in tags}
         return sorted(tag for tag in normalized if tag)
+
+    def _append_unique_source_ref(self, current: object, value: str) -> list[str]:
+        values: list[str] = []
+        for item in self._as_list(current):
+            normalized = self._normalize_source_ref(item)
+            if normalized not in values:
+                values.append(normalized)
+        normalized_value = self._normalize_source_ref(value)
+        if normalized_value not in values:
+            values.append(normalized_value)
+        return values
+
+    def _normalize_source_ref(self, value: str) -> str:
+        ref = str(value or "").strip()
+        if not ref:
+            return ref
+        return ref if ref.startswith("/") else f"/{ref}"
 
     def _append_unique(self, current: object, value: str | None) -> list[str]:
         values = self._as_list(current)
