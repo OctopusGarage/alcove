@@ -102,6 +102,21 @@ def test_cli_malformed_config_returns_controlled_error(tmp_path, capsys):
     assert str(tmp_path / ".alcove" / "config.yml") in captured.err
 
 
+def test_cli_search_malformed_taxonomy_returns_controlled_error(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+    taxonomy_path = tmp_path / "knowledge" / "taxonomy.yml"
+    taxonomy_path.write_text("domains: [unterminated\n", encoding="utf-8")
+
+    code = main(["search", "anything", "--workspace", str(tmp_path)])
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "alcove:" in captured.err
+    assert str(taxonomy_path) in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_cli_inbox_peek_outputs_oldest_post_title_and_content_source(tmp_path, capsys):
     main(["init", str(tmp_path)])
     capsys.readouterr()

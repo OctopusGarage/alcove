@@ -5,6 +5,7 @@ from typing import Any
 
 import yaml
 
+from alcove.errors import TaxonomyError
 from alcove.markdown import normalize_slug
 
 
@@ -54,20 +55,48 @@ def load_taxonomy(knowledge_root: Path) -> dict[str, Any]:
     path = knowledge_root / "taxonomy.yml"
     if not path.exists():
         return taxonomy
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    taxonomy["tag_aliases"].update(_normalize_aliases(data.get("tag_aliases") or {}))
-    taxonomy["topic_aliases"].update(_normalize_aliases(data.get("topic_aliases") or {}))
-    taxonomy["platforms"].update(data.get("platforms") or {})
-    for domain, definition in (data.get("domains") or {}).items():
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise _taxonomy_error(path, f"could not parse YAML: {exc}") from exc
+    if not isinstance(data, dict):
+        raise _taxonomy_error(path, "top-level document must be a mapping")
+    tag_aliases = _mapping_section(data, path, "tag_aliases")
+    topic_aliases = _mapping_section(data, path, "topic_aliases")
+    platforms = _mapping_section(data, path, "platforms")
+    domains = _mapping_section(data, path, "domains")
+
+    taxonomy["tag_aliases"].update(_normalize_aliases(tag_aliases))
+    taxonomy["topic_aliases"].update(_normalize_aliases(topic_aliases))
+    taxonomy["platforms"].update(platforms)
+    for domain, definition in domains.items():
+        if not isinstance(definition, dict):
+            raise _taxonomy_error(path, f"domains.{domain} must be a mapping")
         domain_slug = normalize_slug(domain)
         existing = taxonomy["domains"].setdefault(domain_slug, {"title": domain, "topics": []})
         existing["title"] = definition.get("title") or existing["title"]
+        topics_value = definition.get("topics")
+        if topics_value is None:
+            topics_value = []
+        if not isinstance(topics_value, list):
+            raise _taxonomy_error(path, f"domains.{domain}.topics must be a list")
         topics = {normalize_topic(topic, taxonomy) for topic in existing.get("topics") or []}
-        topics.update(
-            normalize_topic(topic, taxonomy) for topic in definition.get("topics") or []
-        )
+        topics.update(normalize_topic(topic, taxonomy) for topic in topics_value)
         existing["topics"] = sorted(topics)
     return taxonomy
+
+
+def _mapping_section(data: dict[str, Any], path: Path, section: str) -> dict[str, Any]:
+    value = data.get(section)
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise _taxonomy_error(path, f"{section} must be a mapping")
+    return value
+
+
+def _taxonomy_error(path: Path, message: str) -> TaxonomyError:
+    return TaxonomyError(f"Invalid taxonomy at {path}: {message}")
 
 
 def _normalize_aliases(aliases: dict[str, Any]) -> dict[str, str]:

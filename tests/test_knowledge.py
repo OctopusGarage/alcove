@@ -153,6 +153,46 @@ def test_note_source_reuses_existing_concept_and_appends_unique_provenance(tmp_p
     assert concept.frontmatter["legacy_paths"] == ["archive/one", "archive/two"]
 
 
+def test_note_source_keeps_distinct_concepts_with_colliding_slugs_separate(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    module = KnowledgeModule(workspace)
+
+    slash = module.note_source(
+        NoteSourceRequest(
+            platform="web",
+            title="A/B",
+            topic="agent-engineering/agent-harness",
+            resource="https://example.test/slash",
+            summary="Slash body.",
+        )
+    )
+    space = module.note_source(
+        NoteSourceRequest(
+            platform="web",
+            title="A B",
+            topic="agent-engineering/agent-harness",
+            resource="https://example.test/space",
+            summary="Space body.",
+        )
+    )
+
+    repo = MarkdownRepository()
+    slash_doc = repo.read_doc(slash.concept_path)
+    space_doc = repo.read_doc(space.concept_path)
+
+    assert slash.concept_path != space.concept_path
+    assert slash.concept_path.name == "a-b.md"
+    assert space.concept_path.name == "a-b-2.md"
+    assert slash_doc.frontmatter["title"] == "A/B"
+    assert slash_doc.frontmatter["source_refs"] == ["/sources/web/agent-engineering/a-b.md"]
+    assert "Slash body." in slash_doc.body
+    assert space_doc.frontmatter["title"] == "A B"
+    assert space_doc.frontmatter["source_refs"] == [
+        "/sources/web/agent-engineering/a-b-2.md"
+    ]
+    assert "Space body." in space_doc.body
+
+
 def test_note_source_avoids_reserved_concept_filename_and_indexes_it(tmp_path):
     workspace = Workspace.init(tmp_path)
     module = KnowledgeModule(workspace)

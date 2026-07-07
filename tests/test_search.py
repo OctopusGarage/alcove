@@ -1,6 +1,9 @@
 import json
 from datetime import date
 
+import pytest
+
+from alcove.errors import AlcoveError
 from alcove.knowledge import KnowledgeModule, NoteSourceRequest
 from alcove.markdown import MarkdownDoc, MarkdownRepository
 from alcove.search import SearchModule, SearchRequest
@@ -31,6 +34,24 @@ def test_search_finds_knowledge_doc_by_body_text_from_note_source(tmp_path):
         "path": "sources/web/agent-engineering/代码图谱.md",
     } in rows
     json.dumps(rows, ensure_ascii=False)
+
+
+def test_search_module_reports_invalid_taxonomy_domain_definition(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    (workspace.paths().knowledge / "taxonomy.yml").write_text(
+        """
+domains:
+  bad-domain: [not, a, mapping]
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(AlcoveError) as exc_info:
+        SearchModule(workspace)
+
+    message = str(exc_info.value)
+    assert str(workspace.paths().knowledge / "taxonomy.yml") in message
+    assert "domains.bad-domain" in message
 
 
 def test_search_filters_by_type_tag_and_topic(tmp_path):

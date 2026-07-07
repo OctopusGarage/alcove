@@ -217,10 +217,16 @@ class KnowledgeModule:
     def _concept_path(self, directory: Path, title: str, domain: str, topic: str) -> Path:
         slug = normalize_slug(title)
         candidate = directory / f"{slug}.md"
-        if candidate.name not in RESERVED_FILENAMES:
+        if not candidate.exists() and candidate.name not in RESERVED_FILENAMES:
             return candidate
         if directory.exists():
-            for path in sorted(directory.glob(f"{slug}-*.md"), key=lambda item: item.name):
+            paths = [
+                candidate,
+                *sorted(directory.glob(f"{slug}-*.md"), key=lambda item: item.name),
+            ]
+            for path in paths:
+                if not path.exists():
+                    continue
                 doc = self.repository.read_doc(path)
                 if (
                     doc.frontmatter.get("type") == "Knowledge Concept"
