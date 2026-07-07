@@ -318,3 +318,35 @@ tag_aliases:
     assert normalize_topic("fancy_topic", taxonomy) == "canonical-topic"
     assert normalize_tag("Fancy Tag", taxonomy) == "canonical-tag"
     assert normalize_tag("fancy_tag", taxonomy) == "canonical-tag"
+
+
+def test_note_source_can_skip_concept_creation(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    module = KnowledgeModule(workspace)
+
+    result = module.note_source(
+        NoteSourceRequest(
+            platform="web",
+            title="Source Only",
+            topic="agent-engineering/agent-harness",
+            resource="https://example.test/source-only",
+            summary="A source that should not create a concept.",
+            create_concept=False,
+        )
+    )
+
+    index = MarkdownRepository().read_doc(tmp_path / "knowledge" / "index.md")
+    concept_path = (
+        tmp_path
+        / "knowledge"
+        / "concepts"
+        / "agent-engineering"
+        / "agent-harness"
+        / "source-only.md"
+    )
+
+    assert result.source_path.is_file()
+    assert result.concept_path is None
+    assert not concept_path.exists()
+    assert "- [Source] [Source Only](sources/web/agent-engineering/source-only.md)" in index.body
+    assert "- [Knowledge Concept] [Source Only]" not in index.body
