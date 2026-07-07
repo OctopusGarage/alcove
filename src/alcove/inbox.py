@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import re
 import shutil
 
 from alcove.knowledge import KnowledgeModule, NoteSourceRequest
+from alcove.markdown import normalize_slug
 from alcove.workspace import Workspace
 
 
@@ -14,6 +15,7 @@ PLATFORM_READ_ORDER = {
     "xhs": ("summary.md", "ocr-merge.txt", "post.md"),
     "x": ("post.md", "ocr-merge.txt", "summary.md"),
     "web": ("article.md", "summary.md", "post.md"),
+    "fallback": ("post.md", "summary.md", "article.md", "ocr-merge.txt"),
 }
 
 
@@ -23,8 +25,8 @@ class InboxPost:
     path: Path
     platform: str
     title: str
-    source: str
-    date: str
+    source: str | None
+    date: str | None
     content: str
     content_source: str
 
@@ -34,7 +36,7 @@ class InboxNoteRequest:
     name: str
     topic: str
     summary: str
-    tags: list[str] | None = None
+    tags: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -45,9 +47,10 @@ class InboxProcessResult:
 
 
 class InboxModule:
-    def __init__(self, workspace: Workspace) -> None:
+    def __init__(self, workspace: Workspace, knowledge: KnowledgeModule | None = None) -> None:
         self.workspace = workspace
         self.paths = workspace.paths()
+        self.knowledge = knowledge or KnowledgeModule(workspace)
 
     def peek(self) -> InboxPost | None:
         entries = self._entries()
@@ -63,17 +66,18 @@ class InboxModule:
 
     def note(self, request: InboxNoteRequest) -> InboxProcessResult:
         post = self.read(request.name)
-        archive_path = self._archive_post(post)
-        result = KnowledgeModule(self.workspace).note_source(
+        archive_path = self._archive_post(post, request.topic)
+        archive_reference = self._legacy_path(archive_path)
+        result = self.knowledge.note_source(
             NoteSourceRequest(
                 platform=post.platform,
                 title=post.title or post.name,
                 topic=request.topic,
-                resource=post.source,
+                resource=post.source or archive_reference,
                 summary=request.summary,
-                tags=request.tags or [],
+                tags=request.tags,
                 published_date=post.date,
-                legacy_path=str(archive_path.relative_to(self.paths.root)),
+                legacy_path=archive_reference,
                 create_concept=True,
             )
         )
@@ -87,17 +91,18 @@ class InboxModule:
         tags: list[str] | None = None,
     ) -> InboxProcessResult:
         post = self.read(name)
-        archive_path = self._archive_post(post)
-        result = KnowledgeModule(self.workspace).note_source(
+        archive_path = self._archive_post(post, topic)
+        archive_reference = self._legacy_path(archive_path)
+        result = self.knowledge.note_source(
             NoteSourceRequest(
                 platform=post.platform,
                 title=post.title or post.name,
                 topic=topic,
-                resource=post.source,
-                summary=summary or post.content[:500],
+                resource=post.source or archive_reference,
+                summary=summary or post.content,
                 tags=tags or [],
                 published_date=post.date,
-                legacy_path=str(archive_path.relative_to(self.paths.root)),
+                legacy_path=archive_reference,
                 create_concept=False,
             )
         )
@@ -121,18 +126,15 @@ class InboxModule:
 
     def _read_path(self, path: Path) -> InboxPost:
         platform = path.parent.name
-        candidates = PLATFORM_READ_ORDER.get(
-            platform,
-            ("post.md", "summary.md", "article.md", "ocr-merge.txt"),
-        )
-        md_path = next((path / name for name in candidates if (path / name).is_file()), None)
-        if md_path is None:
-            raise FileNotFoundError(f"No markdown file found in {path}")
-        content = md_path.read_text(encoding="utf-8")
+        candidates = PLATFORM_READ_ORDER.get(platform, PLATFORM_READ_ORDER["fallback"])
+        content_path = next((path / name for name in candidates if (path / name).is_file()), None)
+        if content_path is None:
+            raise FileNotFoundError(f"No readable content file found in {path}")
+        content = content_path.read_text(encoding="utf-8")
         title = self._first_heading(content) or path.name
         source = self._extract_source(content)
         date = self._date_from_name(path.name)
-        return InboxPost(path.name, path, platform, title, source, date, content, md_path.name)
+        return InboxPost(path.name, path, platform, title, source, date, content, content_path.name)
 
     def _first_heading(self, content: str) -> str:
         for line in content.splitlines():
@@ -140,24 +142,23 @@ class InboxModule:
                 return line[2:].strip()
         return ""
 
-    def _extract_source(self, content: str) -> str:
+    def _extract_source(self, content: str) -> str | None:
         for line in content.splitlines():
             stripped = line.strip()
-            if stripped.startswith("Source URL:"):
-                return stripped.split("Source URL:", 1)[1].strip()
-            if stripped.startswith("来源："):
-                return stripped.split("来源：", 1)[1].strip()
+            match = re.search(r"(?:Source URL:|来源[:：])\s*(\S+)", stripped)
+            if match:
+                return match.group(1).strip()
         match = re.search(r"https?://\S+", content)
-        return match.group(0) if match else ""
+        return match.group(0) if match else None
 
-    def _date_from_name(self, name: str) -> str:
+    def _date_from_name(self, name: str) -> str | None:
         match = re.match(r"^(\d{4})(\d{2})(\d{2})(?!\d)", name)
         if not match:
-            return ""
+            return None
         return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
 
-    def _archive_post(self, post: InboxPost) -> Path:
-        topic_dir = self.paths.archive / "inbox"
+    def _archive_post(self, post: InboxPost, topic: str) -> Path:
+        topic_dir = self.paths.archive / self._archive_topic_slug(topic)
         topic_dir.mkdir(parents=True, exist_ok=True)
         dest = topic_dir / f"[{post.platform}] {post.name}"
         counter = 2
@@ -167,3 +168,12 @@ class InboxModule:
             counter += 1
         shutil.move(str(post.path), str(dest))
         return dest
+
+    def _archive_topic_slug(self, topic: str) -> str:
+        return normalize_slug(topic.rsplit("/", 1)[-1])
+
+    def _legacy_path(self, path: Path) -> str:
+        try:
+            return path.relative_to(self.paths.root).as_posix()
+        except ValueError:
+            return str(path)
