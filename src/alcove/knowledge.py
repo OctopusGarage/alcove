@@ -165,20 +165,52 @@ class KnowledgeModule:
         tags: list[str],
         source_path: Path,
     ) -> Path:
-        path = self.repository.unique_path(
-            self.knowledge_root / "concepts" / domain / topic,
-            request.title,
+        path = (
+            self.knowledge_root
+            / "concepts"
+            / domain
+            / topic
+            / f"{normalize_slug(request.title)}.md"
         )
-        relative_source = source_path.relative_to(self.knowledge_root).as_posix()
+        source_ref = f"/{source_path.relative_to(self.knowledge_root).as_posix()}"
+        if path.exists():
+            doc = self.repository.read_doc(path)
+            source_refs = self._append_unique(
+                doc.frontmatter.get("source_refs") or doc.frontmatter.get("source"),
+                source_ref,
+            )
+            legacy_paths = self._append_unique(
+                doc.frontmatter.get("legacy_paths"),
+                request.legacy_path,
+            )
+            frontmatter = {
+                **doc.frontmatter,
+                "type": "Knowledge Concept",
+                "title": request.title,
+                "domain": domain,
+                "topic": topic,
+                "tags": self._merge_unique(doc.frontmatter.get("tags"), tags),
+                "source_refs": source_refs,
+            }
+            frontmatter.pop("source", None)
+            if legacy_paths:
+                frontmatter["legacy_paths"] = legacy_paths
+            return self.repository.write_doc(
+                path,
+                MarkdownDoc(frontmatter=frontmatter, body=doc.body),
+            )
+
         frontmatter = {
             "type": "Knowledge Concept",
             "title": request.title,
             "domain": domain,
             "topic": topic,
             "tags": tags,
-            "source": relative_source,
+            "source_refs": [source_ref],
             "created_at": now_iso(),
         }
+        if request.legacy_path:
+            frontmatter["legacy_paths"] = [request.legacy_path]
         return self.repository.write_doc(
             path,
             MarkdownDoc(frontmatter=frontmatter, body=f"# {request.title}\n\n{request.summary}\n"),
@@ -187,6 +219,28 @@ class KnowledgeModule:
     def _normalize_tags(self, tags: list[str]) -> list[str]:
         normalized = {normalize_tag(tag, self.taxonomy) for tag in tags}
         return sorted(tag for tag in normalized if tag)
+
+    def _append_unique(self, current: object, value: str | None) -> list[str]:
+        values = self._as_list(current)
+        if value and value not in values:
+            values.append(value)
+        return values
+
+    def _merge_unique(self, current: object, values: list[str]) -> list[str]:
+        merged = self._as_list(current)
+        for value in values:
+            if value not in merged:
+                merged.append(value)
+        return merged
+
+    def _as_list(self, value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item) for item in value if item]
+        if value:
+            return [str(value)]
+        return []
 
     def _ensure_indexes(self, domain: str, topic: str, tags: list[str]) -> None:
         self._write_index_doc(

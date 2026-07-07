@@ -59,10 +59,13 @@ def load_taxonomy(knowledge_root: Path) -> dict[str, Any]:
     taxonomy["topic_aliases"].update(data.get("topic_aliases") or {})
     taxonomy["platforms"].update(data.get("platforms") or {})
     for domain, definition in (data.get("domains") or {}).items():
-        existing = taxonomy["domains"].setdefault(domain, {"title": domain, "topics": []})
+        domain_slug = normalize_slug(domain)
+        existing = taxonomy["domains"].setdefault(domain_slug, {"title": domain, "topics": []})
         existing["title"] = definition.get("title") or existing["title"]
-        topics = set(existing.get("topics") or [])
-        topics.update(definition.get("topics") or [])
+        topics = {normalize_topic(topic, taxonomy) for topic in existing.get("topics") or []}
+        topics.update(
+            normalize_topic(topic, taxonomy) for topic in definition.get("topics") or []
+        )
         existing["topics"] = sorted(topics)
     return taxonomy
 
