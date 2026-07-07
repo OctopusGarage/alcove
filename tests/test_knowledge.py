@@ -1,6 +1,6 @@
 from alcove.knowledge import KnowledgeModule, NoteSourceRequest, AddQuestionRequest, AddEntityRequest
 from alcove.markdown import MarkdownDoc, MarkdownRepository
-from alcove.taxonomy import load_taxonomy, split_domain_topic
+from alcove.taxonomy import load_taxonomy, normalize_tag, normalize_topic, split_domain_topic
 from alcove.workspace import Workspace
 
 
@@ -221,3 +221,100 @@ def test_note_source_migrates_old_source_to_normalized_source_refs(tmp_path):
     assert concept.frontmatter["source_refs"] == [
         "/sources/xhs/agent-engineering/legacy-source.md"
     ]
+
+
+def test_note_source_merges_existing_source_refs_and_legacy_source(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    repo = MarkdownRepository()
+    old_concept_path = (
+        tmp_path
+        / "knowledge"
+        / "concepts"
+        / "agent-engineering"
+        / "agent-harness"
+        / "mixed-source.md"
+    )
+    repo.write_doc(
+        old_concept_path,
+        MarkdownDoc(
+            frontmatter={
+                "type": "Knowledge Concept",
+                "title": "Mixed Source",
+                "domain": "agent-engineering",
+                "topic": "agent-harness",
+                "source_refs": ["/sources/a.md"],
+                "source": "sources/b.md",
+            },
+            body="# Mixed Source\n\nExisting concept.\n",
+        ),
+    )
+    module = KnowledgeModule(workspace)
+
+    result = module.note_source(
+        NoteSourceRequest(
+            platform="xhs",
+            title="Mixed Source",
+            topic="agent-engineering/agent-harness",
+            resource="https://example.test/mixed-source",
+            summary="Migrated concept.",
+        )
+    )
+
+    concept = repo.read_doc(result.concept_path)
+
+    assert "source" not in concept.frontmatter
+    assert concept.frontmatter["source_refs"] == [
+        "/sources/a.md",
+        "/sources/b.md",
+        "/sources/xhs/agent-engineering/mixed-source.md",
+    ]
+
+
+def test_reserved_topic_and_tag_index_docs_are_listed_in_knowledge_index(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    module = KnowledgeModule(workspace)
+
+    module.note_source(
+        NoteSourceRequest(
+            platform="web",
+            title="Reserved Indexes",
+            topic="misc/index",
+            resource="https://example.test/reserved-indexes",
+            summary="Reserved topic and tag index docs.",
+            tags=["log"],
+        )
+    )
+
+    repo = MarkdownRepository()
+    topic = repo.read_doc(tmp_path / "knowledge" / "topics" / "misc" / "index-2.md")
+    tag = repo.read_doc(tmp_path / "knowledge" / "tags" / "log-2.md")
+    index = repo.read_doc(tmp_path / "knowledge" / "index.md")
+
+    assert not (tmp_path / "knowledge" / "topics" / "misc" / "index.md").exists()
+    assert not (tmp_path / "knowledge" / "tags" / "log.md").exists()
+    assert topic.frontmatter["type"] == "Topic"
+    assert topic.frontmatter["topic"] == "index"
+    assert tag.frontmatter["type"] == "Tag"
+    assert tag.frontmatter["tag"] == "log"
+    assert "- [Topic] [index](topics/misc/index-2.md)" in index.body
+    assert "- [Tag] [log](tags/log-2.md)" in index.body
+
+
+def test_custom_topic_and_tag_alias_keys_are_normalized(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    (workspace.paths().knowledge / "taxonomy.yml").write_text(
+        """
+topic_aliases:
+  Fancy Topic: canonical-topic
+tag_aliases:
+  Fancy Tag: canonical-tag
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    taxonomy = load_taxonomy(workspace.paths().knowledge)
+
+    assert normalize_topic("Fancy Topic", taxonomy) == "canonical-topic"
+    assert normalize_topic("fancy_topic", taxonomy) == "canonical-topic"
+    assert normalize_tag("Fancy Tag", taxonomy) == "canonical-tag"
+    assert normalize_tag("fancy_tag", taxonomy) == "canonical-tag"

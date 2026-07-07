@@ -171,7 +171,10 @@ class KnowledgeModule:
         if path.exists():
             doc = self.repository.read_doc(path)
             source_refs = self._append_unique_source_ref(
-                doc.frontmatter.get("source_refs") or doc.frontmatter.get("source"),
+                self._merge_unique(
+                    doc.frontmatter.get("source_refs"),
+                    self._as_list(doc.frontmatter.get("source")),
+                ),
                 source_ref,
             )
             legacy_paths = self._append_unique(
@@ -303,10 +306,35 @@ class KnowledgeModule:
             )
 
     def _write_index_doc(self, path: Path, frontmatter: dict, body: str) -> None:
-        if path.exists():
+        doc_path = self._index_doc_path(path, frontmatter)
+        if doc_path.exists():
             return
         frontmatter = {**frontmatter, "created_at": now_iso()}
-        self.repository.write_doc(path, MarkdownDoc(frontmatter=frontmatter, body=body))
+        self.repository.write_doc(doc_path, MarkdownDoc(frontmatter=frontmatter, body=body))
+
+    def _index_doc_path(self, path: Path, frontmatter: dict) -> Path:
+        if path.name not in RESERVED_FILENAMES:
+            return path
+        if path.parent.exists():
+            for existing_path in sorted(path.parent.glob(f"{path.stem}-*.md")):
+                doc = self.repository.read_doc(existing_path)
+                if self._same_index_doc(doc.frontmatter, frontmatter):
+                    return existing_path
+        return self.repository.unique_path(path.parent, path.stem)
+
+    def _same_index_doc(self, current: dict, desired: dict) -> bool:
+        if current.get("type") != desired.get("type"):
+            return False
+        if desired.get("type") == "Domain":
+            return current.get("domain") == desired.get("domain")
+        if desired.get("type") == "Topic":
+            return (
+                current.get("domain") == desired.get("domain")
+                and current.get("topic") == desired.get("topic")
+            )
+        if desired.get("type") == "Tag":
+            return current.get("tag") == desired.get("tag")
+        return False
 
     def rebuild_indexes(self) -> Path:
         docs = self.repository.list_docs(self.knowledge_root)

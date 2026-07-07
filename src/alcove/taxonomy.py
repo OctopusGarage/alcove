@@ -55,8 +55,8 @@ def load_taxonomy(knowledge_root: Path) -> dict[str, Any]:
     if not path.exists():
         return taxonomy
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    taxonomy["tag_aliases"].update(data.get("tag_aliases") or {})
-    taxonomy["topic_aliases"].update(data.get("topic_aliases") or {})
+    taxonomy["tag_aliases"].update(_normalize_aliases(data.get("tag_aliases") or {}))
+    taxonomy["topic_aliases"].update(_normalize_aliases(data.get("topic_aliases") or {}))
     taxonomy["platforms"].update(data.get("platforms") or {})
     for domain, definition in (data.get("domains") or {}).items():
         domain_slug = normalize_slug(domain)
@@ -68,6 +68,13 @@ def load_taxonomy(knowledge_root: Path) -> dict[str, Any]:
         )
         existing["topics"] = sorted(topics)
     return taxonomy
+
+
+def _normalize_aliases(aliases: dict[str, Any]) -> dict[str, str]:
+    return {
+        str(alias).lower().replace("_", " ").strip(): normalize_slug(target)
+        for alias, target in aliases.items()
+    }
 
 
 def normalize_tag(tag: str, taxonomy: dict[str, Any]) -> str:
