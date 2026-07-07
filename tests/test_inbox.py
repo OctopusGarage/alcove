@@ -211,6 +211,59 @@ def test_platform_name_identifier_disambiguates_duplicate_folder_names(tmp_path)
     assert not (tmp_path / "inbox" / "x" / "20260706-same").exists()
 
 
+def test_rejects_identifier_that_escapes_inbox(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    outside = tmp_path / "archive" / "old-topic" / "outside"
+    outside.mkdir(parents=True)
+    (outside / "article.md").write_text("# Outside\n\nBody", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Invalid inbox identifier"):
+        InboxModule(workspace).archive(
+            "../archive/old-topic/outside",
+            "agent-engineering/agent-harness",
+            summary="Manual summary.",
+        )
+
+    assert outside.is_dir()
+    assert not (tmp_path / "archive" / "agent-harness" / "[old-topic] outside").exists()
+
+
+def test_rejects_platform_identifier_with_nested_item_path(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    web_post = _write_post(tmp_path, "web", "20260706-post", {"article.md": "# Web\n\nBody"})
+
+    with pytest.raises(ValueError, match="Invalid inbox identifier"):
+        InboxModule(workspace).archive(
+            "x/../web/20260706-post",
+            "agent-engineering/agent-harness",
+            summary="Manual summary.",
+        )
+
+    assert web_post.is_dir()
+    assert not (tmp_path / "archive" / "agent-harness" / "[web] 20260706-post").exists()
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        "",
+        ".",
+        "..",
+        "/tmp/outside",
+        "x/",
+        "/x/name",
+        "x/.",
+        "x/..",
+        "x/name/extra",
+    ],
+)
+def test_rejects_malformed_inbox_identifiers(tmp_path, identifier):
+    workspace = Workspace.init(tmp_path)
+
+    with pytest.raises(ValueError, match="Invalid inbox identifier"):
+        InboxModule(workspace).read(identifier)
+
+
 def test_missing_content_file_raises_file_not_found(tmp_path):
     workspace = Workspace.init(tmp_path)
     (tmp_path / "inbox" / "xhs" / "20260706-empty").mkdir(parents=True)

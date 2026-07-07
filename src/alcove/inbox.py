@@ -130,15 +130,14 @@ class InboxModule:
         return (match.group(1) if match else "99999999", name)
 
     def _find_entry(self, name: str) -> Path:
-        if "/" in name:
-            platform, item_name = name.split("/", 1)
-            if platform and item_name:
-                entry = self.paths.inbox / platform / item_name
-                if entry.is_dir():
-                    return entry
+        platform, item_name = self._parse_identifier(name)
+        if platform is not None:
+            entry = self.paths.inbox / platform / item_name
+            if entry.is_dir():
+                return entry
             raise FileNotFoundError(f"Inbox item not found: {name}")
 
-        matches = [entry for entry in self._entries() if entry.name == name]
+        matches = [entry for entry in self._entries() if entry.name == item_name]
         if not matches:
             raise FileNotFoundError(f"Inbox item not found: {name}")
         if len(matches) > 1:
@@ -147,6 +146,31 @@ class InboxModule:
                 f"Ambiguous inbox item {name!r}; use platform/name. Matches: {identifiers}"
             )
         return matches[0]
+
+    def _parse_identifier(self, name: str) -> tuple[str | None, str]:
+        identifier = str(name)
+        if Path(identifier).is_absolute():
+            raise ValueError(f"Invalid inbox identifier {name!r}")
+
+        parts = identifier.split("/")
+        if len(parts) == 1:
+            item_name = parts[0]
+            if self._invalid_identifier_component(item_name):
+                raise ValueError(f"Invalid inbox identifier {name!r}")
+            return None, item_name
+
+        if len(parts) != 2:
+            raise ValueError(f"Invalid inbox identifier {name!r}")
+
+        platform, item_name = parts
+        if self._invalid_identifier_component(platform) or self._invalid_identifier_component(
+            item_name
+        ):
+            raise ValueError(f"Invalid inbox identifier {name!r}")
+        return platform, item_name
+
+    def _invalid_identifier_component(self, value: str) -> bool:
+        return value in {"", ".", ".."} or "/" in value
 
     def _read_path(self, path: Path) -> InboxPost:
         platform = path.parent.name
