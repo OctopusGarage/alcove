@@ -118,7 +118,9 @@ def build_parser() -> argparse.ArgumentParser:
     promote.add_argument("source")
     promote.add_argument("--topic", default="")
     promote.add_argument("--summary", default="")
-    refresh = knowledge_sub.add_parser("refresh", help="Refresh a topic concept from active sources")
+    refresh = knowledge_sub.add_parser(
+        "refresh", help="Refresh a topic concept from active sources"
+    )
     refresh.add_argument("topic")
     refresh.add_argument("--in-place", action="store_true")
     refresh.add_argument("--summary", default="")
@@ -134,9 +136,22 @@ def build_parser() -> argparse.ArgumentParser:
     gardener.add_argument("--prune", action="store_true")
     gardener.add_argument("--json", action="store_true")
 
-    search = sub.add_parser("search", help="Search knowledge")
-    search.add_argument("query")
+    search = sub.add_parser("search", help="Search and browse knowledge")
+    search.add_argument("query", nargs="?", default="")
     search.add_argument("--workspace", required=True)
+    search.add_argument("--type", dest="type_filter")
+    search.add_argument("--tag")
+    search.add_argument("--topic")
+    search.add_argument("--platform")
+    search.add_argument("--date-from")
+    search.add_argument("--date-to")
+    search.add_argument("--min-confidence", type=float)
+    search.add_argument("--status")
+    search.add_argument("--limit", type=int, default=20)
+    search.add_argument("--tags", action="store_true", help="List tags with counts")
+    search.add_argument("--tag-doctor", action="store_true", help="Find tag variants")
+    search.add_argument("--recent", type=int, help="List recent docs")
+    search.add_argument("--unindexed", action="store_true", help="Run validation")
     search.add_argument("--json", action="store_true")
     return parser
 
@@ -165,11 +180,18 @@ def _tags(args) -> list[str]:
 
 
 def _refs(args) -> list[str]:
-    return [*getattr(args, "source_ref", []), *_split_csv(getattr(args, "source_refs", ""))]
+    return [
+        *getattr(args, "source_ref", []),
+        *_split_csv(getattr(args, "source_refs", "")),
+    ]
 
 
 def _selected_takeaways(value: str) -> list[str]:
-    return [item.strip() for item in value.replace("，", ",").replace("、", ",").split(",") if item.strip()]
+    return [
+        item.strip()
+        for item in value.replace("，", ",").replace("、", ",").split(",")
+        if item.strip()
+    ]
 
 
 def _process_result_dict(result) -> dict:
@@ -187,6 +209,17 @@ def _with_validation(payload: dict, workspace: Workspace, enabled: bool) -> dict
     if enabled:
         return {**payload, "validation": ValidateModule(workspace).validate()}
     return payload
+
+
+def _print_search_rows(rows: list[dict]) -> None:
+    for row in rows:
+        print(
+            f"{row.get('date') or '':<10} | "
+            f"{row.get('confidence', 0.5):.2f} | "
+            f"{row.get('status') or 'active':<10} | "
+            f"{row.get('type')} | {row.get('topic')} | "
+            f"{row.get('title')} | {row.get('path')}"
+        )
 
 
 def _argument_error(parser: argparse.ArgumentParser, message: str) -> int:
@@ -322,7 +355,12 @@ def main(argv: list[str] | None = None) -> int:
                         tags=_tags(args),
                     )
                 )
-                print(json.dumps({"status": "noted", "okf_concept": str(result.path)}, ensure_ascii=False))
+                print(
+                    json.dumps(
+                        {"status": "noted", "okf_concept": str(result.path)},
+                        ensure_ascii=False,
+                    )
+                )
                 return 0
             if args.knowledge_command == "add-question":
                 result = knowledge.add_question(
@@ -334,7 +372,12 @@ def main(argv: list[str] | None = None) -> int:
                         source_refs=_refs(args),
                     )
                 )
-                print(json.dumps({"status": "added", "okf_question": str(result.path)}, ensure_ascii=False))
+                print(
+                    json.dumps(
+                        {"status": "added", "okf_question": str(result.path)},
+                        ensure_ascii=False,
+                    )
+                )
                 return 0
             if args.knowledge_command == "add-entity":
                 result = knowledge.add_entity(
@@ -349,11 +392,23 @@ def main(argv: list[str] | None = None) -> int:
                         source_refs=_refs(args),
                     )
                 )
-                print(json.dumps({"status": "added", "okf_entity": str(result.path)}, ensure_ascii=False))
+                print(
+                    json.dumps(
+                        {"status": "added", "okf_entity": str(result.path)},
+                        ensure_ascii=False,
+                    )
+                )
                 return 0
             if args.knowledge_command == "promote":
-                result = knowledge.promote_source(args.source, topic=args.topic, summary=args.summary)
-                print(json.dumps({"status": "promoted", "okf_concept": str(result.path)}, ensure_ascii=False))
+                result = knowledge.promote_source(
+                    args.source, topic=args.topic, summary=args.summary
+                )
+                print(
+                    json.dumps(
+                        {"status": "promoted", "okf_concept": str(result.path)},
+                        ensure_ascii=False,
+                    )
+                )
                 return 0
             if args.knowledge_command == "refresh":
                 result = LifecycleModule(workspace).refresh_topic(
@@ -382,15 +437,52 @@ def main(argv: list[str] | None = None) -> int:
             )
         if args.command == "search":
             workspace = Workspace.discover(Path(args.workspace))
-            results = SearchModule(workspace).search(SearchRequest(query=args.query))
+            search_module = SearchModule(workspace)
+            if args.unindexed:
+                issues = ValidateModule(workspace).validate(strict_quality=False)
+                if args.json:
+                    print(json.dumps({"issues": issues}, ensure_ascii=False, indent=2))
+                else:
+                    for issue in issues:
+                        print(f"{issue['kind']} | {issue['path']} | {issue['message']}")
+                return 1 if issues else 0
+            if args.tags:
+                results = search_module.tags()
+                if args.json:
+                    print(json.dumps(results, ensure_ascii=False, indent=2))
+                else:
+                    for row in results:
+                        print(f"{row['tag']} | {row['count']}")
+                return 0
+            if args.tag_doctor:
+                results = search_module.tag_doctor()
+                if args.json:
+                    print(json.dumps(results, ensure_ascii=False, indent=2))
+                else:
+                    for row in results:
+                        print(f"{row['canonical']} | {row['count']} | {', '.join(row['variants'])}")
+                return 0
+            if args.recent is not None:
+                results = search_module.recent(args.recent)
+            else:
+                results = search_module.search(
+                    SearchRequest(
+                        query=args.query,
+                        type_filter=args.type_filter,
+                        tag=args.tag,
+                        topic=args.topic,
+                        platform=args.platform,
+                        date_from=args.date_from,
+                        date_to=args.date_to,
+                        min_confidence=args.min_confidence,
+                        status=args.status,
+                        limit=args.limit,
+                    )
+                )
             if args.json:
                 print(json.dumps(results, ensure_ascii=False, indent=2))
             else:
-                for row in results:
-                    print(
-                        f"{row.get('type')} | {row.get('topic')} | "
-                        f"{row.get('title')} | {row.get('path')}"
-                    )
+                _print_search_rows(results)
             return 0
         if args.command == "validate":
             issues = ValidateModule(Workspace.discover(Path(args.workspace))).validate(

@@ -393,12 +393,21 @@ alcove init [path]
 alcove status [path] [--json]
 
 alcove inbox --workspace PATH peek
+alcove inbox --workspace PATH read NAME
 alcove inbox --workspace PATH note NAME TOPIC --summary SUMMARY [--tag TAG]
 
 alcove knowledge --workspace PATH note-source --platform PLATFORM --title TITLE --topic TOPIC [--resource RESOURCE] --summary SUMMARY [--tag TAG]
 
-alcove search QUERY --workspace PATH [--json]
+alcove search [QUERY] --workspace PATH [--json]
+alcove search --workspace PATH --tags [--json]
+alcove search --workspace PATH --tag-doctor [--json]
+alcove search --workspace PATH --recent N [--json]
+alcove search --workspace PATH --unindexed [--json]
 ```
+
+The current inbox reader also accepts Clipsmith capture bundles. If a bundle has
+`capture.json`, Alcove treats it as fallback metadata for title, source URL, and
+date, while preserving the existing platform-specific Markdown read order.
 
 ### Planned Future CLI Surface
 

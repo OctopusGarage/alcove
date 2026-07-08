@@ -18,7 +18,9 @@ def _write_xhs_post(root, name="20260707-post"):
         name,
         {
             "post.md": "# sparse\n\n#tag",
-            "summary.md": "# 代码图谱怎么选\n\n来源：https://example.test/xhs\n\n详细摘要",
+            "summary.md": (
+                "# 代码图谱怎么选\n\n来源：https://example.test/xhs\n\n详细摘要"
+            ),
         },
     )
 
@@ -264,6 +266,87 @@ def test_cli_search_json_handles_yaml_native_frontmatter_values(tmp_path, capsys
     assert rows[0]["path"] == "sources/web/date-title.md"
 
 
+def test_cli_search_supports_notes_search_browse_modes(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+    main(
+        [
+            "knowledge",
+            "--workspace",
+            str(tmp_path),
+            "note-source",
+            "--platform",
+            "web",
+            "--title",
+            "Browse Source",
+            "--topic",
+            "agent-engineering/agent-harness",
+            "--resource",
+            "https://example.test/browse",
+            "--summary",
+            "Browse summary.",
+            "--tag",
+            "Agent Harness",
+        ]
+    )
+    capsys.readouterr()
+
+    tag_code = main(["search", "--workspace", str(tmp_path), "--tags", "--json"])
+    tag_output = capsys.readouterr()
+    filtered_code = main(
+        [
+            "search",
+            "--workspace",
+            str(tmp_path),
+            "--tag",
+            "agent-harness",
+            "--topic",
+            "agent-harness",
+            "--platform",
+            "web",
+            "--type",
+            "Source",
+            "--json",
+        ]
+    )
+    filtered_output = capsys.readouterr()
+    recent_code = main(["search", "--workspace", str(tmp_path), "--recent", "1", "--json"])
+    recent_output = capsys.readouterr()
+
+    assert tag_code == 0
+    assert any(row["tag"] == "agent-harness" for row in json.loads(tag_output.out))
+    assert filtered_code == 0
+    assert json.loads(filtered_output.out)[0]["title"] == "Browse Source"
+    assert recent_code == 0
+    assert len(json.loads(recent_output.out)) == 1
+
+
+def test_cli_search_unindexed_returns_validation_issues(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+    broken = tmp_path / "knowledge" / "concepts" / "broken.md"
+    broken.parent.mkdir(parents=True)
+    broken.write_text(
+        "---\n"
+        "type: Knowledge Concept\n"
+        "title: Broken\n"
+        "source_refs:\n"
+        "  - /sources/missing.md\n"
+        "---\n"
+        "# Broken\n",
+        encoding="utf-8",
+    )
+
+    code = main(["search", "--workspace", str(tmp_path), "--unindexed", "--json"])
+    captured = capsys.readouterr()
+
+    assert code == 1
+    assert any(
+        issue["kind"] == "dead_source_ref"
+        for issue in json.loads(captured.out)["issues"]
+    )
+
+
 def test_cli_inbox_note_moves_item_and_prints_paths(tmp_path, capsys):
     main(["init", str(tmp_path)])
     capsys.readouterr()
@@ -399,7 +482,13 @@ def test_cli_inbox_archive_supports_supersede_no_auto_tags_and_validate(tmp_path
         tmp_path,
         "web",
         "20260707-same-source",
-        {"article.md": "# Same Source\n\nSource URL: https://example.test/same\n\nSame Source body."},
+        {
+            "article.md": (
+                "# Same Source\n\n"
+                "Source URL: https://example.test/same\n\n"
+                "Same Source body."
+            )
+        },
     )
 
     code = main(

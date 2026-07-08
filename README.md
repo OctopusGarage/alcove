@@ -17,9 +17,18 @@ Deferred modules include Pins, Tasks, Mounts, the Apple Notes connector, and the
 uv run alcove init .
 uv run alcove status .
 uv run alcove inbox --workspace . peek
+uv run alcove inbox --workspace . read web/example
 uv run alcove knowledge --workspace . note-source --platform xhs --title "Example" --topic agent-engineering/agent-harness --summary "Summary"
 uv run alcove search "Example" --workspace .
+uv run alcove search --workspace . --tags
+uv run alcove search --workspace . --recent 10
+uv run alcove search --workspace . --tag agent-harness --platform web --json
+uv run alcove search --workspace . --unindexed --json
 ```
+
+Alcove inbox folders can contain Clipsmith capture bundles. When `capture.json`
+is present, Alcove uses it as fallback metadata for title, source URL, and date
+while keeping Markdown files as the human-readable review surface.
 
 ## Design
 

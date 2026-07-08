@@ -25,14 +25,18 @@ def test_search_finds_knowledge_doc_by_body_text_from_note_source(tmp_path):
 
     rows = SearchModule(workspace).search(SearchRequest(query="调用路径"))
 
-    assert {
-        "root": "knowledge",
-        "type": "Source",
-        "title": "代码图谱",
-        "topic": "agent-harness",
-        "tags": ["code-intelligence"],
-        "path": "sources/web/agent-engineering/代码图谱.md",
-    } in rows
+    assert any(
+        {
+            "root": "knowledge",
+            "type": "Source",
+            "title": "代码图谱",
+            "topic": "agent-harness",
+            "tags": ["code-intelligence"],
+            "path": "sources/web/agent-engineering/代码图谱.md",
+        }.items()
+        <= row.items()
+        for row in rows
+    )
     json.dumps(rows, ensure_ascii=False)
 
 
@@ -214,6 +218,54 @@ def test_search_empty_query_matches_all_docs_subject_to_limit_and_skips_reserved
     assert SearchModule(workspace).search(SearchRequest(query="", limit=0)) == []
 
 
+def test_search_browse_modes_skip_infrastructure_docs_by_default(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    repo = MarkdownRepository()
+    knowledge = workspace.paths().knowledge
+    repo.write_doc(
+        knowledge / "sources" / "web" / "source.md",
+        MarkdownDoc(
+            frontmatter={
+                "type": "Source",
+                "title": "Source",
+                "topic": "agent-harness",
+                "tags": ["agent-harness"],
+                "published_date": "2026-07-08",
+            },
+            body="# Source\n\nNeedle.\n",
+        ),
+    )
+    for doc_type, path in [
+        ("Tag", "tags/agent-harness.md"),
+        ("Topic", "topics/agent-engineering/agent-harness.md"),
+        ("Domain", "domains/agent-engineering.md"),
+    ]:
+        repo.write_doc(
+            knowledge / path,
+            MarkdownDoc(
+                frontmatter={
+                    "type": doc_type,
+                    "title": doc_type,
+                    "tags": ["taxonomy"],
+                    "created_at": "2026-07-09",
+                },
+                body=f"# {doc_type}\n\nNeedle.\n",
+            ),
+        )
+
+    module = SearchModule(workspace)
+
+    assert [row["title"] for row in module.search(SearchRequest(query="needle"))] == [
+        "Source"
+    ]
+    assert module.tags() == [{"tag": "agent-harness", "count": 1}]
+    assert [row["title"] for row in module.recent(10)] == ["Source"]
+    assert [
+        row["title"]
+        for row in module.search(SearchRequest(query="needle", type_filter="Tag"))
+    ] == ["Tag"]
+
+
 def test_search_uses_path_stem_when_title_missing_and_skips_docs_without_path(tmp_path):
     workspace = Workspace.init(tmp_path)
 
@@ -234,16 +286,15 @@ def test_search_uses_path_stem_when_title_missing_and_skips_docs_without_path(tm
 
     rows = SearchModule(workspace, repo=PathlessRepository()).search(SearchRequest(query="needle"))
 
-    assert rows == [
-        {
-            "root": "knowledge",
-            "type": "Source",
-            "title": "untitled-doc",
-            "topic": "topic",
-            "tags": ["tag"],
-            "path": "untitled-doc.md",
-        }
-    ]
+    assert len(rows) == 1
+    assert {
+        "root": "knowledge",
+        "type": "Source",
+        "title": "untitled-doc",
+        "topic": "topic",
+        "tags": ["tag"],
+        "path": "untitled-doc.md",
+    }.items() <= rows[0].items()
 
 
 def test_search_rows_coerce_frontmatter_values_to_json_safe_schema(tmp_path):
@@ -268,14 +319,137 @@ def test_search_rows_coerce_frontmatter_values_to_json_safe_schema(tmp_path):
         SearchRequest(query="needle")
     )
 
+    assert len(rows) == 1
+    assert {
+        "root": "knowledge",
+        "type": "123",
+        "title": "2026-07-07",
+        "topic": "456",
+        "tags": ["tag", "2026-07-08"],
+        "path": "native-values.md",
+    }.items() <= rows[0].items()
+    json.dumps(rows, ensure_ascii=False)
+
+
+def test_search_filters_by_platform_status_confidence_and_date(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    repo = MarkdownRepository()
+    knowledge = workspace.paths().knowledge
+    rows = [
+        {
+            "path": "match.md",
+            "platform": "web",
+            "status": "active",
+            "confidence": 0.9,
+            "published_date": "2026-07-07",
+            "title": "Matching",
+        },
+        {
+            "path": "wrong-platform.md",
+            "platform": "x",
+            "status": "active",
+            "confidence": 0.9,
+            "published_date": "2026-07-07",
+            "title": "Wrong Platform",
+        },
+        {
+            "path": "wrong-status.md",
+            "platform": "web",
+            "status": "superseded",
+            "confidence": 0.9,
+            "published_date": "2026-07-07",
+            "title": "Wrong Status",
+        },
+        {
+            "path": "low-confidence.md",
+            "platform": "web",
+            "status": "active",
+            "confidence": 0.4,
+            "published_date": "2026-07-07",
+            "title": "Low Confidence",
+        },
+        {
+            "path": "outside-date.md",
+            "platform": "web",
+            "status": "active",
+            "confidence": 0.9,
+            "published_date": "2026-06-30",
+            "title": "Outside Date",
+        },
+        {
+            "path": "missing-date.md",
+            "platform": "web",
+            "status": "active",
+            "confidence": 0.9,
+            "title": "Missing Date",
+        },
+    ]
+    for item in rows:
+        frontmatter = {
+            "type": "Source",
+            "title": item["title"],
+            "topic": "agent-harness",
+            "tags": ["agent-harness"],
+            "platform": item["platform"],
+            "status": item["status"],
+            "confidence": item["confidence"],
+        }
+        if "published_date" in item:
+            frontmatter["published_date"] = item["published_date"]
+        repo.write_doc(
+            knowledge / "sources" / "web" / item["path"],
+            MarkdownDoc(frontmatter=frontmatter, body="# Source\n\nNeedle.\n"),
+        )
+
+    results = SearchModule(workspace).search(
+        SearchRequest(
+            query="needle",
+            platform="web",
+            status="active",
+            min_confidence=0.8,
+            date_from="2026-07-01",
+            date_to="2026-07-31",
+        )
+    )
+
+    assert [row["title"] for row in results] == ["Matching"]
+
+
+def test_tag_doctor_reports_normalized_tag_variants(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    repo = MarkdownRepository()
+    knowledge = workspace.paths().knowledge
+    repo.write_doc(
+        knowledge / "sources" / "web" / "english.md",
+        MarkdownDoc(
+            frontmatter={
+                "type": "Source",
+                "title": "English",
+                "topic": "agent-harness",
+                "tags": ["code-intelligence"],
+            },
+            body="# English\n",
+        ),
+    )
+    repo.write_doc(
+        knowledge / "sources" / "web" / "alias.md",
+        MarkdownDoc(
+            frontmatter={
+                "type": "Source",
+                "title": "Alias",
+                "topic": "agent-harness",
+                "tags": ["代码图谱"],
+            },
+            body="# Alias\n",
+        ),
+    )
+
+    rows = SearchModule(workspace).tag_doctor()
+
     assert rows == [
         {
-            "root": "knowledge",
-            "type": "123",
-            "title": "2026-07-07",
-            "topic": "456",
-            "tags": ["tag", "2026-07-08"],
-            "path": "native-values.md",
+            "canonical": "code-intelligence",
+            "variants": ["code-intelligence", "代码图谱"],
+            "count": 2,
         }
     ]
-    json.dumps(rows, ensure_ascii=False)

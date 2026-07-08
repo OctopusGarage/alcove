@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from pathlib import Path
 import re
 import shutil
@@ -57,7 +58,9 @@ class InboxProcessResult:
 
 
 class InboxModule:
-    def __init__(self, workspace: Workspace, knowledge: KnowledgeModule | None = None) -> None:
+    def __init__(
+        self, workspace: Workspace, knowledge: KnowledgeModule | None = None
+    ) -> None:
         self.workspace = workspace
         self.paths = workspace.paths()
         self.knowledge = knowledge or KnowledgeModule(workspace)
@@ -75,7 +78,9 @@ class InboxModule:
         post = self.read(request.name)
         archive_path = self._archive_post(post, request.topic)
         archive_reference = self._legacy_path(archive_path)
-        tags = self._resolve_tags(post, request.topic, request.tags, request.no_auto_tags)
+        tags = self._resolve_tags(
+            post, request.topic, request.tags, request.no_auto_tags
+        )
         confidence = self._score_confidence(post)
         supersedes = self._similar_sources_to_supersede(
             post,
@@ -180,7 +185,11 @@ class InboxModule:
     def delete(self, name: str, confirm: bool = False) -> dict:
         post = self.read(name)
         if not confirm:
-            return {"status": "preview", "path": str(post.path), "confirm_required": True}
+            return {
+                "status": "preview",
+                "path": str(post.path),
+                "confirm_required": True,
+            }
         shutil.rmtree(post.path)
         return {"status": "deleted", "path": str(post.path)}
 
@@ -212,7 +221,9 @@ class InboxModule:
         if not matches:
             raise FileNotFoundError(f"Inbox item not found: {name}")
         if len(matches) > 1:
-            identifiers = ", ".join(f"{entry.parent.name}/{entry.name}" for entry in matches)
+            identifiers = ", ".join(
+                f"{entry.parent.name}/{entry.name}" for entry in matches
+            )
             raise ValueError(
                 f"Ambiguous inbox item {name!r}; use platform/name. Matches: {identifiers}"
             )
@@ -234,9 +245,9 @@ class InboxModule:
             raise ValueError(f"Invalid inbox identifier {name!r}")
 
         platform, item_name = parts
-        if self._invalid_identifier_component(platform) or self._invalid_identifier_component(
-            item_name
-        ):
+        if self._invalid_identifier_component(
+            platform
+        ) or self._invalid_identifier_component(item_name):
             raise ValueError(f"Invalid inbox identifier {name!r}")
         return platform, item_name
 
@@ -245,21 +256,61 @@ class InboxModule:
 
     def _read_path(self, path: Path) -> InboxPost:
         platform = path.parent.name
+        metadata = self._capture_metadata(path)
         candidates = PLATFORM_READ_ORDER.get(platform, PLATFORM_READ_ORDER["fallback"])
-        content_path = next((path / name for name in candidates if (path / name).is_file()), None)
+        content_path = next(
+            (path / name for name in candidates if (path / name).is_file()), None
+        )
         if content_path is None:
             raise FileNotFoundError(f"No readable content file found in {path}")
         content = content_path.read_text(encoding="utf-8")
-        title = self._first_heading(content) or path.name
-        source = self._extract_source(content)
-        date = self._date_from_name(path.name)
-        return InboxPost(path.name, path, platform, title, source, date, content, content_path.name)
+        title = self._title_from_content_or_metadata(content, metadata, path.name)
+        source = self._extract_source(content) or self._metadata_string(
+            metadata, "source_url", "canonical_url"
+        )
+        date = self._date_from_name(path.name) or self._metadata_date(metadata)
+        return InboxPost(
+            path.name, path, platform, title, source, date, content, content_path.name
+        )
+
+    def _capture_metadata(self, path: Path) -> dict:
+        metadata_path = path / "capture.json"
+        if not metadata_path.is_file():
+            return {}
+        try:
+            data = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+        return data if isinstance(data, dict) else {}
 
     def _first_heading(self, content: str) -> str:
         for line in content.splitlines():
             if line.startswith("# "):
                 return line[2:].strip()
         return ""
+
+    def _title_from_content_or_metadata(
+        self, content: str, metadata: dict, fallback: str
+    ) -> str:
+        heading = self._first_heading(content)
+        metadata_title = self._metadata_string(metadata, "title")
+        if heading and heading.lower() not in {"summary", "article", "post", "content"}:
+            return heading
+        return metadata_title or heading or fallback
+
+    def _metadata_string(self, metadata: dict, *keys: str) -> str | None:
+        for key in keys:
+            value = metadata.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    def _metadata_date(self, metadata: dict) -> str | None:
+        for key in ("published_at", "captured_at"):
+            value = self._metadata_string(metadata, key)
+            if value and re.match(r"^\d{4}-\d{2}-\d{2}", value):
+                return value[:10]
+        return None
 
     def _extract_source(self, content: str) -> str | None:
         for line in content.splitlines():
