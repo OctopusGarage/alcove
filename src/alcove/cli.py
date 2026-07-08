@@ -8,6 +8,7 @@ from pathlib import Path
 
 from alcove import __version__
 from alcove.classify import ClassifyModule
+from alcove.connectors.apple_notes import AppleNotesConnector, AppleNotesImportRequest
 from alcove.doctor import DoctorModule
 from alcove.errors import AlcoveError
 from alcove.gardener import GardenerModule
@@ -223,6 +224,19 @@ def build_parser() -> argparse.ArgumentParser:
     mount_scan = mount_sub.add_parser("scan", help="Scan mounted sources")
     mount_scan.add_argument("mount_id", nargs="?")
     mount_scan.add_argument("--json", action="store_true")
+
+    connector = sub.add_parser("connector", help="Work with external connectors")
+    connector.add_argument("--workspace", required=True)
+    connector_sub = connector.add_subparsers(dest="connector_command", required=True)
+    apple_notes = connector_sub.add_parser("apple-notes", help="Index Apple Notes exports")
+    apple_notes_sub = apple_notes.add_subparsers(dest="apple_notes_command", required=True)
+    apple_notes_index = apple_notes_sub.add_parser(
+        "index", help="Index a deterministic Apple Notes export directory"
+    )
+    apple_notes_index.add_argument("export_dir")
+    apple_notes_index.add_argument("--tag", action="append", default=[])
+    apple_notes_index.add_argument("--tags", default="")
+    apple_notes_index.add_argument("--json", action="store_true")
 
     serve = sub.add_parser("serve", help="Run Alcove local services")
     serve.add_argument("--mcp", action="store_true", help="Run the MCP server over stdio")
@@ -785,6 +799,31 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"scanned: {report['scanned']}, skipped: {report['skipped']}")
                 return 0
             return _argument_error(parser, "the following arguments are required: mount_command")
+        if args.command == "connector":
+            workspace = Workspace.discover(Path(args.workspace))
+            if args.connector_command == "apple-notes":
+                if args.apple_notes_command == "index":
+                    report = AppleNotesConnector(workspace).import_export(
+                        AppleNotesImportRequest(
+                            export_dir=args.export_dir,
+                            tags=_tags(args),
+                        )
+                    )
+                    if args.json:
+                        print(json.dumps(report, ensure_ascii=False, indent=2))
+                    else:
+                        print(
+                            f"indexed: {report['scanned']}, skipped: {report['skipped']}"
+                        )
+                    return 0
+                return _argument_error(
+                    parser,
+                    "the following arguments are required: apple_notes_command",
+                )
+            return _argument_error(
+                parser,
+                "the following arguments are required: connector_command",
+            )
         if args.command == "serve":
             if args.mcp:
                 run_mcp_server(args.workspace)

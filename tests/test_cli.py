@@ -547,6 +547,54 @@ def test_cli_mount_add_list_scan_and_search(tmp_path, capsys):
     assert json.loads(search_output.out)[0]["root"] == "mounts"
 
 
+def test_cli_connector_apple_notes_index_and_search(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+    export_dir = tmp_path / "apple-notes-export"
+    note_dir = export_dir / "notes" / "x-coredata%3A%2F%2Fnote-cli"
+    note_dir.mkdir(parents=True)
+    (note_dir / "note.json").write_text(
+        json.dumps(
+            {
+                "id": "x-coredata://note-cli",
+                "title": "CLI Apple Note",
+                "account": "iCloud",
+                "folder_path": "iCloud/Inbox",
+                "created_at": "2026-07-07T08:00:00Z",
+                "updated_at": "2026-07-08T09:00:00Z",
+                "plaintext": "CLI connector needle.",
+                "body_html": "<div>CLI connector needle.</div>",
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    index_code = main(
+        [
+            "connector",
+            "--workspace",
+            str(tmp_path),
+            "apple-notes",
+            "index",
+            str(export_dir),
+            "--tag",
+            "apple-notes",
+            "--json",
+        ]
+    )
+    index_output = capsys.readouterr()
+    search_code = main(["search", "connector needle", "--workspace", str(tmp_path), "--json"])
+    search_output = capsys.readouterr()
+
+    assert index_code == 0
+    assert json.loads(index_output.out)["scanned"] == 1
+    assert search_code == 0
+    assert json.loads(search_output.out)[0]["type"] == "Apple Note"
+
+
 def test_cli_inbox_note_moves_item_and_prints_paths(tmp_path, capsys):
     main(["init", str(tmp_path)])
     capsys.readouterr()

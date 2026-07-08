@@ -343,22 +343,21 @@ Connectors adapt external applications or services.
 
 V1 connector:
 
-- `apple-notes`: export-only, read-only.
+- `apple-notes`: indexes deterministic export directories, read-only.
 
 Interface:
 
 ```python
 class AppleNotesConnector:
-    def list_notes(self, request: ListAppleNotesRequest) -> list[AppleNoteSummary]
-    def search_notes(self, request: SearchAppleNotesRequest) -> list[AppleNoteSummary]
-    def export_all(self, request: ExportAppleNotesRequest) -> AppleNotesExportReport
+    def import_export(self, request: AppleNotesImportRequest) -> dict
 ```
 
 Rules:
 
 - macOS-only.
 - Use Apple Notes note id as identity.
-- Export deterministically.
+- Read `notes/<encoded-note-id>/note.json` from a deterministic export.
+- Store a rebuildable connector index under `.alcove/connectors/apple-notes/index.json`.
 - Never write to Apple Notes in v1.
 
 ### Search Module
@@ -420,6 +419,8 @@ alcove mount --workspace PATH add PATH [--name NAME] [--type local-folder|git-re
 alcove mount --workspace PATH list [--status active] [--json]
 alcove mount --workspace PATH scan [MOUNT_ID] [--json]
 
+alcove connector --workspace PATH apple-notes index EXPORT_DIR [--tag TAG] [--json]
+
 alcove serve --mcp --workspace PATH
 alcove install --workspace PATH [--target codex|claude|all] [--print] [--json]
 ```
@@ -438,6 +439,11 @@ pending tasks in `alcove search`.
 The current Mounts slice stores mount metadata in `mounts/mounts.json`, stores
 a rebuildable scan index in `mounts/index.json`, supports `local-folder` and
 `git-repo-local`, and includes scanned text items in `alcove search`.
+
+The current Apple Notes connector slice indexes existing deterministic Apple
+Notes export directories from `notes/<encoded-note-id>/note.json`, stores a
+rebuildable connector index in `.alcove/connectors/apple-notes/index.json`, and
+includes imported notes in `alcove search`. It does not call Notes.app directly.
 
 The current MCP slice uses FastMCP over stdio and exposes read-only
 `alcove_search`, `alcove_inbox_peek`, and `alcove_mount_list` tools.

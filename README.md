@@ -9,7 +9,8 @@ Alcove is a local-first personal information alcove for knowledge, pins, tasks, 
 - inbox peek and note processing
 - simple knowledge search
 
-Deferred modules include Pins, Tasks, Mounts, the Apple Notes connector, and the MCP server.
+Deferred modules include richer MCP write tools, routine materialization, and
+GitHub/star indexes.
 
 ## Commands
 
@@ -33,6 +34,7 @@ uv run alcove task --workspace . add "Wire MCP search" --priority high --tag mcp
 uv run alcove task --workspace . complete wire-mcp-search
 uv run alcove mount --workspace . add ~/programming/github --name github --type local-folder --tag repos
 uv run alcove mount --workspace . scan github --json
+uv run alcove connector --workspace . apple-notes index ~/exports/apple-notes --tag apple-notes --json
 uv run alcove serve --mcp --workspace .
 uv run alcove install --workspace . --target codex --print
 ```
@@ -49,6 +51,11 @@ are included in `alcove search` by default.
 
 Mounts let Alcove index external folders or local Git repositories without
 copying their content. Scanned mounted items are included in `alcove search`.
+
+The Apple Notes connector indexes deterministic export directories produced by
+the local Apple Notes skill contract: `notes/<encoded-note-id>/note.json`.
+Alcove does not write to Notes.app and does not require Notes automation
+permission for indexing an existing export.
 
 The MCP server runs over stdio with FastMCP and currently exposes read-only
 tools for search, inbox peek, and mount listing.

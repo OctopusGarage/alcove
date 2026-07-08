@@ -102,6 +102,15 @@ class SearchModule:
                 rows.append(row)
                 if len(rows) >= limit:
                     break
+        if request.type_filter in {None, "Apple Note"}:
+            for row in self._connector_rows():
+                if not self._matches_row_filters(row, request, tag_filter):
+                    continue
+                if query and query not in self._row_search_text(row):
+                    continue
+                rows.append(row)
+                if len(rows) >= limit:
+                    break
 
         return rows
 
@@ -308,6 +317,41 @@ class SearchModule:
             )
         return rows
 
+    def _connector_rows(self) -> list[dict]:
+        connectors_dir = self.paths.state / "connectors"
+        if not connectors_dir.is_dir():
+            return []
+        rows: list[dict] = []
+        for store in sorted(connectors_dir.glob("*/index.json"), key=lambda item: item.as_posix()):
+            try:
+                data = json.loads(store.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(data, dict):
+                continue
+            connector_id = str(data.get("connector") or store.parent.name)
+            for item in self._object_list(data.get("items")):
+                rel = str(item.get("relative_path") or "")
+                item_type = self._string_or_none(item.get("type")) or "Connector Item"
+                rows.append(
+                    {
+                        "root": "connectors",
+                        "type": item_type,
+                        "title": self._string_or_none(item.get("title")) or rel,
+                        "domain": self._string_or_none(item.get("account")),
+                        "topic": self._string_or_none(item.get("folder_path")),
+                        "platform": connector_id,
+                        "date": self._date(item),
+                        "tags": self._tags(item.get("tags")),
+                        "confidence": 0.5,
+                        "status": self._string_or_none(item.get("status")) or "active",
+                        "resource": self._string_or_none(item.get("path")),
+                        "notes": self._string_or_none(item.get("text")) or "",
+                        "path": f"connectors/{connector_id}#{rel}",
+                    }
+                )
+        return rows
+
     def _matches_row_filters(
         self,
         row: dict,
@@ -318,8 +362,15 @@ class SearchModule:
             row.get("tags")
         ):
             return False
-        if request.platform or request.topic:
+        if (
+            request.platform
+            and str(row.get("platform") or "").casefold() != request.platform.casefold()
+        ):
             return False
+        if request.topic:
+            row_topic = str(row.get("topic") or "").casefold()
+            if request.topic.casefold() not in row_topic:
+                return False
         if (
             request.status
             and str(row.get("status") or "").casefold() != request.status.casefold()
