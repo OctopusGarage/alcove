@@ -54,6 +54,19 @@ def test_cli_status_json_reports_workspace(tmp_path, capsys):
     assert data["root"] == str(tmp_path.resolve())
 
 
+def test_cli_doctor_json_reports_workspace_health(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+
+    code = main(["doctor", "--workspace", str(tmp_path), "--json"])
+    captured = capsys.readouterr()
+
+    payload = json.loads(captured.out)
+    assert code == 0
+    assert payload["status"] == "ok"
+    assert any(check["name"] == "workspace" for check in payload["checks"])
+
+
 def test_cli_init_existing_file_returns_controlled_error(tmp_path, capsys):
     target = tmp_path / "not-a-directory"
     target.write_text("content")

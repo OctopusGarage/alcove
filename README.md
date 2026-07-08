@@ -16,6 +16,7 @@ Deferred modules include Pins, Tasks, Mounts, the Apple Notes connector, and the
 ```sh
 uv run alcove init .
 uv run alcove status .
+uv run alcove doctor --workspace . --json
 uv run alcove inbox --workspace . peek
 uv run alcove inbox --workspace . read web/example
 uv run alcove knowledge --workspace . note-source --platform xhs --title "Example" --topic agent-engineering/agent-harness --summary "Summary"

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from alcove import __version__
 from alcove.classify import ClassifyModule
+from alcove.doctor import DoctorModule
 from alcove.errors import AlcoveError
 from alcove.gardener import GardenerModule
 from alcove.inbox import InboxModule, InboxNoteRequest
@@ -37,6 +38,10 @@ def build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status", help="Show workspace status")
     status.add_argument("path", nargs="?", default=".")
     status.add_argument("--json", action="store_true")
+
+    doctor = sub.add_parser("doctor", help="Check Alcove workspace health")
+    doctor.add_argument("--workspace", required=True)
+    doctor.add_argument("--json", action="store_true")
 
     inbox = sub.add_parser("inbox", help="Work with inbox items")
     inbox.add_argument("--workspace", required=True)
@@ -349,6 +354,17 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(f"Alcove workspace: {status['root']}")
             return 0
+        if args.command == "doctor":
+            report = DoctorModule(Workspace.discover(Path(args.workspace))).check()
+            if args.json:
+                print(json.dumps(report, ensure_ascii=False, indent=2))
+            else:
+                for check in report["checks"]:
+                    print(
+                        f"{check['status']} | {check['name']} | "
+                        f"{check.get('message', '')}"
+                    )
+            return 1 if report["status"] == "issues" else 0
         if args.command == "inbox":
             workspace = Workspace.discover(Path(args.workspace))
             inbox = InboxModule(workspace)

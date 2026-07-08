@@ -391,6 +391,7 @@ The current Phase 1 CLI in HEAD implements this narrower command set:
 ```bash
 alcove init [path]
 alcove status [path] [--json]
+alcove doctor --workspace PATH [--json]
 
 alcove inbox --workspace PATH peek
 alcove inbox --workspace PATH read NAME
