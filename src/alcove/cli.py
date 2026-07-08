@@ -21,6 +21,7 @@ from alcove.knowledge import (
 from alcove.lifecycle import LifecycleModule
 from alcove.pins import AddPinRequest, PinsModule
 from alcove.search import SearchModule, SearchRequest
+from alcove.tasks import AddIdeaRequest, AddTaskRequest, TasksModule
 from alcove.validate import ValidateModule
 from alcove.workspace import Workspace
 
@@ -158,6 +159,40 @@ def build_parser() -> argparse.ArgumentParser:
     pin_archive.add_argument("--confirm", action="store_true")
     pin_archive.add_argument("--json", action="store_true")
 
+    idea = sub.add_parser("idea", help="Work with low-friction ideas")
+    idea.add_argument("--workspace", required=True)
+    idea_sub = idea.add_subparsers(dest="idea_command", required=True)
+    idea_add = idea_sub.add_parser("add", help="Add an idea")
+    idea_add.add_argument("title")
+    idea_add.add_argument("--notes", default="")
+    idea_add.add_argument("--tag", action="append", default=[])
+    idea_add.add_argument("--tags", default="")
+    idea_add.add_argument("--json", action="store_true")
+    idea_list = idea_sub.add_parser("list", help="List ideas")
+    idea_list.add_argument("--status", default="active")
+    idea_list.add_argument("--json", action="store_true")
+
+    task = sub.add_parser("task", help="Work with personal tasks")
+    task.add_argument("--workspace", required=True)
+    task_sub = task.add_subparsers(dest="task_command", required=True)
+    task_add = task_sub.add_parser("add", help="Add a task")
+    task_add.add_argument("title")
+    task_add.add_argument("--notes", default="")
+    task_add.add_argument("--tag", action="append", default=[])
+    task_add.add_argument("--tags", default="")
+    task_add.add_argument("--priority", default="medium")
+    task_add.add_argument("--due", default="")
+    task_add.add_argument("--json", action="store_true")
+    task_list = task_sub.add_parser("list", help="List tasks")
+    task_list.add_argument("--status", default="pending")
+    task_list.add_argument("--json", action="store_true")
+    task_complete = task_sub.add_parser("complete", help="Complete a task")
+    task_complete.add_argument("task_id")
+    task_complete.add_argument("--json", action="store_true")
+    task_cancel = task_sub.add_parser("cancel", help="Cancel a task")
+    task_cancel.add_argument("task_id")
+    task_cancel.add_argument("--json", action="store_true")
+
     search = sub.add_parser("search", help="Search and browse knowledge")
     search.add_argument("query", nargs="?", default="")
     search.add_argument("--workspace", required=True)
@@ -254,6 +289,33 @@ def _pin_dict(pin) -> dict:
         "priority": pin.priority,
         "source_refs": pin.source_refs,
         "path": str(pin.path),
+    }
+
+
+def _idea_dict(idea) -> dict:
+    return {
+        "id": idea.id,
+        "title": idea.title,
+        "notes": idea.notes,
+        "tags": idea.tags,
+        "status": idea.status,
+        "created_at": idea.created_at,
+        "updated_at": idea.updated_at,
+    }
+
+
+def _task_dict(task) -> dict:
+    return {
+        "id": task.id,
+        "title": task.title,
+        "notes": task.notes,
+        "tags": task.tags,
+        "status": task.status,
+        "priority": task.priority,
+        "due": task.due,
+        "created_at": task.created_at,
+        "updated_at": task.updated_at,
+        "completed_at": task.completed_at,
     }
 
 
@@ -561,6 +623,73 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"{payload['status']}: {payload['path']}")
                 return 0
             return _argument_error(parser, "the following arguments are required: pin_command")
+        if args.command == "idea":
+            workspace = Workspace.discover(Path(args.workspace))
+            tasks = TasksModule(workspace)
+            if args.idea_command == "add":
+                idea = tasks.idea_add(
+                    AddIdeaRequest(
+                        title=args.title,
+                        notes=args.notes,
+                        tags=_tags(args),
+                    )
+                )
+                payload = {"status": "added", "idea": _idea_dict(idea)}
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"idea: {idea.id}")
+                return 0
+            if args.idea_command == "list":
+                results = [_idea_dict(idea) for idea in tasks.idea_list(args.status)]
+                if args.json:
+                    print(json.dumps(results, ensure_ascii=False, indent=2))
+                else:
+                    for idea in results:
+                        print(f"{idea['status']} | {idea['title']} | {idea['id']}")
+                return 0
+            return _argument_error(parser, "the following arguments are required: idea_command")
+        if args.command == "task":
+            workspace = Workspace.discover(Path(args.workspace))
+            tasks = TasksModule(workspace)
+            if args.task_command == "add":
+                task = tasks.task_add(
+                    AddTaskRequest(
+                        title=args.title,
+                        notes=args.notes,
+                        tags=_tags(args),
+                        priority=args.priority,
+                        due=args.due,
+                    )
+                )
+                payload = {"status": "added", "task": _task_dict(task)}
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"task: {task.id}")
+                return 0
+            if args.task_command == "list":
+                results = [_task_dict(task) for task in tasks.task_list(args.status)]
+                if args.json:
+                    print(json.dumps(results, ensure_ascii=False, indent=2))
+                else:
+                    for task in results:
+                        print(
+                            f"{task['priority']} | {task['status']} | "
+                            f"{task['title']} | {task['id']}"
+                        )
+                return 0
+            if args.task_command == "complete":
+                task = tasks.task_complete(args.task_id)
+                payload = {"status": "completed", "task": _task_dict(task)}
+                print(json.dumps(payload, ensure_ascii=False) if args.json else task.id)
+                return 0
+            if args.task_command == "cancel":
+                task = tasks.task_cancel(args.task_id)
+                payload = {"status": "cancelled", "task": _task_dict(task)}
+                print(json.dumps(payload, ensure_ascii=False) if args.json else task.id)
+                return 0
+            return _argument_error(parser, "the following arguments are required: task_command")
         if args.command == "validate":
             issues = ValidateModule(Workspace.discover(Path(args.workspace))).validate(
                 strict_quality=args.strict_quality

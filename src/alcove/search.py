@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+import json
 
 from alcove.markdown import MarkdownDoc, MarkdownRepository
 from alcove.taxonomy import (
@@ -81,6 +82,15 @@ class SearchModule:
                 if query and query not in self._search_text(doc):
                     continue
                 rows.append(self._pin_row(doc))
+                if len(rows) >= limit:
+                    break
+        if request.type_filter in {None, "Idea", "Task"}:
+            for row in self._task_rows(request.type_filter):
+                if not self._matches_row_filters(row, request, tag_filter):
+                    continue
+                if query and query not in self._row_search_text(row):
+                    continue
+                rows.append(row)
                 if len(rows) >= limit:
                     break
 
@@ -172,6 +182,9 @@ class SearchModule:
         title = str(doc.frontmatter.get("title") or "")
         return f"{title}\n{doc.body}".casefold()
 
+    def _row_search_text(self, row: dict) -> str:
+        return f"{row.get('title') or ''}\n{row.get('notes') or ''}".casefold()
+
     def _row(self, doc: MarkdownDoc) -> dict:
         frontmatter = doc.frontmatter
         assert doc.path is not None
@@ -210,6 +223,76 @@ class SearchModule:
             "path": f"pins/{doc.path.name}",
         }
 
+    def _task_rows(self, type_filter: str | None) -> list[dict]:
+        store = self.paths.tasks / "tasks.json"
+        if not store.is_file():
+            return []
+        try:
+            data = json.loads(store.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(data, dict):
+            return []
+        rows: list[dict] = []
+        if type_filter in {None, "Idea"}:
+            rows.extend(
+                self._task_item_row("Idea", item, "ideas")
+                for item in self._object_list(data.get("ideas"))
+                if item.get("status", "active") == "active"
+            )
+        if type_filter in {None, "Task"}:
+            rows.extend(
+                self._task_item_row("Task", item, "tasks")
+                for item in self._object_list(data.get("tasks"))
+                if item.get("status", "pending") == "pending"
+            )
+        return rows
+
+    def _task_item_row(self, item_type: str, item: dict, collection: str) -> dict:
+        item_id = str(item.get("id") or "")
+        return {
+            "root": "tasks",
+            "type": item_type,
+            "title": self._string_or_none(item.get("title")) or item_id,
+            "domain": None,
+            "topic": None,
+            "platform": None,
+            "date": self._date(item),
+            "tags": self._tags(item.get("tags")),
+            "confidence": 0.5,
+            "status": self._string_or_none(item.get("status")) or "active",
+            "resource": None,
+            "notes": self._string_or_none(item.get("notes")) or "",
+            "path": f"tasks/tasks.json#{collection}/{item_id}",
+        }
+
+    def _matches_row_filters(
+        self,
+        row: dict,
+        request: SearchRequest,
+        tag_filter: str | None,
+    ) -> bool:
+        if tag_filter is not None and tag_filter not in self._normalized_tags(
+            row.get("tags")
+        ):
+            return False
+        if request.platform or request.topic:
+            return False
+        if (
+            request.status
+            and str(row.get("status") or "").casefold() != request.status.casefold()
+        ):
+            return False
+        row_date = str(row.get("date") or "")
+        if request.date_from or request.date_to:
+            if not row_date:
+                return False
+        if request.date_from and row_date < request.date_from:
+            return False
+        if request.date_to and row_date > request.date_to:
+            return False
+        return True
+
     def _relative_path(self, doc: MarkdownDoc) -> str:
         assert doc.path is not None
         try:
@@ -246,6 +329,11 @@ class SearchModule:
         if value is None:
             return None
         return str(value)
+
+    def _object_list(self, value: object) -> list[dict]:
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, dict)]
 
     def _docs(self) -> list[MarkdownDoc]:
         return [

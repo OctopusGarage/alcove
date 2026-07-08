@@ -407,6 +407,13 @@ alcove search --workspace PATH --unindexed [--json]
 alcove pin --workspace PATH add TITLE [--description ...] [--tag TAG] [--priority high|medium|low]
 alcove pin --workspace PATH list [--tag TAG] [--status active|archived] [--json]
 alcove pin --workspace PATH archive PIN_ID [--confirm] [--json]
+
+alcove idea --workspace PATH add TITLE [--notes ...] [--tag TAG] [--json]
+alcove idea --workspace PATH list [--status active] [--json]
+alcove task --workspace PATH add TITLE [--notes ...] [--tag TAG] [--priority high|medium|low] [--due YYYY-MM-DD] [--json]
+alcove task --workspace PATH list [--status pending] [--json]
+alcove task --workspace PATH complete TASK_ID [--json]
+alcove task --workspace PATH cancel TASK_ID [--json]
 ```
 
 The current inbox reader also accepts Clipsmith capture bundles. If a bundle has
@@ -415,6 +422,10 @@ date, while preserving the existing platform-specific Markdown read order.
 
 The current Pins slice stores Markdown pins under `pins/`, supports add/list and
 previewable archive operations, and includes active pins in `alcove search`.
+
+The current Tasks slice stores ideas and tasks in `tasks/tasks.json`, supports
+idea add/list plus task add/list/complete/cancel, and includes active ideas plus
+pending tasks in `alcove search`.
 
 ### Planned Future CLI Surface
 

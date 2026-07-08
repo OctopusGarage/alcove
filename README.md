@@ -27,6 +27,9 @@ uv run alcove search --workspace . --unindexed --json
 uv run alcove pin --workspace . add "Japanese Edge Launcher" --description "Launch Edge with TZ=Asia/Tokyo" --tag app-launcher
 uv run alcove pin --workspace . list --tag app-launcher
 uv run alcove pin --workspace . archive japanese-edge-launcher --confirm
+uv run alcove idea --workspace . add "Review mount design" --notes "Local folders first" --tag mounts
+uv run alcove task --workspace . add "Wire MCP search" --priority high --tag mcp
+uv run alcove task --workspace . complete wire-mcp-search
 ```
 
 Alcove inbox folders can contain Clipsmith capture bundles. When `capture.json`
@@ -35,6 +38,9 @@ while keeping Markdown files as the human-readable review surface.
 
 Pins are small, high-value personal notes stored as Markdown under `pins/`.
 They are included in `alcove search` alongside knowledge docs by default.
+
+Ideas and tasks are stored in `tasks/tasks.json`. Active ideas and pending tasks
+are included in `alcove search` by default.
 
 ## Design
 

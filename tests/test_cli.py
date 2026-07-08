@@ -399,6 +399,66 @@ def test_cli_pin_add_list_archive_and_search(tmp_path, capsys):
     assert json.loads(archive_output.out)["status"] == "archived"
 
 
+def test_cli_idea_and_task_workflows(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+
+    idea_code = main(
+        [
+            "idea",
+            "--workspace",
+            str(tmp_path),
+            "add",
+            "Explore mounts",
+            "--notes",
+            "Index local repos later.",
+            "--tag",
+            "mounts",
+            "--json",
+        ]
+    )
+    idea_output = capsys.readouterr()
+    task_code = main(
+        [
+            "task",
+            "--workspace",
+            str(tmp_path),
+            "add",
+            "Ship MCP server",
+            "--notes",
+            "Expose search first.",
+            "--tag",
+            "mcp",
+            "--priority",
+            "high",
+            "--json",
+        ]
+    )
+    task_output = capsys.readouterr()
+    list_code = main(["task", "--workspace", str(tmp_path), "list", "--json"])
+    list_output = capsys.readouterr()
+    complete_code = main(
+        [
+            "task",
+            "--workspace",
+            str(tmp_path),
+            "complete",
+            "ship-mcp-server",
+            "--json",
+        ]
+    )
+    complete_output = capsys.readouterr()
+
+    assert idea_code == 0
+    assert json.loads(idea_output.out)["idea"]["id"] == "explore-mounts"
+    assert task_code == 0
+    assert json.loads(task_output.out)["task"]["priority"] == "high"
+    assert list_code == 0
+    assert json.loads(list_output.out)[0]["title"] == "Ship MCP server"
+    assert complete_code == 0
+    assert json.loads(complete_output.out)["task"]["status"] == "done"
+
+
 def test_cli_inbox_note_moves_item_and_prints_paths(tmp_path, capsys):
     main(["init", str(tmp_path)])
     capsys.readouterr()
