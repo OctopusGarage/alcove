@@ -24,11 +24,17 @@ uv run alcove search --workspace . --tags
 uv run alcove search --workspace . --recent 10
 uv run alcove search --workspace . --tag agent-harness --platform web --json
 uv run alcove search --workspace . --unindexed --json
+uv run alcove pin --workspace . add "Japanese Edge Launcher" --description "Launch Edge with TZ=Asia/Tokyo" --tag app-launcher
+uv run alcove pin --workspace . list --tag app-launcher
+uv run alcove pin --workspace . archive japanese-edge-launcher --confirm
 ```
 
 Alcove inbox folders can contain Clipsmith capture bundles. When `capture.json`
 is present, Alcove uses it as fallback metadata for title, source URL, and date
 while keeping Markdown files as the human-readable review surface.
+
+Pins are small, high-value personal notes stored as Markdown under `pins/`.
+They are included in `alcove search` alongside knowledge docs by default.
 
 ## Design
 

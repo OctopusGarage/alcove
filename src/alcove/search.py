@@ -70,6 +70,19 @@ class SearchModule:
             rows.append(self._row(doc))
             if len(rows) >= limit:
                 break
+        if request.type_filter in {None, "Pin"}:
+            for doc in self.repo.list_docs(self.paths.pins, type_filter="Pin"):
+                if doc.path is None:
+                    continue
+                if not self._is_under(doc.path, self.paths.pins):
+                    continue
+                if not self._matches_filters(doc, request, tag_filter, topic_filter):
+                    continue
+                if query and query not in self._search_text(doc):
+                    continue
+                rows.append(self._pin_row(doc))
+                if len(rows) >= limit:
+                    break
 
         return rows
 
@@ -178,6 +191,25 @@ class SearchModule:
             "path": self._relative_path(doc),
         }
 
+    def _pin_row(self, doc: MarkdownDoc) -> dict:
+        frontmatter = doc.frontmatter
+        assert doc.path is not None
+        title = self._string_or_none(frontmatter.get("title")) or doc.path.stem
+        return {
+            "root": "pins",
+            "type": "Pin",
+            "title": title,
+            "domain": None,
+            "topic": None,
+            "platform": None,
+            "date": self._date(frontmatter),
+            "tags": self._tags(frontmatter.get("tags")),
+            "confidence": 0.5,
+            "status": self._string_or_none(frontmatter.get("status")) or "active",
+            "resource": None,
+            "path": f"pins/{doc.path.name}",
+        }
+
     def _relative_path(self, doc: MarkdownDoc) -> str:
         assert doc.path is not None
         try:
@@ -224,6 +256,13 @@ class SearchModule:
 
     def _is_infrastructure_doc(self, doc: MarkdownDoc) -> bool:
         return str(doc.frontmatter.get("type") or "") in INFRASTRUCTURE_TYPES
+
+    def _is_under(self, path, root) -> bool:
+        try:
+            path.relative_to(root)
+            return True
+        except ValueError:
+            return False
 
     def _date(self, frontmatter: dict) -> str:
         value = (

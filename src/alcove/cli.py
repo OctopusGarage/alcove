@@ -19,6 +19,7 @@ from alcove.knowledge import (
     NoteSourceRequest,
 )
 from alcove.lifecycle import LifecycleModule
+from alcove.pins import AddPinRequest, PinsModule
 from alcove.search import SearchModule, SearchRequest
 from alcove.validate import ValidateModule
 from alcove.workspace import Workspace
@@ -136,6 +137,27 @@ def build_parser() -> argparse.ArgumentParser:
     gardener.add_argument("--prune", action="store_true")
     gardener.add_argument("--json", action="store_true")
 
+    pin = sub.add_parser("pin", help="Work with pinned personal notes")
+    pin.add_argument("--workspace", required=True)
+    pin_sub = pin.add_subparsers(dest="pin_command", required=True)
+    pin_add = pin_sub.add_parser("add", help="Add a pinned personal note")
+    pin_add.add_argument("title")
+    pin_add.add_argument("--description", default="")
+    pin_add.add_argument("--tag", action="append", default=[])
+    pin_add.add_argument("--tags", default="")
+    pin_add.add_argument("--priority", default="medium")
+    pin_add.add_argument("--source-ref", action="append", default=[])
+    pin_add.add_argument("--source-refs", default="")
+    pin_add.add_argument("--json", action="store_true")
+    pin_list = pin_sub.add_parser("list", help="List pinned personal notes")
+    pin_list.add_argument("--tag")
+    pin_list.add_argument("--status", default="active")
+    pin_list.add_argument("--json", action="store_true")
+    pin_archive = pin_sub.add_parser("archive", help="Archive a pin")
+    pin_archive.add_argument("pin_id")
+    pin_archive.add_argument("--confirm", action="store_true")
+    pin_archive.add_argument("--json", action="store_true")
+
     search = sub.add_parser("search", help="Search and browse knowledge")
     search.add_argument("query", nargs="?", default="")
     search.add_argument("--workspace", required=True)
@@ -220,6 +242,19 @@ def _print_search_rows(rows: list[dict]) -> None:
             f"{row.get('type')} | {row.get('topic')} | "
             f"{row.get('title')} | {row.get('path')}"
         )
+
+
+def _pin_dict(pin) -> dict:
+    return {
+        "id": pin.id,
+        "title": pin.title,
+        "description": pin.description,
+        "tags": pin.tags,
+        "status": pin.status,
+        "priority": pin.priority,
+        "source_refs": pin.source_refs,
+        "path": str(pin.path),
+    }
 
 
 def _argument_error(parser: argparse.ArgumentParser, message: str) -> int:
@@ -484,6 +519,48 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 _print_search_rows(results)
             return 0
+        if args.command == "pin":
+            workspace = Workspace.discover(Path(args.workspace))
+            pins = PinsModule(workspace)
+            if args.pin_command == "add":
+                result = pins.add(
+                    AddPinRequest(
+                        title=args.title,
+                        description=args.description,
+                        tags=_tags(args),
+                        priority=args.priority,
+                        source_refs=_refs(args),
+                    )
+                )
+                payload = {
+                    "status": "pinned",
+                    "path": str(result.path),
+                    "pin": _pin_dict(result.pin),
+                }
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    _print_path("pin", result.path)
+                return 0
+            if args.pin_command == "list":
+                results = [_pin_dict(pin) for pin in pins.list(args.tag, args.status)]
+                if args.json:
+                    print(json.dumps(results, ensure_ascii=False, indent=2))
+                else:
+                    for pin in results:
+                        print(
+                            f"{pin['priority']} | {pin['status']} | "
+                            f"{pin['title']} | {pin['path']}"
+                        )
+                return 0
+            if args.pin_command == "archive":
+                payload = pins.archive(args.pin_id, confirm=args.confirm)
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"{payload['status']}: {payload['path']}")
+                return 0
+            return _argument_error(parser, "the following arguments are required: pin_command")
         if args.command == "validate":
             issues = ValidateModule(Workspace.discover(Path(args.workspace))).validate(
                 strict_quality=args.strict_quality

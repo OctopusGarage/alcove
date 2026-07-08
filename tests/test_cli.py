@@ -347,6 +347,58 @@ def test_cli_search_unindexed_returns_validation_issues(tmp_path, capsys):
     )
 
 
+def test_cli_pin_add_list_archive_and_search(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+
+    add_code = main(
+        [
+            "pin",
+            "--workspace",
+            str(tmp_path),
+            "add",
+            "Pinned Snippet",
+            "--description",
+            "Use Alcove for durable personal notes.",
+            "--tag",
+            "personal-notes",
+            "--priority",
+            "high",
+            "--json",
+        ]
+    )
+    add_output = capsys.readouterr()
+    list_code = main(
+        ["pin", "--workspace", str(tmp_path), "list", "--tag", "personal-notes", "--json"]
+    )
+    list_output = capsys.readouterr()
+    search_code = main(
+        ["search", "durable", "--workspace", str(tmp_path), "--json"]
+    )
+    search_output = capsys.readouterr()
+    archive_code = main(
+        [
+            "pin",
+            "--workspace",
+            str(tmp_path),
+            "archive",
+            "pinned-snippet",
+            "--confirm",
+            "--json",
+        ]
+    )
+    archive_output = capsys.readouterr()
+
+    assert add_code == 0
+    assert json.loads(add_output.out)["status"] == "pinned"
+    assert list_code == 0
+    assert json.loads(list_output.out)[0]["title"] == "Pinned Snippet"
+    assert search_code == 0
+    assert json.loads(search_output.out)[0]["root"] == "pins"
+    assert archive_code == 0
+    assert json.loads(archive_output.out)["status"] == "archived"
+
+
 def test_cli_inbox_note_moves_item_and_prints_paths(tmp_path, capsys):
     main(["init", str(tmp_path)])
     capsys.readouterr()

@@ -403,11 +403,18 @@ alcove search --workspace PATH --tags [--json]
 alcove search --workspace PATH --tag-doctor [--json]
 alcove search --workspace PATH --recent N [--json]
 alcove search --workspace PATH --unindexed [--json]
+
+alcove pin --workspace PATH add TITLE [--description ...] [--tag TAG] [--priority high|medium|low]
+alcove pin --workspace PATH list [--tag TAG] [--status active|archived] [--json]
+alcove pin --workspace PATH archive PIN_ID [--confirm] [--json]
 ```
 
 The current inbox reader also accepts Clipsmith capture bundles. If a bundle has
 `capture.json`, Alcove treats it as fallback metadata for title, source URL, and
 date, while preserving the existing platform-specific Markdown read order.
+
+The current Pins slice stores Markdown pins under `pins/`, supports add/list and
+previewable archive operations, and includes active pins in `alcove search`.
 
 ### Planned Future CLI Surface
 
