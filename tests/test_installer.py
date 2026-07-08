@@ -55,3 +55,66 @@ def test_installer_print_config_does_not_write_files(tmp_path, monkeypatch):
     assert '"alcove"' in result["configs"]["claude"]
     assert not (home / ".codex" / "config.toml").exists()
     assert not (home / ".claude.json").exists()
+
+
+def test_installer_status_reports_installed_workspace_match(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    workspace = Workspace.init(tmp_path / "workspace")
+    installer = InstallerModule(workspace)
+    installer.install(["codex", "claude"])
+
+    result = installer.status(["all"])
+
+    assert result["workspace"] == str(workspace.root)
+    assert {item["target"] for item in result["files"]} == {"codex", "claude"}
+    assert all(item["installed"] for item in result["files"])
+    assert all(item["workspace_match"] for item in result["files"])
+
+
+def test_installer_uninstall_removes_only_alcove_config(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    codex_config = home / ".codex" / "config.toml"
+    codex_config.parent.mkdir(parents=True)
+    codex_config.write_text(
+        "[mcp_servers.other]\ncommand = \"other\"\n\n"
+        "[mcp_servers.alcove]\ncommand = \"alcove\"\nargs = [\"serve\"]\n",
+        encoding="utf-8",
+    )
+    claude_config = home / ".claude.json"
+    claude_config.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "other": {"command": "other"},
+                    "alcove": {"command": "alcove", "args": ["serve"]},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    workspace = Workspace.init(tmp_path / "workspace")
+
+    result = InstallerModule(workspace).uninstall(["all"])
+
+    assert {item["action"] for item in result["files"]} == {"removed"}
+    assert "[mcp_servers.other]" in codex_config.read_text(encoding="utf-8")
+    assert "[mcp_servers.alcove]" not in codex_config.read_text(encoding="utf-8")
+    payload = json.loads(claude_config.read_text(encoding="utf-8"))
+    assert payload["mcpServers"] == {"other": {"command": "other"}}
+
+
+def test_installer_uninstall_dry_run_does_not_write_files(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    workspace = Workspace.init(tmp_path / "workspace")
+    installer = InstallerModule(workspace)
+    installer.install(["codex"])
+    config = home / ".codex" / "config.toml"
+    before = config.read_text(encoding="utf-8")
+
+    result = installer.uninstall(["codex"], dry_run=True)
+
+    assert result["files"][0]["action"] == "removed"
+    assert config.read_text(encoding="utf-8") == before

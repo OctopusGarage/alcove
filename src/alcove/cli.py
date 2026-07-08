@@ -51,6 +51,8 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument("--workspace", required=True)
     install.add_argument("--target", action="append", default=["all"])
     install.add_argument("--print", dest="print_config", action="store_true")
+    install.add_argument("--status", action="store_true")
+    install.add_argument("--uninstall", action="store_true")
     install.add_argument("--json", action="store_true")
 
     inbox = sub.add_parser("inbox", help="Work with inbox items")
@@ -411,18 +413,27 @@ def main(argv: list[str] | None = None) -> int:
             return 1 if report["status"] == "issues" else 0
         if args.command == "install":
             workspace = Workspace.discover(Path(args.workspace))
-            result = InstallerModule(workspace).install(
-                args.target,
-                dry_run=args.print_config,
-            )
+            installer = InstallerModule(workspace)
+            if args.status:
+                result = installer.status(args.target)
+            elif args.uninstall:
+                result = installer.uninstall(args.target, dry_run=args.print_config)
+            else:
+                result = installer.install(
+                    args.target,
+                    dry_run=args.print_config,
+                )
             if args.json:
                 print(json.dumps(result, ensure_ascii=False, indent=2))
-            elif args.print_config:
+            elif args.print_config and "configs" in result:
                 for target, config in result["configs"].items():
                     print(f"# {target}\n{config}")
             else:
                 for file in result["files"]:
-                    print(f"{file['target']} | {file['action']} | {file['path']}")
+                    action = file.get("action")
+                    if action is None:
+                        action = "installed" if file.get("installed") else "not_found"
+                    print(f"{file['target']} | {action} | {file['path']}")
             return 0
         if args.command == "inbox":
             workspace = Workspace.discover(Path(args.workspace))

@@ -31,6 +31,24 @@ class InstallerModule:
                 files.append(self._write_claude())
         return {"workspace": str(self.workspace.root), "files": files, "configs": configs}
 
+    def status(self, targets: list[str]) -> dict:
+        files = []
+        for target in self._targets(targets):
+            if target == "codex":
+                files.append(self._codex_status())
+            elif target == "claude":
+                files.append(self._claude_status())
+        return {"workspace": str(self.workspace.root), "files": files}
+
+    def uninstall(self, targets: list[str], dry_run: bool = False) -> dict:
+        files = []
+        for target in self._targets(targets):
+            if target == "codex":
+                files.append(self._remove_codex(dry_run=dry_run))
+            elif target == "claude":
+                files.append(self._remove_claude(dry_run=dry_run))
+        return {"workspace": str(self.workspace.root), "files": files}
+
     def _targets(self, targets: list[str]) -> list[str]:
         if not targets or "all" in targets:
             return ["codex", "claude"]
@@ -64,7 +82,7 @@ class InstallerModule:
         raise ValueError(f"Unknown install target: {target}")
 
     def _write_codex(self) -> dict:
-        path = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))) / "config.toml"
+        path = self._codex_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         existing = path.read_text(encoding="utf-8") if path.is_file() else ""
         action = "updated" if existing else "created"
@@ -75,7 +93,7 @@ class InstallerModule:
         return {"target": "codex", "path": str(path), "action": action}
 
     def _write_claude(self) -> dict:
-        path = Path.home() / ".claude.json"
+        path = self._claude_path()
         existing = self._read_json(path)
         before = existing.get("mcpServers", {}).get("alcove")
         existing.setdefault("mcpServers", {})["alcove"] = self._mcp_config()
@@ -88,6 +106,66 @@ class InstallerModule:
             encoding="utf-8",
         )
         return {"target": "claude", "path": str(path), "action": action}
+
+    def _codex_status(self) -> dict:
+        path = self._codex_path()
+        existing = path.read_text(encoding="utf-8") if path.is_file() else ""
+        block = self._extract_toml_table(existing, "mcp_servers.alcove")
+        return {
+            "target": "codex",
+            "path": str(path),
+            "installed": bool(block),
+            "workspace_match": block == self._codex_block(),
+        }
+
+    def _claude_status(self) -> dict:
+        path = self._claude_path()
+        data = self._read_json(path)
+        server = data.get("mcpServers", {}).get("alcove")
+        return {
+            "target": "claude",
+            "path": str(path),
+            "installed": isinstance(server, dict),
+            "workspace_match": server == self._mcp_config(),
+        }
+
+    def _remove_codex(self, dry_run: bool = False) -> dict:
+        path = self._codex_path()
+        if not path.is_file():
+            return {"target": "codex", "path": str(path), "action": "not_found"}
+        existing = path.read_text(encoding="utf-8")
+        content, removed = self._remove_toml_table(existing, "mcp_servers.alcove")
+        if not removed:
+            return {"target": "codex", "path": str(path), "action": "not_found"}
+        if not dry_run:
+            path.write_text(content, encoding="utf-8")
+        return {"target": "codex", "path": str(path), "action": "removed"}
+
+    def _remove_claude(self, dry_run: bool = False) -> dict:
+        path = self._claude_path()
+        data = self._read_json(path)
+        servers = data.get("mcpServers")
+        if not isinstance(servers, dict) or "alcove" not in servers:
+            return {"target": "claude", "path": str(path), "action": "not_found"}
+        next_data = {
+            **data,
+            "mcpServers": {k: v for k, v in servers.items() if k != "alcove"},
+        }
+        if not dry_run:
+            path.write_text(
+                json.dumps(next_data, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        return {"target": "claude", "path": str(path), "action": "removed"}
+
+    def _codex_path(self) -> Path:
+        return (
+            Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+            / "config.toml"
+        )
+
+    def _claude_path(self) -> Path:
+        return Path.home() / ".claude.json"
 
     def _read_json(self, path: Path) -> dict:
         if not path.is_file():
@@ -128,3 +206,38 @@ class InstallerModule:
         else:
             next_lines = [*lines[:start], *block_lines, *lines[end:]]
         return "\n".join(next_lines).rstrip() + "\n"
+
+    def _extract_toml_table(self, existing: str, header: str) -> str:
+        lines = existing.splitlines()
+        start, end = self._toml_table_bounds(lines, header)
+        if start is None:
+            return ""
+        return "\n".join(lines[start:end]).rstrip() + "\n"
+
+    def _remove_toml_table(self, existing: str, header: str) -> tuple[str, bool]:
+        lines = existing.splitlines()
+        start, end = self._toml_table_bounds(lines, header)
+        if start is None:
+            return existing, False
+        next_lines = [*lines[:start], *lines[end:]]
+        while next_lines and not next_lines[-1].strip():
+            next_lines.pop()
+        return ("\n".join(next_lines).rstrip() + "\n") if next_lines else "", True
+
+    def _toml_table_bounds(
+        self,
+        lines: list[str],
+        header: str,
+    ) -> tuple[int | None, int]:
+        start = None
+        end = len(lines)
+        table_prefix = f"[{header}]"
+        for index, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped == table_prefix:
+                start = index
+                continue
+            if start is not None and index > start and stripped.startswith("["):
+                end = index
+                break
+        return start, end

@@ -422,7 +422,7 @@ alcove mount --workspace PATH scan [MOUNT_ID] [--json]
 alcove connector --workspace PATH apple-notes index EXPORT_DIR [--tag TAG] [--json]
 
 alcove serve --mcp --workspace PATH
-alcove install --workspace PATH [--target codex|claude|all] [--print] [--json]
+alcove install --workspace PATH [--target codex|claude|all] [--print] [--status] [--uninstall] [--json]
 ```
 
 The current inbox reader also accepts Clipsmith capture bundles. If a bundle has
@@ -452,7 +452,8 @@ The current MCP slice uses FastMCP over stdio and exposes the v1 tool set:
 
 The current installer slice writes MCP client configuration for Codex
 (`~/.codex/config.toml`) and Claude Code (`~/.claude.json`) and supports
-previewing the config with `--print`.
+previewing install/uninstall changes with `--print`, status checks, and removal
+of only Alcove's MCP entries while preserving other servers.
 
 ### Planned Future CLI Surface
 

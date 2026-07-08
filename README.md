@@ -37,6 +37,8 @@ uv run alcove mount --workspace . scan github --json
 uv run alcove connector --workspace . apple-notes index ~/exports/apple-notes --tag apple-notes --json
 uv run alcove serve --mcp --workspace .
 uv run alcove install --workspace . --target codex --print
+uv run alcove install --workspace . --target codex --status --json
+uv run alcove install --workspace . --target codex --uninstall --print
 ```
 
 Alcove inbox folders can contain Clipsmith capture bundles. When `capture.json`
@@ -62,7 +64,9 @@ inbox peek, source notes, topic lookup, pins, tasks, mount listing, and gardener
 health reports.
 
 `alcove install` writes MCP client config for Codex and Claude Code. Use
-`--print` to preview the exact config without writing files.
+`--print` to preview install or uninstall changes, `--status` to check whether
+the configured workspace matches, and `--uninstall` to remove only Alcove's MCP
+entry while preserving other servers.
 
 ## Design
 

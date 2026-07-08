@@ -103,6 +103,55 @@ def test_cli_install_prints_mcp_config_without_writing(tmp_path, monkeypatch, ca
     assert not (home / ".codex" / "config.toml").exists()
 
 
+def test_cli_install_status_and_uninstall(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+
+    install_code = main(
+        [
+            "install",
+            "--workspace",
+            str(tmp_path),
+            "--target",
+            "codex",
+            "--json",
+        ]
+    )
+    capsys.readouterr()
+    status_code = main(
+        [
+            "install",
+            "--workspace",
+            str(tmp_path),
+            "--target",
+            "codex",
+            "--status",
+            "--json",
+        ]
+    )
+    status_output = capsys.readouterr()
+    uninstall_code = main(
+        [
+            "install",
+            "--workspace",
+            str(tmp_path),
+            "--target",
+            "codex",
+            "--uninstall",
+            "--json",
+        ]
+    )
+    uninstall_output = capsys.readouterr()
+
+    assert install_code == 0
+    assert status_code == 0
+    assert json.loads(status_output.out)["files"][0]["installed"] is True
+    assert uninstall_code == 0
+    assert json.loads(uninstall_output.out)["files"][0]["action"] == "removed"
+
+
 def test_cli_init_existing_file_returns_controlled_error(tmp_path, capsys):
     target = tmp_path / "not-a-directory"
     target.write_text("content")
