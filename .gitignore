@@ -1,0 +1,48 @@
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.python-version
+.venv/
+venv/
+env/
+.tox/
+.nox/
+.hypothesis/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pytype/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Packaging
+dist/
+build/
+*.egg-info/
+
+# Local config / secrets
+.env
+.env.*
+!.env.example
+
+# Node / browser tooling used by optional local workflows
+node_modules/
+.playwright-cli/
+playwright-report/
+test-results/
+
+# Logs / local databases
+*.log
+*.sqlite
+*.sqlite3

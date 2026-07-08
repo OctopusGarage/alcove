@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc # v6.7.0
+
+      - name: Set up Python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Sync dependencies
+        run: uv sync --dev
+
+      - name: Run lint
+        run: uv run ruff check .
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Type check
+        run: uv run mypy
+
+      - name: Dependency vulnerability scan
+        if: matrix.os == 'ubuntu-latest'
+        run: uv run pip-audit
+
+      - name: Run tests
+        run: uv run pytest
+
+      - name: Compile Python
+        run: uv run python -m compileall -q src tests
+
+      - name: Build package
+        run: uv build
+
+  verify:
+    needs: checks
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All matrix checks passed
+        run: test "${{ needs.checks.result }}" = "success"

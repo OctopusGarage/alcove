@@ -1,0 +1,332 @@
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from alcove.inbox import InboxModule, InboxNoteRequest
+from alcove.markdown import MarkdownRepository
+from alcove.workspace import Workspace
+
+
+class RaisingKnowledge:
+    def note_source(self, request):
+        raise RuntimeError("knowledge write failed")
+
+
+def _write_post(root, platform, name, files):
+    folder = root / "inbox" / platform / name
+    folder.mkdir(parents=True)
+    for filename, content in files.items():
+        (folder / filename).write_text(content, encoding="utf-8")
+    return folder
+
+
+def _write_xhs_post(root, name):
+    return _write_post(
+        root,
+        "xhs",
+        name,
+        {
+            "post.md": "# short\n\n#tag",
+            "summary.md": ("# 代码图谱怎么选\n\n来源：https://example.test/xhs\n\n详细摘要"),
+        },
+    )
+
+
+def test_xhs_prefers_summary_over_sparse_post(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    _write_xhs_post(tmp_path, "20260707-new")
+
+    post = InboxModule(workspace).read("20260707-new")
+
+    assert post.title == "代码图谱怎么选"
+    assert post.content_source == "summary.md"
+    assert post.content == "# 代码图谱怎么选\n\n来源：https://example.test/xhs\n\n详细摘要"
+
+
+def test_peek_returns_oldest_across_platforms(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    _write_xhs_post(tmp_path, "20260707-new")
+    _write_post(tmp_path, "wechat", "no-date", {"article.md": "# No Date\n\nbody"})
+    _write_post(tmp_path, "web", "20260706-old", {"article.md": "# Old\n\nbody"})
+
+    post = InboxModule(workspace).peek()
+
+    assert post is not None
+    assert post.name == "20260706-old"
+    assert post.platform == "web"
+
+
+def test_peek_returns_none_when_inbox_empty(tmp_path):
+    workspace = Workspace.init(tmp_path)
+
+    assert InboxModule(workspace).peek() is None
+
+
+def test_add_manual_note_writes_readable_inbox_item(tmp_path):
+    workspace = Workspace.init(tmp_path)
+
+    result = InboxModule(workspace).add_manual(
+        title="Clipboard Note",
+        content="Copied text from another channel.",
+        source="chat://manual",
+    )
+    post = InboxModule(workspace).read("manual/clipboard-note")
+
+    assert result["status"] == "added"
+    assert result["path"] == str(tmp_path / "inbox" / "manual" / "clipboard-note")
+    assert (tmp_path / "inbox" / "manual" / "clipboard-note" / "note.md").is_file()
+    assert post.title == "Clipboard Note"
+    assert post.source == "chat://manual"
+    assert post.content_source == "note.md"
+
+
+def test_read_extracts_title_source_date_and_content_source(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    _write_post(
+        tmp_path,
+        "wechat",
+        "20260706-old",
+        {
+            "article.md": (
+                "intro\n# Extracted Title\n\nSource URL: https://example.test/source\n\nBody"
+            )
+        },
+    )
+
+    post = InboxModule(workspace).read("20260706-old")
+
+    assert post.title == "Extracted Title"
+    assert post.source == "https://example.test/source"
+    assert post.date == "2026-07-06"
+    assert post.content_source == "article.md"
+
+
+def test_read_uses_clipsmith_capture_metadata_as_fallback(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    _write_post(
+        tmp_path,
+        "web",
+        "clipsmith-web-bundle",
+        {
+            "summary.md": "# Summary\n\nBody without inline source.",
+            "capture.json": json.dumps(
+                {
+                    "schema": "clipsmith.capture_bundle.v1",
+                    "id": "clipsmith-web-bundle",
+                    "platform": "web",
+                    "source_url": "https://example.test/article",
+                    "canonical_url": "https://canonical.example.test/article",
+                    "title": "Clipsmith Article Title",
+                    "published_at": "2026-07-07",
+                    "content_files": [
+                        {
+                            "path": "summary.md",
+                            "kind": "summary",
+                            "required_for_review": True,
+                        }
+                    ],
+                    "assets": [],
+                    "warnings": [],
+                    "status": "complete",
+                }
+            ),
+        },
+    )
+
+    post = InboxModule(workspace).read("clipsmith-web-bundle")
+
+    assert post.title == "Clipsmith Article Title"
+    assert post.source == "https://example.test/article"
+    assert post.date == "2026-07-07"
+    assert post.content_source == "summary.md"
+
+
+def test_note_moves_post_to_archive_writes_source_concept_and_records_legacy_path(
+    tmp_path,
+):
+    workspace = Workspace.init(tmp_path)
+    _write_xhs_post(tmp_path, "20260706-old")
+    module = InboxModule(workspace)
+
+    result = module.note(
+        InboxNoteRequest(
+            name="20260706-old",
+            topic="agent-engineering/agent-harness",
+            summary="代码图谱选型要看索引准确性和 Agent 是否实际使用。",
+            tags=["agent-harness", "code-intelligence"],
+        )
+    )
+
+    assert result.archive_path == tmp_path / "archive" / "agent-harness" / "[xhs] 20260706-old"
+    assert result.archive_path.is_dir()
+    assert not (tmp_path / "inbox" / "xhs" / "20260706-old").exists()
+    assert result.source_path.is_file()
+    assert result.concept_path is not None
+    assert result.concept_path.is_file()
+
+    repo = MarkdownRepository()
+    source = repo.read_doc(result.source_path)
+    concept = repo.read_doc(result.concept_path)
+    assert source.frontmatter["resource"] == "https://example.test/xhs"
+    assert source.frontmatter["legacy_path"] == "archive/agent-harness/[xhs] 20260706-old"
+    assert concept.frontmatter["legacy_paths"] == ["archive/agent-harness/[xhs] 20260706-old"]
+
+
+def test_archive_source_only_uses_fallback_content_when_summary_blank(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    _write_post(
+        tmp_path,
+        "x",
+        "20260705-post",
+        {"post.md": "# Source Only\n\nPlain body with https://example.test/fallback"},
+    )
+
+    result = InboxModule(workspace).archive(
+        "20260705-post",
+        "agent-engineering/agent-harness",
+        tags=["code-intelligence"],
+    )
+
+    assert result.concept_path is None
+    source = MarkdownRepository().read_doc(result.source_path)
+    assert source.frontmatter["resource"] == "https://example.test/fallback"
+    assert (
+        source.body
+        == "# Source Only\n\n# Source Only\n\nPlain body with https://example.test/fallback\n"
+    )
+
+
+def test_archive_uses_archived_path_as_resource_when_source_missing(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    _write_post(tmp_path, "web", "20260704-nosource", {"article.md": "# No Source\n\nBody"})
+
+    result = InboxModule(workspace).archive(
+        "20260704-nosource",
+        "agent-engineering/agent-harness",
+        summary="Manual summary.",
+    )
+
+    source = MarkdownRepository().read_doc(result.source_path)
+    assert source.frontmatter["resource"] == "archive/agent-harness/[web] 20260704-nosource"
+
+
+def test_archive_destination_collision_gets_numeric_suffix(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    _write_xhs_post(tmp_path, "20260706-old")
+    collision = tmp_path / "archive" / "agent-harness" / "[xhs] 20260706-old"
+    collision.mkdir(parents=True)
+
+    result = InboxModule(workspace).archive(
+        "20260706-old",
+        "agent-engineering/agent-harness",
+        summary="Manual summary.",
+    )
+
+    assert result.archive_path == tmp_path / "archive" / "agent-harness" / "[xhs] 20260706-old-2"
+    assert result.archive_path.is_dir()
+    assert collision.is_dir()
+
+
+def test_note_rolls_back_archive_move_when_knowledge_write_fails(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    _write_xhs_post(tmp_path, "20260706-old")
+    archive_path = tmp_path / "archive" / "agent-harness" / "[xhs] 20260706-old"
+
+    with pytest.raises(RuntimeError, match="knowledge write failed"):
+        InboxModule(workspace, knowledge=RaisingKnowledge()).note(
+            InboxNoteRequest(
+                name="20260706-old",
+                topic="agent-engineering/agent-harness",
+                summary="Summary.",
+            )
+        )
+
+    assert (tmp_path / "inbox" / "xhs" / "20260706-old").is_dir()
+    assert not archive_path.exists()
+
+
+def test_platform_name_identifier_disambiguates_duplicate_folder_names(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    _write_post(tmp_path, "web", "20260706-same", {"article.md": "# Web Post\n\nBody"})
+    _write_post(tmp_path, "x", "20260706-same", {"post.md": "# X Post\n\nBody"})
+
+    with pytest.raises(ValueError, match="Ambiguous inbox item.*platform/name"):
+        InboxModule(workspace).archive(
+            "20260706-same",
+            "agent-engineering/agent-harness",
+            summary="Manual summary.",
+        )
+
+    result = InboxModule(workspace).archive(
+        "x/20260706-same",
+        "agent-engineering/agent-harness",
+        summary="Manual summary.",
+    )
+
+    assert result.archive_path == tmp_path / "archive" / "agent-harness" / "[x] 20260706-same"
+    assert result.archive_path.is_dir()
+    assert (tmp_path / "inbox" / "web" / "20260706-same").is_dir()
+    assert not (tmp_path / "inbox" / "x" / "20260706-same").exists()
+
+
+def test_rejects_identifier_that_escapes_inbox(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    outside = tmp_path / "archive" / "old-topic" / "outside"
+    outside.mkdir(parents=True)
+    (outside / "article.md").write_text("# Outside\n\nBody", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Invalid inbox identifier"):
+        InboxModule(workspace).archive(
+            "../archive/old-topic/outside",
+            "agent-engineering/agent-harness",
+            summary="Manual summary.",
+        )
+
+    assert outside.is_dir()
+    assert not (tmp_path / "archive" / "agent-harness" / "[old-topic] outside").exists()
+
+
+def test_rejects_platform_identifier_with_nested_item_path(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    web_post = _write_post(tmp_path, "web", "20260706-post", {"article.md": "# Web\n\nBody"})
+
+    with pytest.raises(ValueError, match="Invalid inbox identifier"):
+        InboxModule(workspace).archive(
+            "x/../web/20260706-post",
+            "agent-engineering/agent-harness",
+            summary="Manual summary.",
+        )
+
+    assert web_post.is_dir()
+    assert not (tmp_path / "archive" / "agent-harness" / "[web] 20260706-post").exists()
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        "",
+        ".",
+        "..",
+        "/tmp/outside",
+        "x/",
+        "/x/name",
+        "x/.",
+        "x/..",
+        "x/name/extra",
+    ],
+)
+def test_rejects_malformed_inbox_identifiers(tmp_path, identifier):
+    workspace = Workspace.init(tmp_path)
+
+    with pytest.raises(ValueError, match="Invalid inbox identifier"):
+        InboxModule(workspace).read(identifier)
+
+
+def test_missing_content_file_raises_file_not_found(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    (tmp_path / "inbox" / "xhs" / "20260706-empty").mkdir(parents=True)
+
+    with pytest.raises(FileNotFoundError):
+        InboxModule(workspace).read("20260706-empty")

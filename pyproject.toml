@@ -1,0 +1,81 @@
+[project]
+name = "alcove"
+version = "0.1.0"
+description = "Local-first personal information alcove for knowledge, pins, tasks, mounts, and agent-readable memory."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    "fastmcp>=2.0",
+    "pydantic>=2.12.0",
+    "pyyaml>=6.0.3",
+]
+
+[project.urls]
+Homepage = "https://github.com/OctopusGarage/alcove"
+Repository = "https://github.com/OctopusGarage/alcove"
+Issues = "https://github.com/OctopusGarage/alcove/issues"
+
+[project.scripts]
+alcove = "alcove.cli:entrypoint"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.0",
+    "pip-audit>=2.10.0",
+    "pytest>=8.4.0",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.14.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q --cov=src --cov-report=term-missing --cov-report=xml --cov-fail-under=70"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S108"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+files = [
+    "src/alcove/application.py",
+    "src/alcove/application_capabilities.py",
+    "src/alcove/connectors/fetch.py",
+    "src/alcove/external_index.py",
+    "src/alcove/exporter.py",
+    "src/alcove/home.py",
+    "src/alcove/markdown.py",
+    "src/alcove/mcp_server.py",
+    "src/alcove/profile_installer.py",
+    "src/alcove/profile_packs.py",
+    "src/alcove/search_global.py",
+    "src/alcove/search_query.py",
+    "src/alcove/search_rows.py",
+    "src/alcove/search_sources.py",
+    "src/alcove/workspace.py",
+]
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 70
