@@ -4,6 +4,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from alcove.inbox import InboxModule
+from alcove.mounts import MountsModule
 from alcove.search import SearchModule, SearchRequest
 from alcove.workspace import Workspace
 
@@ -54,6 +55,17 @@ def inbox_peek_tool(workspace: str) -> dict:
     }
 
 
+def mount_list_tool(workspace: str, status: str = "active") -> dict:
+    """List configured Alcove mounts."""
+    alcove = Workspace.discover(Path(workspace))
+    mounts = [asdict(mount) for mount in MountsModule(alcove).list(status)]
+    return {
+        "workspace": str(alcove.root),
+        "count": len(mounts),
+        "mounts": mounts,
+    }
+
+
 def create_mcp_server(default_workspace: str | None = None):
     from fastmcp import FastMCP
 
@@ -92,6 +104,14 @@ def create_mcp_server(default_workspace: str | None = None):
     def alcove_inbox_peek(workspace: str = "") -> dict:
         """Inspect the oldest pending Alcove inbox item."""
         return inbox_peek_tool(workspace or _default_workspace(default_workspace))
+
+    @mcp.tool
+    def alcove_mount_list(workspace: str = "", status: str = "active") -> dict:
+        """List configured Alcove mounts."""
+        return mount_list_tool(
+            workspace or _default_workspace(default_workspace),
+            status=status,
+        )
 
     return mcp
 

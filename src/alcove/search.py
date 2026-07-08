@@ -93,6 +93,15 @@ class SearchModule:
                 rows.append(row)
                 if len(rows) >= limit:
                     break
+        if request.type_filter in {None, "Mounted Item"}:
+            for row in self._mount_rows():
+                if not self._matches_row_filters(row, request, tag_filter):
+                    continue
+                if query and query not in self._row_search_text(row):
+                    continue
+                rows.append(row)
+                if len(rows) >= limit:
+                    break
 
         return rows
 
@@ -265,6 +274,39 @@ class SearchModule:
             "notes": self._string_or_none(item.get("notes")) or "",
             "path": f"tasks/tasks.json#{collection}/{item_id}",
         }
+
+    def _mount_rows(self) -> list[dict]:
+        store = self.paths.mounts / "index.json"
+        if not store.is_file():
+            return []
+        try:
+            data = json.loads(store.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(data, dict):
+            return []
+        rows: list[dict] = []
+        for item in self._object_list(data.get("items")):
+            mount_id = str(item.get("mount_id") or "")
+            rel = str(item.get("relative_path") or "")
+            rows.append(
+                {
+                    "root": "mounts",
+                    "type": "Mounted Item",
+                    "title": self._string_or_none(item.get("title")) or rel,
+                    "domain": None,
+                    "topic": None,
+                    "platform": None,
+                    "date": self._date(item),
+                    "tags": self._tags(item.get("tags")),
+                    "confidence": 0.5,
+                    "status": self._string_or_none(item.get("status")) or "active",
+                    "resource": self._string_or_none(item.get("path")),
+                    "notes": self._string_or_none(item.get("text")) or "",
+                    "path": f"mounts/{mount_id}#{rel}",
+                }
+            )
+        return rows
 
     def _matches_row_filters(
         self,

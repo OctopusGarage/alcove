@@ -508,6 +508,45 @@ def test_cli_idea_and_task_workflows(tmp_path, capsys):
     assert json.loads(complete_output.out)["task"]["status"] == "done"
 
 
+def test_cli_mount_add_list_scan_and_search(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+    source = tmp_path / "external"
+    source.mkdir()
+    (source / "note.md").write_text("# External Note\n\nMounted CLI needle.", encoding="utf-8")
+
+    add_code = main(
+        [
+            "mount",
+            "--workspace",
+            str(tmp_path),
+            "add",
+            str(source),
+            "--name",
+            "External",
+            "--tag",
+            "external",
+            "--json",
+        ]
+    )
+    add_output = capsys.readouterr()
+    list_code = main(["mount", "--workspace", str(tmp_path), "list", "--json"])
+    list_output = capsys.readouterr()
+    scan_code = main(["mount", "--workspace", str(tmp_path), "scan", "--json"])
+    scan_output = capsys.readouterr()
+    search_code = main(["search", "mounted cli", "--workspace", str(tmp_path), "--json"])
+    search_output = capsys.readouterr()
+
+    assert add_code == 0
+    assert json.loads(add_output.out)["mount"]["name"] == "External"
+    assert list_code == 0
+    assert json.loads(list_output.out)[0]["id"] == "external"
+    assert scan_code == 0
+    assert json.loads(scan_output.out)["scanned"] == 1
+    assert search_code == 0
+    assert json.loads(search_output.out)[0]["root"] == "mounts"
+
+
 def test_cli_inbox_note_moves_item_and_prints_paths(tmp_path, capsys):
     main(["init", str(tmp_path)])
     capsys.readouterr()

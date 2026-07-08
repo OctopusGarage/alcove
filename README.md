@@ -31,6 +31,8 @@ uv run alcove pin --workspace . archive japanese-edge-launcher --confirm
 uv run alcove idea --workspace . add "Review mount design" --notes "Local folders first" --tag mounts
 uv run alcove task --workspace . add "Wire MCP search" --priority high --tag mcp
 uv run alcove task --workspace . complete wire-mcp-search
+uv run alcove mount --workspace . add ~/programming/github --name github --type local-folder --tag repos
+uv run alcove mount --workspace . scan github --json
 uv run alcove serve --mcp --workspace .
 uv run alcove install --workspace . --target codex --print
 ```
@@ -45,8 +47,11 @@ They are included in `alcove search` alongside knowledge docs by default.
 Ideas and tasks are stored in `tasks/tasks.json`. Active ideas and pending tasks
 are included in `alcove search` by default.
 
+Mounts let Alcove index external folders or local Git repositories without
+copying their content. Scanned mounted items are included in `alcove search`.
+
 The MCP server runs over stdio with FastMCP and currently exposes read-only
-tools for search and inbox peek.
+tools for search, inbox peek, and mount listing.
 
 `alcove install` writes MCP client config for Codex and Claude Code. Use
 `--print` to preview the exact config without writing files.

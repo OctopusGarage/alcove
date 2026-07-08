@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 
 from alcove.knowledge import KnowledgeModule, NoteSourceRequest
-from alcove.mcp_server import inbox_peek_tool, search_tool
+from alcove.mcp_server import inbox_peek_tool, mount_list_tool, search_tool
+from alcove.mounts import AddMountRequest, MountsModule
 from alcove.workspace import Workspace
 
 
@@ -39,3 +40,16 @@ def test_mcp_inbox_peek_tool_returns_oldest_inbox_item(tmp_path):
     assert payload["workspace"] == str(tmp_path.resolve())
     assert payload["item"]["title"] == "MCP Inbox"
     assert payload["item"]["content_source"] == "article.md"
+
+
+def test_mcp_mount_list_tool_returns_active_mounts(tmp_path):
+    workspace = Workspace.init(tmp_path / "workspace")
+    source = tmp_path / "source"
+    source.mkdir()
+    MountsModule(workspace).add(AddMountRequest(path=str(source), name="Source"))
+
+    payload = mount_list_tool(str(workspace.root))
+
+    assert payload["workspace"] == str(workspace.root)
+    assert payload["count"] == 1
+    assert payload["mounts"][0]["name"] == "Source"

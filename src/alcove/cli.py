@@ -22,6 +22,7 @@ from alcove.knowledge import (
 )
 from alcove.lifecycle import LifecycleModule
 from alcove.mcp_server import run_mcp_server
+from alcove.mounts import AddMountRequest, MountsModule
 from alcove.pins import AddPinRequest, PinsModule
 from alcove.search import SearchModule, SearchRequest
 from alcove.tasks import AddIdeaRequest, AddTaskRequest, TasksModule
@@ -205,6 +206,23 @@ def build_parser() -> argparse.ArgumentParser:
     task_cancel = task_sub.add_parser("cancel", help="Cancel a task")
     task_cancel.add_argument("task_id")
     task_cancel.add_argument("--json", action="store_true")
+
+    mount = sub.add_parser("mount", help="Work with mounted external sources")
+    mount.add_argument("--workspace", required=True)
+    mount_sub = mount.add_subparsers(dest="mount_command", required=True)
+    mount_add = mount_sub.add_parser("add", help="Add a local mount")
+    mount_add.add_argument("path")
+    mount_add.add_argument("--name", default="")
+    mount_add.add_argument("--type", default="local-folder")
+    mount_add.add_argument("--tag", action="append", default=[])
+    mount_add.add_argument("--tags", default="")
+    mount_add.add_argument("--json", action="store_true")
+    mount_list = mount_sub.add_parser("list", help="List mounts")
+    mount_list.add_argument("--status", default="active")
+    mount_list.add_argument("--json", action="store_true")
+    mount_scan = mount_sub.add_parser("scan", help="Scan mounted sources")
+    mount_scan.add_argument("mount_id", nargs="?")
+    mount_scan.add_argument("--json", action="store_true")
 
     serve = sub.add_parser("serve", help="Run Alcove local services")
     serve.add_argument("--mcp", action="store_true", help="Run the MCP server over stdio")
@@ -733,6 +751,40 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(payload, ensure_ascii=False) if args.json else task.id)
                 return 0
             return _argument_error(parser, "the following arguments are required: task_command")
+        if args.command == "mount":
+            workspace = Workspace.discover(Path(args.workspace))
+            mounts = MountsModule(workspace)
+            if args.mount_command == "add":
+                mount = mounts.add(
+                    AddMountRequest(
+                        path=args.path,
+                        name=args.name,
+                        mount_type=args.type,
+                        tags=_tags(args),
+                    )
+                )
+                payload = {"status": "mounted", "mount": asdict(mount)}
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"mount: {mount.id}")
+                return 0
+            if args.mount_command == "list":
+                results = [asdict(mount) for mount in mounts.list(args.status)]
+                if args.json:
+                    print(json.dumps(results, ensure_ascii=False, indent=2))
+                else:
+                    for mount in results:
+                        print(f"{mount['type']} | {mount['name']} | {mount['path']}")
+                return 0
+            if args.mount_command == "scan":
+                report = mounts.scan(args.mount_id)
+                if args.json:
+                    print(json.dumps(report, ensure_ascii=False, indent=2))
+                else:
+                    print(f"scanned: {report['scanned']}, skipped: {report['skipped']}")
+                return 0
+            return _argument_error(parser, "the following arguments are required: mount_command")
         if args.command == "serve":
             if args.mcp:
                 run_mcp_server(args.workspace)

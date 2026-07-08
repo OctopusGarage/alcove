@@ -416,6 +416,10 @@ alcove task --workspace PATH list [--status pending] [--json]
 alcove task --workspace PATH complete TASK_ID [--json]
 alcove task --workspace PATH cancel TASK_ID [--json]
 
+alcove mount --workspace PATH add PATH [--name NAME] [--type local-folder|git-repo-local] [--tag TAG] [--json]
+alcove mount --workspace PATH list [--status active] [--json]
+alcove mount --workspace PATH scan [MOUNT_ID] [--json]
+
 alcove serve --mcp --workspace PATH
 alcove install --workspace PATH [--target codex|claude|all] [--print] [--json]
 ```
@@ -431,8 +435,12 @@ The current Tasks slice stores ideas and tasks in `tasks/tasks.json`, supports
 idea add/list plus task add/list/complete/cancel, and includes active ideas plus
 pending tasks in `alcove search`.
 
+The current Mounts slice stores mount metadata in `mounts/mounts.json`, stores
+a rebuildable scan index in `mounts/index.json`, supports `local-folder` and
+`git-repo-local`, and includes scanned text items in `alcove search`.
+
 The current MCP slice uses FastMCP over stdio and exposes read-only
-`alcove_search` and `alcove_inbox_peek` tools.
+`alcove_search`, `alcove_inbox_peek`, and `alcove_mount_list` tools.
 
 The current installer slice writes MCP client configuration for Codex
 (`~/.codex/config.toml`) and Claude Code (`~/.claude.json`) and supports
