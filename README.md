@@ -30,8 +30,11 @@ uv run alcove pin --workspace . add "Japanese Edge Launcher" --description "Laun
 uv run alcove pin --workspace . list --tag app-launcher
 uv run alcove pin --workspace . archive japanese-edge-launcher --confirm
 uv run alcove idea --workspace . add "Review mount design" --notes "Local folders first" --tag mounts
+uv run alcove idea --workspace . promote review-mount-design --priority high --due 2026-07-10
 uv run alcove task --workspace . add "Wire MCP search" --priority high --tag mcp
 uv run alcove task --workspace . complete wire-mcp-search
+uv run alcove task --workspace . routine-add "Weekly inbox review" --every-days 7 --next-due 2026-07-08
+uv run alcove task --workspace . materialize-due --today 2026-07-08 --json
 uv run alcove mount --workspace . add ~/programming/github --name github --type local-folder --tag repos
 uv run alcove mount --workspace . scan github --json
 uv run alcove connector --workspace . apple-notes index ~/exports/apple-notes --tag apple-notes --json
@@ -48,8 +51,9 @@ while keeping Markdown files as the human-readable review surface.
 Pins are small, high-value personal notes stored as Markdown under `pins/`.
 They are included in `alcove search` alongside knowledge docs by default.
 
-Ideas and tasks are stored in `tasks/tasks.json`. Active ideas and pending tasks
-are included in `alcove search` by default.
+Ideas, tasks, and routines are stored in `tasks/tasks.json`. Active ideas and
+pending tasks are included in `alcove search` by default. Routines materialize
+only when `task materialize-due` or the matching MCP tool is called.
 
 Mounts let Alcove index external folders or local Git repositories without
 copying their content. Scanned mounted items are included in `alcove search`.

@@ -8,15 +8,20 @@ from alcove.mcp_server import (
     create_mcp_server,
     gardener_tool,
     get_topic_tool,
+    idea_promote_tool,
     inbox_peek_tool,
     mount_list_tool,
     note_source_tool,
     pin_add_tool,
+    routine_add_tool,
+    routine_list_tool,
+    routine_materialize_due_tool,
     search_tool,
     task_add_tool,
     task_list_tool,
 )
 from alcove.mounts import AddMountRequest, MountsModule
+from alcove.tasks import AddIdeaRequest, TasksModule
 from alcove.workspace import Workspace
 
 
@@ -81,6 +86,10 @@ def test_mcp_server_registers_v1_tools(tmp_path):
         "alcove_pin_add",
         "alcove_task_add",
         "alcove_task_list",
+        "alcove_idea_promote",
+        "alcove_routine_add",
+        "alcove_routine_list",
+        "alcove_routine_materialize_due",
         "alcove_mount_list",
         "alcove_gardener",
     }
@@ -142,6 +151,53 @@ def test_mcp_task_add_and_list_tools_use_task_store(tmp_path):
     assert add_payload["task"]["id"] == "mcp-task"
     assert list_payload["count"] == 1
     assert list_payload["tasks"][0]["title"] == "MCP Task"
+
+
+def test_mcp_idea_promote_tool_creates_task(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    TasksModule(workspace).idea_add(
+        AddIdeaRequest(
+            title="MCP Idea",
+            notes="Make this actionable.",
+            tags=["mcp"],
+        )
+    )
+
+    payload = idea_promote_tool(
+        str(tmp_path),
+        idea_id="mcp-idea",
+        priority="high",
+        due="2026-07-10",
+        notes="Add checks.",
+    )
+
+    assert payload["status"] == "promoted"
+    assert payload["idea"]["promoted_task_id"] == "mcp-idea"
+    assert payload["task"]["due"] == "2026-07-10"
+
+
+def test_mcp_routine_tools_materialize_due_tasks(tmp_path):
+    Workspace.init(tmp_path)
+
+    add_payload = routine_add_tool(
+        str(tmp_path),
+        title="MCP Routine",
+        notes="Run on schedule.",
+        tags=["mcp"],
+        priority="high",
+        every_days=7,
+        next_due="2026-07-08",
+    )
+    list_payload = routine_list_tool(str(tmp_path))
+    materialize_payload = routine_materialize_due_tool(
+        str(tmp_path),
+        today="2026-07-08",
+    )
+
+    assert add_payload["routine"]["id"] == "mcp-routine"
+    assert list_payload["count"] == 1
+    assert materialize_payload["created"][0]["title"] == "MCP Routine"
+    assert materialize_payload["created"][0]["due"] == "2026-07-08"
 
 
 def test_mcp_get_topic_tool_returns_topic_docs(tmp_path):

@@ -26,7 +26,7 @@ from alcove.mcp_server import run_mcp_server
 from alcove.mounts import AddMountRequest, MountsModule
 from alcove.pins import AddPinRequest, PinsModule
 from alcove.search import SearchModule, SearchRequest
-from alcove.tasks import AddIdeaRequest, AddTaskRequest, TasksModule
+from alcove.tasks import AddIdeaRequest, AddRoutineRequest, AddTaskRequest, TasksModule
 from alcove.validate import ValidateModule
 from alcove.workspace import Workspace
 
@@ -188,6 +188,12 @@ def build_parser() -> argparse.ArgumentParser:
     idea_list = idea_sub.add_parser("list", help="List ideas")
     idea_list.add_argument("--status", default="active")
     idea_list.add_argument("--json", action="store_true")
+    idea_promote = idea_sub.add_parser("promote", help="Promote an idea to a task")
+    idea_promote.add_argument("idea_id")
+    idea_promote.add_argument("--notes", default="")
+    idea_promote.add_argument("--priority", default="medium")
+    idea_promote.add_argument("--due", default="")
+    idea_promote.add_argument("--json", action="store_true")
 
     task = sub.add_parser("task", help="Work with personal tasks")
     task.add_argument("--workspace", required=True)
@@ -209,6 +215,21 @@ def build_parser() -> argparse.ArgumentParser:
     task_cancel = task_sub.add_parser("cancel", help="Cancel a task")
     task_cancel.add_argument("task_id")
     task_cancel.add_argument("--json", action="store_true")
+    routine_add = task_sub.add_parser("routine-add", help="Add a recurring task template")
+    routine_add.add_argument("title")
+    routine_add.add_argument("--notes", default="")
+    routine_add.add_argument("--tag", action="append", default=[])
+    routine_add.add_argument("--tags", default="")
+    routine_add.add_argument("--priority", default="medium")
+    routine_add.add_argument("--every-days", type=int, default=1)
+    routine_add.add_argument("--next-due", required=True)
+    routine_add.add_argument("--json", action="store_true")
+    routine_list = task_sub.add_parser("routine-list", help="List recurring task templates")
+    routine_list.add_argument("--status", default="active")
+    routine_list.add_argument("--json", action="store_true")
+    materialize_due = task_sub.add_parser("materialize-due", help="Create tasks for due routines")
+    materialize_due.add_argument("--today", default="")
+    materialize_due.add_argument("--json", action="store_true")
 
     mount = sub.add_parser("mount", help="Work with mounted external sources")
     mount.add_argument("--workspace", required=True)
@@ -352,6 +373,7 @@ def _idea_dict(idea) -> dict:
         "status": idea.status,
         "created_at": idea.created_at,
         "updated_at": idea.updated_at,
+        "promoted_task_id": idea.promoted_task_id,
     }
 
 
@@ -367,6 +389,22 @@ def _task_dict(task) -> dict:
         "created_at": task.created_at,
         "updated_at": task.updated_at,
         "completed_at": task.completed_at,
+    }
+
+
+def _routine_dict(routine) -> dict:
+    return {
+        "id": routine.id,
+        "title": routine.title,
+        "notes": routine.notes,
+        "tags": routine.tags,
+        "status": routine.status,
+        "priority": routine.priority,
+        "every_days": routine.every_days,
+        "next_due": routine.next_due,
+        "created_at": routine.created_at,
+        "updated_at": routine.updated_at,
+        "last_materialized_due": routine.last_materialized_due,
     }
 
 
@@ -734,6 +772,28 @@ def main(argv: list[str] | None = None) -> int:
                     for idea in results:
                         print(f"{idea['status']} | {idea['title']} | {idea['id']}")
                 return 0
+            if args.idea_command == "promote":
+                task = tasks.idea_promote_to_task(
+                    args.idea_id,
+                    priority=args.priority,
+                    due=args.due,
+                    notes=args.notes,
+                )
+                idea = next(
+                    item
+                    for item in tasks.idea_list(status="promoted")
+                    if item.promoted_task_id == task.id
+                )
+                payload = {
+                    "status": "promoted",
+                    "idea": _idea_dict(idea),
+                    "task": _task_dict(task),
+                }
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"task: {task.id}")
+                return 0
             return _argument_error(parser, "the following arguments are required: idea_command")
         if args.command == "task":
             workspace = Workspace.discover(Path(args.workspace))
@@ -774,6 +834,49 @@ def main(argv: list[str] | None = None) -> int:
                 task = tasks.task_cancel(args.task_id)
                 payload = {"status": "cancelled", "task": _task_dict(task)}
                 print(json.dumps(payload, ensure_ascii=False) if args.json else task.id)
+                return 0
+            if args.task_command == "routine-add":
+                routine = tasks.routine_add(
+                    AddRoutineRequest(
+                        title=args.title,
+                        notes=args.notes,
+                        tags=_tags(args),
+                        priority=args.priority,
+                        every_days=args.every_days,
+                        next_due=args.next_due,
+                    )
+                )
+                payload = {"status": "added", "routine": _routine_dict(routine)}
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"routine: {routine.id}")
+                return 0
+            if args.task_command == "routine-list":
+                results = [
+                    _routine_dict(routine)
+                    for routine in tasks.routine_list(args.status)
+                ]
+                if args.json:
+                    print(json.dumps(results, ensure_ascii=False, indent=2))
+                else:
+                    for routine in results:
+                        print(
+                            f"{routine['priority']} | {routine['status']} | "
+                            f"{routine['next_due']} | {routine['title']} | {routine['id']}"
+                        )
+                return 0
+            if args.task_command == "materialize-due":
+                today = args.today or None
+                created = tasks.routine_materialize_due(today=today)
+                payload = {
+                    "status": "materialized",
+                    "created": [_task_dict(task) for task in created],
+                }
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"created: {len(created)}")
                 return 0
             return _argument_error(parser, "the following arguments are required: task_command")
         if args.command == "mount":

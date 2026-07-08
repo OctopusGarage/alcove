@@ -557,6 +557,81 @@ def test_cli_idea_and_task_workflows(tmp_path, capsys):
     assert json.loads(complete_output.out)["task"]["status"] == "done"
 
 
+def test_cli_idea_promote_and_routine_materialize(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+
+    main(
+        [
+            "idea",
+            "--workspace",
+            str(tmp_path),
+            "add",
+            "Review inbox process",
+            "--notes",
+            "Turn this into concrete work.",
+            "--tag",
+            "workflow",
+            "--json",
+        ]
+    )
+    capsys.readouterr()
+    promote_code = main(
+        [
+            "idea",
+            "--workspace",
+            str(tmp_path),
+            "promote",
+            "review-inbox-process",
+            "--priority",
+            "high",
+            "--due",
+            "2026-07-09",
+            "--notes",
+            "Add checks.",
+            "--json",
+        ]
+    )
+    promote_output = capsys.readouterr()
+    routine_code = main(
+        [
+            "task",
+            "--workspace",
+            str(tmp_path),
+            "routine-add",
+            "Weekly inbox review",
+            "--every-days",
+            "7",
+            "--next-due",
+            "2026-07-08",
+            "--tag",
+            "review",
+            "--json",
+        ]
+    )
+    routine_output = capsys.readouterr()
+    materialize_code = main(
+        [
+            "task",
+            "--workspace",
+            str(tmp_path),
+            "materialize-due",
+            "--today",
+            "2026-07-08",
+            "--json",
+        ]
+    )
+    materialize_output = capsys.readouterr()
+
+    assert promote_code == 0
+    assert json.loads(promote_output.out)["idea"]["status"] == "promoted"
+    assert json.loads(promote_output.out)["task"]["priority"] == "high"
+    assert routine_code == 0
+    assert json.loads(routine_output.out)["routine"]["next_due"] == "2026-07-08"
+    assert materialize_code == 0
+    assert json.loads(materialize_output.out)["created"][0]["due"] == "2026-07-08"
+
+
 def test_cli_mount_add_list_scan_and_search(tmp_path, capsys):
     main(["init", str(tmp_path)])
     capsys.readouterr()

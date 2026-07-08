@@ -410,10 +410,14 @@ alcove pin --workspace PATH archive PIN_ID [--confirm] [--json]
 
 alcove idea --workspace PATH add TITLE [--notes ...] [--tag TAG] [--json]
 alcove idea --workspace PATH list [--status active] [--json]
+alcove idea --workspace PATH promote IDEA_ID [--notes ...] [--priority high|medium|low] [--due YYYY-MM-DD] [--json]
 alcove task --workspace PATH add TITLE [--notes ...] [--tag TAG] [--priority high|medium|low] [--due YYYY-MM-DD] [--json]
 alcove task --workspace PATH list [--status pending] [--json]
 alcove task --workspace PATH complete TASK_ID [--json]
 alcove task --workspace PATH cancel TASK_ID [--json]
+alcove task --workspace PATH routine-add TITLE [--notes ...] [--tag TAG] --next-due YYYY-MM-DD [--every-days N] [--json]
+alcove task --workspace PATH routine-list [--status active] [--json]
+alcove task --workspace PATH materialize-due [--today YYYY-MM-DD] [--json]
 
 alcove mount --workspace PATH add PATH [--name NAME] [--type local-folder|git-repo-local] [--tag TAG] [--json]
 alcove mount --workspace PATH list [--status active] [--json]
@@ -433,8 +437,9 @@ The current Pins slice stores Markdown pins under `pins/`, supports add/list and
 previewable archive operations, and includes active pins in `alcove search`.
 
 The current Tasks slice stores ideas and tasks in `tasks/tasks.json`, supports
-idea add/list plus task add/list/complete/cancel, and includes active ideas plus
-pending tasks in `alcove search`.
+idea add/list/promote, task add/list/complete/cancel, and routine
+add/list/materialize-due. Active ideas plus pending tasks are included in
+`alcove search`; routines create tasks only on explicit materialization.
 
 The current Mounts slice stores mount metadata in `mounts/mounts.json`, stores
 a rebuildable scan index in `mounts/index.json`, supports `local-folder` and
@@ -447,8 +452,9 @@ includes imported notes in `alcove search`. It does not call Notes.app directly.
 
 The current MCP slice uses FastMCP over stdio and exposes the v1 tool set:
 `alcove_search`, `alcove_inbox_peek`, `alcove_note_source`, `alcove_get_topic`,
-`alcove_pin_add`, `alcove_task_add`, `alcove_task_list`, `alcove_mount_list`, and
-`alcove_gardener`.
+`alcove_pin_add`, `alcove_task_add`, `alcove_task_list`, `alcove_idea_promote`,
+`alcove_routine_add`, `alcove_routine_list`, `alcove_routine_materialize_due`,
+`alcove_mount_list`, and `alcove_gardener`.
 
 The current installer slice writes MCP client configuration for Codex
 (`~/.codex/config.toml`) and Claude Code (`~/.claude.json`) and supports

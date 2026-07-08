@@ -9,7 +9,7 @@ from alcove.knowledge import KnowledgeModule, NoteSourceRequest
 from alcove.mounts import MountsModule
 from alcove.pins import AddPinRequest, PinsModule
 from alcove.search import SearchModule, SearchRequest
-from alcove.tasks import AddTaskRequest, TasksModule
+from alcove.tasks import AddRoutineRequest, AddTaskRequest, TasksModule
 from alcove.taxonomy import load_taxonomy, split_domain_topic
 from alcove.workspace import Workspace
 
@@ -185,6 +185,88 @@ def task_list_tool(workspace: str, status: str = "pending") -> dict:
     }
 
 
+def idea_promote_tool(
+    workspace: str,
+    idea_id: str,
+    priority: str = "medium",
+    due: str = "",
+    notes: str = "",
+) -> dict:
+    """Promote an idea into a concrete task."""
+    alcove = Workspace.discover(Path(workspace))
+    tasks = TasksModule(alcove)
+    task = tasks.idea_promote_to_task(
+        idea_id,
+        priority=priority,
+        due=due,
+        notes=notes,
+    )
+    idea = next(
+        item
+        for item in tasks.idea_list(status="promoted")
+        if item.promoted_task_id == task.id
+    )
+    return {
+        "workspace": str(alcove.root),
+        "status": "promoted",
+        "idea": asdict(idea),
+        "task": asdict(task),
+    }
+
+
+def routine_add_tool(
+    workspace: str,
+    title: str,
+    notes: str = "",
+    tags: list[str] | None = None,
+    priority: str = "medium",
+    every_days: int = 1,
+    next_due: str = "",
+) -> dict:
+    """Create a recurring task template."""
+    alcove = Workspace.discover(Path(workspace))
+    routine = TasksModule(alcove).routine_add(
+        AddRoutineRequest(
+            title=title,
+            notes=notes,
+            tags=tags or [],
+            priority=priority,
+            every_days=every_days,
+            next_due=next_due,
+        )
+    )
+    return {
+        "workspace": str(alcove.root),
+        "status": "added",
+        "routine": asdict(routine),
+    }
+
+
+def routine_list_tool(workspace: str, status: str = "active") -> dict:
+    """List recurring task templates."""
+    alcove = Workspace.discover(Path(workspace))
+    routines = [
+        asdict(routine)
+        for routine in TasksModule(alcove).routine_list(status)
+    ]
+    return {
+        "workspace": str(alcove.root),
+        "count": len(routines),
+        "routines": routines,
+    }
+
+
+def routine_materialize_due_tool(workspace: str, today: str = "") -> dict:
+    """Create tasks for due recurring templates."""
+    alcove = Workspace.discover(Path(workspace))
+    created = TasksModule(alcove).routine_materialize_due(today=today or None)
+    return {
+        "workspace": str(alcove.root),
+        "status": "materialized",
+        "created": [asdict(task) for task in created],
+    }
+
+
 def gardener_tool(workspace: str, prune: bool = False) -> dict:
     """Scan Alcove knowledge health and optionally prune safe issues."""
     alcove = Workspace.discover(Path(workspace))
@@ -325,6 +407,63 @@ def create_mcp_server(default_workspace: str | None = None):
         return task_list_tool(
             workspace or _default_workspace(default_workspace),
             status=status,
+        )
+
+    @mcp.tool
+    def alcove_idea_promote(
+        idea_id: str,
+        workspace: str = "",
+        priority: str = "medium",
+        due: str = "",
+        notes: str = "",
+    ) -> dict:
+        """Promote an idea into a concrete task."""
+        return idea_promote_tool(
+            workspace or _default_workspace(default_workspace),
+            idea_id=idea_id,
+            priority=priority,
+            due=due,
+            notes=notes,
+        )
+
+    @mcp.tool
+    def alcove_routine_add(
+        title: str,
+        workspace: str = "",
+        notes: str = "",
+        tags: list[str] | None = None,
+        priority: str = "medium",
+        every_days: int = 1,
+        next_due: str = "",
+    ) -> dict:
+        """Create a recurring task template."""
+        return routine_add_tool(
+            workspace or _default_workspace(default_workspace),
+            title=title,
+            notes=notes,
+            tags=tags,
+            priority=priority,
+            every_days=every_days,
+            next_due=next_due,
+        )
+
+    @mcp.tool
+    def alcove_routine_list(workspace: str = "", status: str = "active") -> dict:
+        """List recurring task templates."""
+        return routine_list_tool(
+            workspace or _default_workspace(default_workspace),
+            status=status,
+        )
+
+    @mcp.tool
+    def alcove_routine_materialize_due(
+        workspace: str = "",
+        today: str = "",
+    ) -> dict:
+        """Create tasks for due recurring templates."""
+        return routine_materialize_due_tool(
+            workspace or _default_workspace(default_workspace),
+            today=today,
         )
 
     @mcp.tool
