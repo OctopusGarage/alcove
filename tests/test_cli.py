@@ -77,6 +77,32 @@ def test_cli_parser_accepts_serve_mcp_command(tmp_path):
     assert args.workspace == str(tmp_path)
 
 
+def test_cli_install_prints_mcp_config_without_writing(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+
+    code = main(
+        [
+            "install",
+            "--workspace",
+            str(tmp_path),
+            "--target",
+            "codex",
+            "--print",
+            "--json",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    payload = json.loads(captured.out)
+    assert code == 0
+    assert payload["files"] == []
+    assert "mcp_servers.alcove" in payload["configs"]["codex"]
+    assert not (home / ".codex" / "config.toml").exists()
+
+
 def test_cli_init_existing_file_returns_controlled_error(tmp_path, capsys):
     target = tmp_path / "not-a-directory"
     target.write_text("content")

@@ -32,6 +32,7 @@ uv run alcove idea --workspace . add "Review mount design" --notes "Local folder
 uv run alcove task --workspace . add "Wire MCP search" --priority high --tag mcp
 uv run alcove task --workspace . complete wire-mcp-search
 uv run alcove serve --mcp --workspace .
+uv run alcove install --workspace . --target codex --print
 ```
 
 Alcove inbox folders can contain Clipsmith capture bundles. When `capture.json`
@@ -46,6 +47,9 @@ are included in `alcove search` by default.
 
 The MCP server runs over stdio with FastMCP and currently exposes read-only
 tools for search and inbox peek.
+
+`alcove install` writes MCP client config for Codex and Claude Code. Use
+`--print` to preview the exact config without writing files.
 
 ## Design
 

@@ -12,6 +12,7 @@ from alcove.doctor import DoctorModule
 from alcove.errors import AlcoveError
 from alcove.gardener import GardenerModule
 from alcove.inbox import InboxModule, InboxNoteRequest
+from alcove.installer import InstallerModule
 from alcove.knowledge import (
     AddConceptRequest,
     AddEntityRequest,
@@ -43,6 +44,12 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = sub.add_parser("doctor", help="Check Alcove workspace health")
     doctor.add_argument("--workspace", required=True)
     doctor.add_argument("--json", action="store_true")
+
+    install = sub.add_parser("install", help="Install Alcove MCP config for agents")
+    install.add_argument("--workspace", required=True)
+    install.add_argument("--target", action="append", default=["all"])
+    install.add_argument("--print", dest="print_config", action="store_true")
+    install.add_argument("--json", action="store_true")
 
     inbox = sub.add_parser("inbox", help="Work with inbox items")
     inbox.add_argument("--workspace", required=True)
@@ -370,6 +377,21 @@ def main(argv: list[str] | None = None) -> int:
                         f"{check.get('message', '')}"
                     )
             return 1 if report["status"] == "issues" else 0
+        if args.command == "install":
+            workspace = Workspace.discover(Path(args.workspace))
+            result = InstallerModule(workspace).install(
+                args.target,
+                dry_run=args.print_config,
+            )
+            if args.json:
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+            elif args.print_config:
+                for target, config in result["configs"].items():
+                    print(f"# {target}\n{config}")
+            else:
+                for file in result["files"]:
+                    print(f"{file['target']} | {file['action']} | {file['path']}")
+            return 0
         if args.command == "inbox":
             workspace = Workspace.discover(Path(args.workspace))
             inbox = InboxModule(workspace)

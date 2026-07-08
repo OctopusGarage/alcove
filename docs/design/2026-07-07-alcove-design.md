@@ -417,6 +417,7 @@ alcove task --workspace PATH complete TASK_ID [--json]
 alcove task --workspace PATH cancel TASK_ID [--json]
 
 alcove serve --mcp --workspace PATH
+alcove install --workspace PATH [--target codex|claude|all] [--print] [--json]
 ```
 
 The current inbox reader also accepts Clipsmith capture bundles. If a bundle has
@@ -432,6 +433,10 @@ pending tasks in `alcove search`.
 
 The current MCP slice uses FastMCP over stdio and exposes read-only
 `alcove_search` and `alcove_inbox_peek` tools.
+
+The current installer slice writes MCP client configuration for Codex
+(`~/.codex/config.toml`) and Claude Code (`~/.claude.json`) and supports
+previewing the config with `--print`.
 
 ### Planned Future CLI Surface
 
