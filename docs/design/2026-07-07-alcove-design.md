@@ -531,6 +531,11 @@ V1 MCP tools should be small in count and deep in behavior:
 - `alcove_pin_add`: create a pinned note.
 - `alcove_task_add`: create a task.
 - `alcove_task_list`: list active tasks.
+- `alcove_idea_promote`: promote a captured idea into a task.
+- `alcove_routine_add`: create a recurring task template.
+- `alcove_routine_list`: list recurring task templates.
+- `alcove_routine_materialize_due`: create due tasks from routines on explicit call.
+- `alcove_link_source`: promote an indexed mount or connector item into an OKF Source.
 - `alcove_mount_list`: show configured mounts.
 - `alcove_gardener`: report knowledge health.
 
@@ -557,7 +562,9 @@ Unit tests:
 - Pin add/list/archive.
 - Task lifecycle: Idea, Task, Routine materialization.
 - Mount add/list/scan on fixture folders.
-- Apple Notes connector command construction using fake executor.
+- Apple Notes deterministic export indexing.
+- GitHub Stars local JSON export indexing.
+- Indexed item source linking.
 
 Integration tests:
 
@@ -582,37 +589,44 @@ Regression fixtures:
 - Implement Workspace, Repository, Knowledge, Inbox, and Search basics.
 - Port current OKF behavior with tests.
 - Preserve current `social_media_posts` workflow through Alcove CLI.
+- Status: implemented.
 
 ### Phase 2: Pins and Tasks
 
 - Add Pins module and CLI.
 - Add Tasks module using Social Radar IDEA/TASK/ROUTINE model.
 - Expose search across Knowledge, Pins, and Tasks.
+- Status: implemented.
 
 ### Phase 3: MCP Server and Installer
 
 - Add FastMCP server.
 - Expose the V1 MCP tools.
 - Add `alcove install --target codex,claude` to write MCP configs.
+- Status: implemented, including status checks and uninstall.
 
 ### Phase 4: Mounts and Apple Notes
 
 - Add local-folder mounts.
 - Add read-only Apple Notes export connector.
 - Index mounted/exported content into search.
+- Status: implemented.
 
 ### Phase 5: GitHub and Star Indexes
 
 - Add local GitHub repo mount conventions.
 - Add star repository index import.
 - Add `link_to_source` to promote mounted items into OKF Sources.
+- Status: implemented for local Git repos, local GitHub Stars JSON exports, and
+  indexed item source linking.
 
 ## Open Design Choices
 
 - Whether tasks should remain in JSON long-term or move to one Markdown file per item.
 - Whether Pins should support topic/domain taxonomy immediately or stay flat.
 - Whether Alcove should support multiple workspace roots or one active workspace per command.
-- Whether GitHub star indexing should use GitHub API, local exported lists, or both.
+- Whether GitHub star indexing should add direct GitHub API sync in addition to
+  the implemented local exported-list path.
 - Whether a future UI should be terminal-only, web, or desktop.
 
 These are intentionally deferred. The MVP should make them possible without forcing decisions now.

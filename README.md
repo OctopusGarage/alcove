@@ -9,8 +9,9 @@ Alcove is a local-first personal information alcove for knowledge, pins, tasks, 
 - inbox peek and note processing
 - simple knowledge search
 
-Deferred modules include richer MCP write tools, routine materialization, and
-GitHub/star indexes.
+Implemented modules now include Pins, Tasks/Routines, Mounts, Apple Notes export
+indexing, GitHub Stars indexing, source linking, MCP tools, and installer
+status/uninstall flows.
 
 ## Commands
 
