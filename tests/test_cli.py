@@ -1,6 +1,6 @@
 import json
 
-from alcove.cli import main
+from alcove.cli import build_parser, main
 
 
 def _write_post(root, platform, name, files):
@@ -65,6 +65,16 @@ def test_cli_doctor_json_reports_workspace_health(tmp_path, capsys):
     assert code == 0
     assert payload["status"] == "ok"
     assert any(check["name"] == "workspace" for check in payload["checks"])
+
+
+def test_cli_parser_accepts_serve_mcp_command(tmp_path):
+    args = build_parser().parse_args(
+        ["serve", "--mcp", "--workspace", str(tmp_path)]
+    )
+
+    assert args.command == "serve"
+    assert args.mcp is True
+    assert args.workspace == str(tmp_path)
 
 
 def test_cli_init_existing_file_returns_controlled_error(tmp_path, capsys):

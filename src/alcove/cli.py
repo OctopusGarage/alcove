@@ -20,6 +20,7 @@ from alcove.knowledge import (
     NoteSourceRequest,
 )
 from alcove.lifecycle import LifecycleModule
+from alcove.mcp_server import run_mcp_server
 from alcove.pins import AddPinRequest, PinsModule
 from alcove.search import SearchModule, SearchRequest
 from alcove.tasks import AddIdeaRequest, AddTaskRequest, TasksModule
@@ -197,6 +198,10 @@ def build_parser() -> argparse.ArgumentParser:
     task_cancel = task_sub.add_parser("cancel", help="Cancel a task")
     task_cancel.add_argument("task_id")
     task_cancel.add_argument("--json", action="store_true")
+
+    serve = sub.add_parser("serve", help="Run Alcove local services")
+    serve.add_argument("--mcp", action="store_true", help="Run the MCP server over stdio")
+    serve.add_argument("--workspace", default=".")
 
     search = sub.add_parser("search", help="Search and browse knowledge")
     search.add_argument("query", nargs="?", default="")
@@ -706,6 +711,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(payload, ensure_ascii=False) if args.json else task.id)
                 return 0
             return _argument_error(parser, "the following arguments are required: task_command")
+        if args.command == "serve":
+            if args.mcp:
+                run_mcp_server(args.workspace)
+                return 0
+            return _argument_error(parser, "serve requires --mcp")
         if args.command == "validate":
             issues = ValidateModule(Workspace.discover(Path(args.workspace))).validate(
                 strict_quality=args.strict_quality

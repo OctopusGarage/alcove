@@ -415,6 +415,8 @@ alcove task --workspace PATH add TITLE [--notes ...] [--tag TAG] [--priority hig
 alcove task --workspace PATH list [--status pending] [--json]
 alcove task --workspace PATH complete TASK_ID [--json]
 alcove task --workspace PATH cancel TASK_ID [--json]
+
+alcove serve --mcp --workspace PATH
 ```
 
 The current inbox reader also accepts Clipsmith capture bundles. If a bundle has
@@ -427,6 +429,9 @@ previewable archive operations, and includes active pins in `alcove search`.
 The current Tasks slice stores ideas and tasks in `tasks/tasks.json`, supports
 idea add/list plus task add/list/complete/cancel, and includes active ideas plus
 pending tasks in `alcove search`.
+
+The current MCP slice uses FastMCP over stdio and exposes read-only
+`alcove_search` and `alcove_inbox_peek` tools.
 
 ### Planned Future CLI Surface
 

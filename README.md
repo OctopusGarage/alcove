@@ -31,6 +31,7 @@ uv run alcove pin --workspace . archive japanese-edge-launcher --confirm
 uv run alcove idea --workspace . add "Review mount design" --notes "Local folders first" --tag mounts
 uv run alcove task --workspace . add "Wire MCP search" --priority high --tag mcp
 uv run alcove task --workspace . complete wire-mcp-search
+uv run alcove serve --mcp --workspace .
 ```
 
 Alcove inbox folders can contain Clipsmith capture bundles. When `capture.json`
@@ -42,6 +43,9 @@ They are included in `alcove search` alongside knowledge docs by default.
 
 Ideas and tasks are stored in `tasks/tasks.json`. Active ideas and pending tasks
 are included in `alcove search` by default.
+
+The MCP server runs over stdio with FastMCP and currently exposes read-only
+tools for search and inbox peek.
 
 ## Design
 
