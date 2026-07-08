@@ -445,8 +445,10 @@ Notes export directories from `notes/<encoded-note-id>/note.json`, stores a
 rebuildable connector index in `.alcove/connectors/apple-notes/index.json`, and
 includes imported notes in `alcove search`. It does not call Notes.app directly.
 
-The current MCP slice uses FastMCP over stdio and exposes read-only
-`alcove_search`, `alcove_inbox_peek`, and `alcove_mount_list` tools.
+The current MCP slice uses FastMCP over stdio and exposes the v1 tool set:
+`alcove_search`, `alcove_inbox_peek`, `alcove_note_source`, `alcove_get_topic`,
+`alcove_pin_add`, `alcove_task_add`, `alcove_task_list`, `alcove_mount_list`, and
+`alcove_gardener`.
 
 The current installer slice writes MCP client configuration for Codex
 (`~/.codex/config.toml`) and Claude Code (`~/.claude.json`) and supports

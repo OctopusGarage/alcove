@@ -57,8 +57,9 @@ the local Apple Notes skill contract: `notes/<encoded-note-id>/note.json`.
 Alcove does not write to Notes.app and does not require Notes automation
 permission for indexing an existing export.
 
-The MCP server runs over stdio with FastMCP and currently exposes read-only
-tools for search, inbox peek, and mount listing.
+The MCP server runs over stdio with FastMCP and exposes v1 tools for search,
+inbox peek, source notes, topic lookup, pins, tasks, mount listing, and gardener
+health reports.
 
 `alcove install` writes MCP client config for Codex and Claude Code. Use
 `--print` to preview the exact config without writing files.
