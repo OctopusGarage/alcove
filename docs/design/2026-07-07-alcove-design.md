@@ -4,7 +4,7 @@ Date: 2026-07-07
 
 ## Summary
 
-Alcove is a local-first personal information core for knowledge, pins, tasks, mounted archives, and agent-readable memory. It lives at `~/programming/OctopusGarage/alcove`, exposes an `alcove` CLI, and is intended to run a local MCP server for Codex, Claude Code, Cursor, and similar agents in a later phase.
+Alcove is a local-first personal information core for knowledge, pins, tasks, mounted archives, and agent-readable memory. It lives at `~/programming/OctopusGarage/alcove`, exposes an `alcove` CLI, and runs a local MCP server for Codex, Claude Code, Cursor, and similar agents.
 
 The first version should productize the existing `social_media_posts` knowledge workflow without turning Alcove into only a knowledge-base script. The architecture must leave clean room for personal pinned notes, task management, Apple Notes export, browser/bookmark sources, local folder mounts, GitHub repo mounts, and starred-repo indexes.
 
@@ -14,7 +14,7 @@ The first version should productize the existing `social_media_posts` knowledge 
 - Preserve Markdown-first source-of-truth files so the user can inspect, edit, git-track, and migrate data without a database dependency.
 - Provide one shared Python core used by both the CLI and MCP server.
 - Start with a small set of high-leverage CLI commands and MCP tools rather than mirroring every internal helper.
-- Support future personal information modules: Pins, Tasks, Mounts, and Connectors.
+- Support personal information modules: Pins, Tasks, Mounts, and Connectors.
 - Keep destructive operations explicit and previewable.
 
 ## Non-Goals
@@ -24,7 +24,7 @@ The first version should productize the existing `social_media_posts` knowledge 
 - Do not make SQLite the source of truth; it is only an optional cache/index.
 - Do not implement Apple Notes write operations in the first version.
 - Do not implement launchd scheduling in the first version.
-- Do not implement full GitHub API sync in the first version; local repo and star-index support can be introduced after Mounts are stable.
+- Do not implement full GitHub API sync in the first version; local repo and local star-index support are sufficient for the current slice.
 
 ## References
 
@@ -472,9 +472,11 @@ The current installer slice writes MCP client configuration for Codex
 previewing install/uninstall changes with `--print`, status checks, and removal
 of only Alcove's MCP entries while preserving other servers.
 
-### Planned Future CLI Surface
+### Roadmap CLI Surface
 
-The following commands describe the roadmap surface for later phases. They are not all implemented in the current Phase 1 CLI.
+The following commands were the initial roadmap surface. Most are now implemented
+in the current CLI; the remaining gaps are intentionally tracked as later
+extensions rather than required v1 blockers.
 
 ```bash
 alcove init [path]

@@ -2,11 +2,18 @@
 name = "alcove"
 version = "0.1.0"
 description = "Local-first personal information alcove for knowledge, pins, tasks, mounts, and agent-readable memory."
+readme = "README.md"
 requires-python = ">=3.12"
+license = "MIT"
 dependencies = [
     "fastmcp>=2.0",
     "pyyaml>=6.0.3",
 ]
+
+[project.urls]
+Homepage = "https://github.com/OctopusGarage/alcove"
+Repository = "https://github.com/OctopusGarage/alcove"
+Issues = "https://github.com/OctopusGarage/alcove/issues"
 
 [project.scripts]
 alcove = "alcove.cli:entrypoint"

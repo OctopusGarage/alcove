@@ -13,6 +13,28 @@ Implemented modules now include Pins, Tasks/Routines, Mounts, Apple Notes export
 indexing, GitHub Stars indexing, source linking, MCP tools, and installer
 status/uninstall flows.
 
+## Install
+
+```sh
+uv tool install git+https://github.com/OctopusGarage/alcove.git
+alcove --version
+```
+
+For local development:
+
+```sh
+uv sync
+uv run alcove --version
+uv tool install --force -e .
+```
+
+Install MCP config for agents from an initialized workspace:
+
+```sh
+alcove install --workspace /path/to/workspace --target all
+alcove install --workspace /path/to/workspace --status --json
+```
+
 ## Commands
 
 ```sh
