@@ -6,6 +6,7 @@ from pathlib import Path
 from alcove.gardener import GardenerModule
 from alcove.inbox import InboxModule
 from alcove.knowledge import KnowledgeModule, NoteSourceRequest
+from alcove.linking import LinkSourceRequest, LinkingModule
 from alcove.mounts import MountsModule
 from alcove.pins import AddPinRequest, PinsModule
 from alcove.search import SearchModule, SearchRequest
@@ -267,6 +268,25 @@ def routine_materialize_due_tool(workspace: str, today: str = "") -> dict:
     }
 
 
+def link_source_tool(
+    workspace: str,
+    item_path: str,
+    topic: str,
+    summary: str = "",
+    create_concept: bool = False,
+) -> dict:
+    """Create a Source from an indexed external item."""
+    alcove = Workspace.discover(Path(workspace))
+    return LinkingModule(alcove).link_source(
+        LinkSourceRequest(
+            item_path=item_path,
+            topic=topic,
+            summary=summary,
+            create_concept=create_concept,
+        )
+    )
+
+
 def gardener_tool(workspace: str, prune: bool = False) -> dict:
     """Scan Alcove knowledge health and optionally prune safe issues."""
     alcove = Workspace.discover(Path(workspace))
@@ -464,6 +484,23 @@ def create_mcp_server(default_workspace: str | None = None):
         return routine_materialize_due_tool(
             workspace or _default_workspace(default_workspace),
             today=today,
+        )
+
+    @mcp.tool
+    def alcove_link_source(
+        item_path: str,
+        topic: str,
+        workspace: str = "",
+        summary: str = "",
+        create_concept: bool = False,
+    ) -> dict:
+        """Create a Source from an indexed external item."""
+        return link_source_tool(
+            workspace or _default_workspace(default_workspace),
+            item_path=item_path,
+            topic=topic,
+            summary=summary,
+            create_concept=create_concept,
         )
 
     @mcp.tool

@@ -424,6 +424,8 @@ alcove mount --workspace PATH list [--status active] [--json]
 alcove mount --workspace PATH scan [MOUNT_ID] [--json]
 
 alcove connector --workspace PATH apple-notes index EXPORT_DIR [--tag TAG] [--json]
+alcove connector --workspace PATH github-stars index EXPORT_FILE [--tag TAG] [--json]
+alcove link --workspace PATH source ITEM_PATH TOPIC [--summary ...] [--create-concept] [--json]
 
 alcove serve --mcp --workspace PATH
 alcove install --workspace PATH [--target codex|claude|all] [--print] [--status] [--uninstall] [--json]
@@ -450,11 +452,20 @@ Notes export directories from `notes/<encoded-note-id>/note.json`, stores a
 rebuildable connector index in `.alcove/connectors/apple-notes/index.json`, and
 includes imported notes in `alcove search`. It does not call Notes.app directly.
 
+The current GitHub Stars connector indexes local JSON exports of starred
+repositories into `.alcove/connectors/github-stars/index.json`, supports common
+REST and GraphQL export field names, and includes starred repositories in
+`alcove search`.
+
+The current linking slice can promote any indexed mount or connector item into
+an OKF Source via `alcove link source`, preserving the original indexed item path
+as `legacy_path` and using the indexed resource URL when present.
+
 The current MCP slice uses FastMCP over stdio and exposes the v1 tool set:
 `alcove_search`, `alcove_inbox_peek`, `alcove_note_source`, `alcove_get_topic`,
 `alcove_pin_add`, `alcove_task_add`, `alcove_task_list`, `alcove_idea_promote`,
 `alcove_routine_add`, `alcove_routine_list`, `alcove_routine_materialize_due`,
-`alcove_mount_list`, and `alcove_gardener`.
+`alcove_link_source`, `alcove_mount_list`, and `alcove_gardener`.
 
 The current installer slice writes MCP client configuration for Codex
 (`~/.codex/config.toml`) and Claude Code (`~/.claude.json`) and supports

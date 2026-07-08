@@ -719,6 +719,102 @@ def test_cli_connector_apple_notes_index_and_search(tmp_path, capsys):
     assert json.loads(search_output.out)[0]["type"] == "Apple Note"
 
 
+def test_cli_connector_github_stars_index_and_search(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+    export_file = tmp_path / "stars.json"
+    export_file.write_text(
+        json.dumps(
+            [
+                {
+                    "full_name": "octopusgarage/alcove",
+                    "html_url": "https://github.com/OctopusGarage/alcove",
+                    "description": "Personal knowledge management core.",
+                    "language": "Python",
+                    "topics": ["pkm"],
+                    "stargazers_count": 100,
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    index_code = main(
+        [
+            "connector",
+            "--workspace",
+            str(tmp_path),
+            "github-stars",
+            "index",
+            str(export_file),
+            "--tag",
+            "stars",
+            "--json",
+        ]
+    )
+    index_output = capsys.readouterr()
+    search_code = main(["search", "knowledge management", "--workspace", str(tmp_path), "--json"])
+    search_output = capsys.readouterr()
+
+    assert index_code == 0
+    assert json.loads(index_output.out)["scanned"] == 1
+    assert search_code == 0
+    assert json.loads(search_output.out)[0]["type"] == "GitHub Star"
+
+
+def test_cli_link_source_promotes_connector_item(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+    export_file = tmp_path / "stars.json"
+    export_file.write_text(
+        json.dumps(
+            [
+                {
+                    "full_name": "octopusgarage/alcove",
+                    "html_url": "https://github.com/OctopusGarage/alcove",
+                    "description": "Personal knowledge management core.",
+                    "language": "Python",
+                    "topics": ["pkm"],
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    main(
+        [
+            "connector",
+            "--workspace",
+            str(tmp_path),
+            "github-stars",
+            "index",
+            str(export_file),
+            "--json",
+        ]
+    )
+    capsys.readouterr()
+
+    code = main(
+        [
+            "link",
+            "--workspace",
+            str(tmp_path),
+            "source",
+            "connectors/github-stars#octopusgarage/alcove",
+            "ai-knowledge/knowledge-base",
+            "--summary",
+            "Useful reference for personal knowledge tooling.",
+            "--json",
+        ]
+    )
+    output = capsys.readouterr()
+
+    assert code == 0
+    assert json.loads(output.out)["status"] == "linked"
+    assert json.loads(output.out)["source_path"].endswith("octopusgarage-alcove.md")
+
+
 def test_cli_inbox_note_moves_item_and_prints_paths(tmp_path, capsys):
     main(["init", str(tmp_path)])
     capsys.readouterr()

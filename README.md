@@ -38,6 +38,8 @@ uv run alcove task --workspace . materialize-due --today 2026-07-08 --json
 uv run alcove mount --workspace . add ~/programming/github --name github --type local-folder --tag repos
 uv run alcove mount --workspace . scan github --json
 uv run alcove connector --workspace . apple-notes index ~/exports/apple-notes --tag apple-notes --json
+uv run alcove connector --workspace . github-stars index ~/exports/github-stars.json --tag stars --json
+uv run alcove link --workspace . source "connectors/github-stars#octopusgarage/alcove" ai-knowledge/knowledge-base --summary "Useful reference" --json
 uv run alcove serve --mcp --workspace .
 uv run alcove install --workspace . --target codex --print
 uv run alcove install --workspace . --target codex --status --json
@@ -63,9 +65,13 @@ the local Apple Notes skill contract: `notes/<encoded-note-id>/note.json`.
 Alcove does not write to Notes.app and does not require Notes automation
 permission for indexing an existing export.
 
+The GitHub Stars connector indexes local JSON exports of starred repositories.
+`alcove link source` promotes any indexed external item into an OKF Source while
+keeping the original mount or connector as the source of truth.
+
 The MCP server runs over stdio with FastMCP and exposes v1 tools for search,
-inbox peek, source notes, topic lookup, pins, tasks, mount listing, and gardener
-health reports.
+inbox peek, source notes, topic lookup, pins, tasks, external source linking,
+mount listing, and gardener health reports.
 
 `alcove install` writes MCP client config for Codex and Claude Code. Use
 `--print` to preview install or uninstall changes, `--status` to check whether

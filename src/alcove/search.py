@@ -345,7 +345,8 @@ class SearchModule:
                         "tags": self._tags(item.get("tags")),
                         "confidence": 0.5,
                         "status": self._string_or_none(item.get("status")) or "active",
-                        "resource": self._string_or_none(item.get("path")),
+                        "resource": self._string_or_none(item.get("resource"))
+                        or self._string_or_none(item.get("path")),
                         "notes": self._string_or_none(item.get("text")) or "",
                         "path": f"connectors/{connector_id}#{rel}",
                     }

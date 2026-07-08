@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 
+from alcove.connectors.github_stars import GitHubStarsConnector, GitHubStarsImportRequest
 from alcove.knowledge import KnowledgeModule, NoteSourceRequest
 from alcove.mcp_server import (
     create_mcp_server,
@@ -10,6 +11,7 @@ from alcove.mcp_server import (
     get_topic_tool,
     idea_promote_tool,
     inbox_peek_tool,
+    link_source_tool,
     mount_list_tool,
     note_source_tool,
     pin_add_tool,
@@ -90,6 +92,7 @@ def test_mcp_server_registers_v1_tools(tmp_path):
         "alcove_routine_add",
         "alcove_routine_list",
         "alcove_routine_materialize_due",
+        "alcove_link_source",
         "alcove_mount_list",
         "alcove_gardener",
     }
@@ -198,6 +201,39 @@ def test_mcp_routine_tools_materialize_due_tasks(tmp_path):
     assert list_payload["count"] == 1
     assert materialize_payload["created"][0]["title"] == "MCP Routine"
     assert materialize_payload["created"][0]["due"] == "2026-07-08"
+
+
+def test_mcp_link_source_tool_promotes_indexed_item(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    export_file = tmp_path / "stars.json"
+    export_file.write_text(
+        json.dumps(
+            [
+                {
+                    "full_name": "octopusgarage/alcove",
+                    "html_url": "https://github.com/OctopusGarage/alcove",
+                    "description": "Personal knowledge management core.",
+                    "language": "Python",
+                    "topics": ["pkm"],
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    GitHubStarsConnector(workspace).import_export(
+        GitHubStarsImportRequest(export_file=str(export_file))
+    )
+
+    payload = link_source_tool(
+        str(tmp_path),
+        item_path="connectors/github-stars#octopusgarage/alcove",
+        topic="ai-knowledge/knowledge-base",
+        summary="Useful reference.",
+    )
+
+    assert payload["status"] == "linked"
+    assert payload["source_path"].endswith("octopusgarage-alcove.md")
 
 
 def test_mcp_get_topic_tool_returns_topic_docs(tmp_path):

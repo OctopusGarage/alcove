@@ -9,6 +9,10 @@ from pathlib import Path
 from alcove import __version__
 from alcove.classify import ClassifyModule
 from alcove.connectors.apple_notes import AppleNotesConnector, AppleNotesImportRequest
+from alcove.connectors.github_stars import (
+    GitHubStarsConnector,
+    GitHubStarsImportRequest,
+)
 from alcove.doctor import DoctorModule
 from alcove.errors import AlcoveError
 from alcove.gardener import GardenerModule
@@ -22,6 +26,7 @@ from alcove.knowledge import (
     NoteSourceRequest,
 )
 from alcove.lifecycle import LifecycleModule
+from alcove.linking import LinkSourceRequest, LinkingModule
 from alcove.mcp_server import run_mcp_server
 from alcove.mounts import AddMountRequest, MountsModule
 from alcove.pins import AddPinRequest, PinsModule
@@ -260,6 +265,32 @@ def build_parser() -> argparse.ArgumentParser:
     apple_notes_index.add_argument("--tag", action="append", default=[])
     apple_notes_index.add_argument("--tags", default="")
     apple_notes_index.add_argument("--json", action="store_true")
+    github_stars = connector_sub.add_parser(
+        "github-stars",
+        help="Index a local GitHub starred repositories export",
+    )
+    github_stars_sub = github_stars.add_subparsers(
+        dest="github_stars_command",
+        required=True,
+    )
+    github_stars_index = github_stars_sub.add_parser(
+        "index",
+        help="Index a JSON export of GitHub starred repositories",
+    )
+    github_stars_index.add_argument("export_file")
+    github_stars_index.add_argument("--tag", action="append", default=[])
+    github_stars_index.add_argument("--tags", default="")
+    github_stars_index.add_argument("--json", action="store_true")
+
+    link = sub.add_parser("link", help="Promote indexed external items into knowledge")
+    link.add_argument("--workspace", required=True)
+    link_sub = link.add_subparsers(dest="link_command", required=True)
+    link_source = link_sub.add_parser("source", help="Create a Source from an indexed item")
+    link_source.add_argument("item_path")
+    link_source.add_argument("topic")
+    link_source.add_argument("--summary", default="")
+    link_source.add_argument("--create-concept", action="store_true")
+    link_source.add_argument("--json", action="store_true")
 
     serve = sub.add_parser("serve", help="Run Alcove local services")
     serve.add_argument("--mcp", action="store_true", help="Run the MCP server over stdio")
@@ -934,9 +965,52 @@ def main(argv: list[str] | None = None) -> int:
                     parser,
                     "the following arguments are required: apple_notes_command",
                 )
+            if args.connector_command == "github-stars":
+                if args.github_stars_command == "index":
+                    report = GitHubStarsConnector(workspace).import_export(
+                        GitHubStarsImportRequest(
+                            export_file=args.export_file,
+                            tags=_tags(args),
+                        )
+                    )
+                    if args.json:
+                        print(json.dumps(report, ensure_ascii=False, indent=2))
+                    else:
+                        print(
+                            f"indexed: {report['scanned']}, skipped: {report['skipped']}"
+                        )
+                    return 0
+                return _argument_error(
+                    parser,
+                    "the following arguments are required: github_stars_command",
+                )
             return _argument_error(
                 parser,
                 "the following arguments are required: connector_command",
+            )
+        if args.command == "link":
+            workspace = Workspace.discover(Path(args.workspace))
+            if args.link_command == "source":
+                result = LinkingModule(workspace).link_source(
+                    LinkSourceRequest(
+                        item_path=args.item_path,
+                        topic=args.topic,
+                        summary=args.summary,
+                        create_concept=args.create_concept,
+                    )
+                )
+                if args.json:
+                    print(json.dumps(result, ensure_ascii=False, indent=2))
+                else:
+                    _print_path("source", Path(result["source_path"]))
+                    _print_path(
+                        "concept",
+                        Path(result["concept_path"]) if result["concept_path"] else None,
+                    )
+                return 0
+            return _argument_error(
+                parser,
+                "the following arguments are required: link_command",
             )
         if args.command == "serve":
             if args.mcp:
