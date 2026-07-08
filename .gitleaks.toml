@@ -1,0 +1,5 @@
+# Gitleaks config: extend the default ruleset and keep project-specific
+# allowlists narrow. Add exact-value or exact-path exceptions only after the
+# credential is confirmed fake or revoked.
+[extend]
+useDefault = true

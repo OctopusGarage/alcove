@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime
 import re
 
-from alcove.markdown import MarkdownDoc, MarkdownRepository, normalize_slug
-from alcove.taxonomy import load_taxonomy, normalize_topic, split_domain_topic
+from alcove.markdown import MarkdownDoc, MarkdownRepository
+from alcove.taxonomy import load_taxonomy, split_domain_topic
 from alcove.workspace import Workspace
 
 
@@ -59,7 +59,11 @@ def source_signature(title: str, summary: str) -> str:
 
 
 def score_confidence(post_or_mapping: object) -> ConfidenceScore:
-    getter = post_or_mapping.get if isinstance(post_or_mapping, dict) else lambda key, default=None: getattr(post_or_mapping, key, default)
+    getter = (
+        post_or_mapping.get
+        if isinstance(post_or_mapping, dict)
+        else lambda key, default=None: getattr(post_or_mapping, key, default)
+    )
     title = getter("title", "") or ""
     content = getter("content", "") or ""
     platform = (getter("platform", "unknown") or "unknown").lower()
@@ -86,8 +90,16 @@ def _verifiability_score(text: str) -> tuple[float, dict[str, int]]:
         "urls": len(re.findall(r"https?://[^\s\]\)\>\"'`]+", text or "")),
         "code_blocks": len(re.findall(r"```[\s\S]*?```", text or "")),
         "inline_code": len(re.findall(r"`[^`]+`", text or "")),
-        "numbers": len(re.findall(r"\b\d+(?:\.\d+)?(?:\s*%|\s*x|\s*K|\s*M|\s*stars?)?\b", text or "", flags=re.I)),
-        "commands": len(re.findall(r"\b(uv run|npm|npx|git|pytest|python|bash|curl|gh)\b", text or "", flags=re.I)),
+        "numbers": len(
+            re.findall(
+                r"\b\d+(?:\.\d+)?(?:\s*%|\s*x|\s*K|\s*M|\s*stars?)?\b", text or "", flags=re.I
+            )
+        ),
+        "commands": len(
+            re.findall(
+                r"\b(uv run|npm|npx|git|pytest|python|bash|curl|gh)\b", text or "", flags=re.I
+            )
+        ),
         "quoted": len(re.findall(r"[「\"'`].+?[」\"'`]", text or "")),
     }
     score = 0.0
@@ -153,7 +165,9 @@ class LifecycleModule:
             if doc.frontmatter.get("status", "active") != "active":
                 continue
             existing_summary = _summary_from_body(doc.body)
-            existing_signature = source_signature(str(doc.frontmatter.get("title") or ""), existing_summary)
+            existing_signature = source_signature(
+                str(doc.frontmatter.get("title") or ""), existing_summary
+            )
             score = jaccard_similarity(signature, existing_signature)
             if score >= threshold:
                 rel = doc.path.relative_to(self.knowledge_root).as_posix()
@@ -196,7 +210,11 @@ class LifecycleModule:
         ]
         if not sources:
             raise ValueError(f"No active sources found for topic '{topic_slug}'")
-        source_refs = [f"/{doc.path.relative_to(self.knowledge_root).as_posix()}" for doc in sources if doc.path]
+        source_refs = [
+            f"/{doc.path.relative_to(self.knowledge_root).as_posix()}"
+            for doc in sources
+            if doc.path
+        ]
         tags = sorted({str(tag) for doc in sources for tag in (doc.frontmatter.get("tags") or [])})
         final_summary = summary or _composite_summary(sources)
 
@@ -208,7 +226,8 @@ class LifecycleModule:
         superseded: list[str] = []
         if in_place and concepts:
             target = concepts[0]
-            assert target.path is not None
+            if target.path is None:
+                raise ValueError("Cannot refresh a concept document without a path")
             frontmatter = {
                 **target.frontmatter,
                 "source_refs": source_refs,
@@ -261,10 +280,16 @@ class LifecycleModule:
 
 
 def _summary_from_body(body: str) -> str:
-    match = re.search(r"^#+\s*摘要\s*\n(?P<summary>.*?)(?:\n#+\s|\Z)", body or "", flags=re.S | re.M)
+    match = re.search(
+        r"^#+\s*摘要\s*\n(?P<summary>.*?)(?:\n#+\s|\Z)", body or "", flags=re.S | re.M
+    )
     if match:
         return match.group("summary").strip()
-    lines = [line.strip() for line in (body or "").splitlines() if line.strip() and not line.startswith("#")]
+    lines = [
+        line.strip()
+        for line in (body or "").splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
     return "\n".join(lines[:3])
 
 
@@ -273,7 +298,9 @@ def _composite_summary(sources: list[MarkdownDoc], max_sources: int = 8) -> str:
     for doc in sources[:max_sources]:
         title = doc.frontmatter.get("title") or (doc.path.stem if doc.path else "source")
         confidence = float(doc.frontmatter.get("confidence") or 0.5)
-        summary = _summary_from_body(doc.body).splitlines()[0] if _summary_from_body(doc.body) else ""
+        summary = (
+            _summary_from_body(doc.body).splitlines()[0] if _summary_from_body(doc.body) else ""
+        )
         lines.append(f"- **{title}** (conf {confidence:.2f}): {summary}")
     if len(sources) > max_sources:
         lines.append(f"\n_另有 {len(sources) - max_sources} 条来源未列出。_")

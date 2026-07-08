@@ -52,9 +52,7 @@ def test_search_includes_imported_github_stars(tmp_path):
                     "url": "https://github.com/OctopusGarage/alcove",
                     "description": "Local-first personal knowledge core.",
                     "primaryLanguage": {"name": "Python"},
-                    "repositoryTopics": {
-                        "nodes": [{"topic": {"name": "knowledge-base"}}]
-                    },
+                    "repositoryTopics": {"nodes": [{"topic": {"name": "knowledge-base"}}]},
                     "stargazerCount": 100,
                     "updatedAt": "2026-07-08T00:00:00Z",
                 }

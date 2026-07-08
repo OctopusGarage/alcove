@@ -30,12 +30,26 @@ class ValidateModule:
                 continue
             doc_type = doc.frontmatter.get("type")
             if not doc_type:
-                issues.append(ValidationIssue("missing_type", str(doc.path), "Markdown doc lacks frontmatter type"))
-            if strict_quality and doc_type in {"Source", "Knowledge Concept"} and "status" not in doc.frontmatter:
-                issues.append(ValidationIssue("missing_status", str(doc.path), "OKF doc lacks status"))
+                issues.append(
+                    ValidationIssue(
+                        "missing_type", str(doc.path), "Markdown doc lacks frontmatter type"
+                    )
+                )
+            if (
+                strict_quality
+                and doc_type in {"Source", "Knowledge Concept"}
+                and "status" not in doc.frontmatter
+            ):
+                issues.append(
+                    ValidationIssue("missing_status", str(doc.path), "OKF doc lacks status")
+                )
             if doc_type == "Knowledge Concept":
                 for ref in doc.frontmatter.get("source_refs") or []:
                     ref_path = self.paths.knowledge / str(ref).lstrip("/")
                     if not ref_path.exists():
-                        issues.append(ValidationIssue("dead_source_ref", str(doc.path), f"Missing source ref {ref}"))
+                        issues.append(
+                            ValidationIssue(
+                                "dead_source_ref", str(doc.path), f"Missing source ref {ref}"
+                            )
+                        )
         return [issue.__dict__ for issue in issues]

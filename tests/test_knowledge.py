@@ -1,4 +1,9 @@
-from alcove.knowledge import KnowledgeModule, NoteSourceRequest, AddQuestionRequest, AddEntityRequest
+from alcove.knowledge import (
+    KnowledgeModule,
+    NoteSourceRequest,
+    AddQuestionRequest,
+    AddEntityRequest,
+)
 from alcove.markdown import MarkdownDoc, MarkdownRepository
 from alcove.taxonomy import load_taxonomy, normalize_tag, normalize_topic, split_domain_topic
 from alcove.workspace import Workspace
@@ -47,7 +52,9 @@ def test_note_source_writes_source_concept_and_indexes(tmp_path):
     assert topic.frontmatter["domain"] == "agent-engineering"
     assert tag.frontmatter["type"] == "Tag"
     assert tag.frontmatter["tag"] == "agent-harness"
-    assert "- [Source] [代码图谱怎么选](sources/xhs/agent-engineering/代码图谱怎么选.md)" in index.body
+    assert (
+        "- [Source] [代码图谱怎么选](sources/xhs/agent-engineering/代码图谱怎么选.md)" in index.body
+    )
     assert (
         "- [Knowledge Concept] [代码图谱怎么选]"
         "(concepts/agent-engineering/agent-harness/代码图谱怎么选.md)"
@@ -187,9 +194,7 @@ def test_note_source_keeps_distinct_concepts_with_colliding_slugs_separate(tmp_p
     assert slash_doc.frontmatter["source_refs"] == ["/sources/web/agent-engineering/a-b.md"]
     assert "Slash body." in slash_doc.body
     assert space_doc.frontmatter["title"] == "A B"
-    assert space_doc.frontmatter["source_refs"] == [
-        "/sources/web/agent-engineering/a-b-2.md"
-    ]
+    assert space_doc.frontmatter["source_refs"] == ["/sources/web/agent-engineering/a-b-2.md"]
     assert "Space body." in space_doc.body
 
 
@@ -213,8 +218,7 @@ def test_note_source_avoids_reserved_concept_filename_and_indexes_it(tmp_path):
     assert result.concept_path.name != "index.md"
     assert result.concept_path.name == "index-2.md"
     assert (
-        "- [Knowledge Concept] [Index]"
-        "(concepts/agent-engineering/agent-harness/index-2.md)"
+        "- [Knowledge Concept] [Index](concepts/agent-engineering/agent-harness/index-2.md)"
     ) in index.body
 
 
@@ -258,9 +262,7 @@ def test_note_source_migrates_old_source_to_normalized_source_refs(tmp_path):
 
     assert result.concept_path == old_concept_path
     assert "source" not in concept.frontmatter
-    assert concept.frontmatter["source_refs"] == [
-        "/sources/xhs/agent-engineering/legacy-source.md"
-    ]
+    assert concept.frontmatter["source_refs"] == ["/sources/xhs/agent-engineering/legacy-source.md"]
 
 
 def test_note_source_merges_existing_source_refs_and_legacy_source(tmp_path):

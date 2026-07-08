@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
+from typing import Any
 import unicodedata
 
 import yaml
@@ -13,7 +14,7 @@ RESERVED_FILENAMES = {"index.md", "log.md"}
 
 @dataclass(frozen=True)
 class MarkdownDoc:
-    frontmatter: dict
+    frontmatter: dict[str, Any]
     body: str
     path: Path | None = None
 
@@ -82,7 +83,7 @@ class MarkdownRepository:
                 return candidate
             counter += 1
 
-    def _split_frontmatter(self, content: str) -> tuple[dict, str]:
+    def _split_frontmatter(self, content: str) -> tuple[dict[str, Any], str]:
         if not content.startswith("---\n"):
             return {}, content
         parts = re.split(r"^---\s*$", content, maxsplit=2, flags=re.MULTILINE)

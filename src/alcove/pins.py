@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from alcove.home import AlcoveHome
 from alcove.markdown import MarkdownDoc, MarkdownRepository, normalize_slug
 from alcove.taxonomy import load_taxonomy, normalize_tag
 from alcove.workspace import Workspace
@@ -43,16 +44,25 @@ class PinResult:
 class PinsModule:
     def __init__(
         self,
-        workspace: Workspace,
+        workspace: Workspace | None = None,
         repo: MarkdownRepository | None = None,
+        home: AlcoveHome | None = None,
     ) -> None:
         self.workspace = workspace
-        self.paths = workspace.paths()
+        self.home = home
+        if home is None and workspace is None:
+            home = AlcoveHome.init()
+            self.home = home
+        self.pin_root = home.paths().pins if home is not None else workspace.paths().pins
         self.repo = repo or MarkdownRepository()
-        self.taxonomy = load_taxonomy(self.paths.knowledge)
+        self.taxonomy = (
+            load_taxonomy(workspace.paths().knowledge)
+            if workspace
+            else load_taxonomy(self.pin_root)
+        )
 
     def add(self, request: AddPinRequest) -> PinResult:
-        path = self.repo.unique_path(self.paths.pins, request.title)
+        path = self.repo.unique_path(self.pin_root, request.title)
         timestamp = now_iso()
         tags = self._normalize_tags(request.tags)
         source_refs = self._normalize_refs(request.source_refs)
@@ -76,7 +86,7 @@ class PinsModule:
     def list(self, tag: str | None = None, status: str = "active") -> list[Pin]:
         tag_filter = normalize_tag(tag, self.taxonomy) if tag else None
         pins: list[Pin] = []
-        for doc in self.repo.list_docs(self.paths.pins, type_filter="Pin"):
+        for doc in self.repo.list_docs(self.pin_root, type_filter="Pin"):
             pin = self._pin_from_doc(doc)
             if status and pin.status != status:
                 continue
@@ -87,11 +97,11 @@ class PinsModule:
 
     def archive(self, pin_id: str, confirm: bool = False) -> dict:
         doc = self._read_pin(pin_id)
-        assert doc.path is not None
+        path = self._doc_path(doc)
         if not confirm:
             return {
                 "status": "preview",
-                "path": str(doc.path),
+                "path": str(path),
                 "confirm_required": True,
             }
         frontmatter = {
@@ -99,32 +109,37 @@ class PinsModule:
             "status": "archived",
             "updated_at": now_iso(),
         }
-        self.repo.write_doc(doc.path, MarkdownDoc(frontmatter, doc.body))
-        return {"status": "archived", "path": str(doc.path)}
+        self.repo.write_doc(path, MarkdownDoc(frontmatter, doc.body))
+        return {"status": "archived", "path": str(path)}
 
     def _read_pin(self, pin_id: str) -> MarkdownDoc:
         slug = normalize_slug(pin_id)
-        path = self.paths.pins / f"{slug}.md"
+        path = self.pin_root / f"{slug}.md"
         if path.is_file():
             return self.repo.read_doc(path)
-        matches = sorted(self.paths.pins.glob(f"{slug}-*.md"))
+        matches = sorted(self.pin_root.glob(f"{slug}-*.md"))
         if matches:
             return self.repo.read_doc(matches[0])
         raise FileNotFoundError(f"Pin not found: {pin_id}")
 
     def _pin_from_doc(self, doc: MarkdownDoc) -> Pin:
-        assert doc.path is not None
+        path = self._doc_path(doc)
         frontmatter = doc.frontmatter
         return Pin(
-            id=doc.path.stem,
-            title=str(frontmatter.get("title") or doc.path.stem),
+            id=path.stem,
+            title=str(frontmatter.get("title") or path.stem),
             description=str(frontmatter.get("description") or ""),
             tags=self._as_list(frontmatter.get("tags")),
             status=str(frontmatter.get("status") or "active"),
             priority=str(frontmatter.get("priority") or "medium"),
             source_refs=self._as_list(frontmatter.get("source_refs")),
-            path=doc.path,
+            path=path,
         )
+
+    def _doc_path(self, doc: MarkdownDoc) -> Path:
+        if doc.path is None:
+            raise ValueError("Pin document has no path")
+        return doc.path
 
     def _normalize_tags(self, tags: list[str]) -> list[str]:
         normalized = {normalize_tag(tag, self.taxonomy) for tag in tags}

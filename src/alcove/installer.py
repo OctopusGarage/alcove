@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 
+from alcove.home import AlcoveHome
 from alcove.workspace import Workspace
 
 
@@ -11,17 +12,20 @@ VALID_TARGETS = {"codex", "claude"}
 
 
 class InstallerModule:
-    def __init__(self, workspace: Workspace) -> None:
+    def __init__(
+        self,
+        workspace: Workspace | None = None,
+        home: AlcoveHome | None = None,
+    ) -> None:
         self.workspace = workspace
+        self.home = home or AlcoveHome.init()
+        self.kb_name = self._registered_kb_name()
 
     def install(self, targets: list[str], dry_run: bool = False) -> dict:
         resolved_targets = self._targets(targets)
-        configs = {
-            target: self._config_text(target)
-            for target in resolved_targets
-        }
+        configs = {target: self._config_text(target) for target in resolved_targets}
         if dry_run:
-            return {"workspace": str(self.workspace.root), "files": [], "configs": configs}
+            return {**self._scope(), "files": [], "configs": configs}
 
         files = []
         for target in resolved_targets:
@@ -29,7 +33,7 @@ class InstallerModule:
                 files.append(self._write_codex())
             elif target == "claude":
                 files.append(self._write_claude())
-        return {"workspace": str(self.workspace.root), "files": files, "configs": configs}
+        return {**self._scope(), "files": files, "configs": configs}
 
     def status(self, targets: list[str]) -> dict:
         files = []
@@ -38,7 +42,7 @@ class InstallerModule:
                 files.append(self._codex_status())
             elif target == "claude":
                 files.append(self._claude_status())
-        return {"workspace": str(self.workspace.root), "files": files}
+        return {**self._scope(), "files": files}
 
     def uninstall(self, targets: list[str], dry_run: bool = False) -> dict:
         files = []
@@ -47,7 +51,7 @@ class InstallerModule:
                 files.append(self._remove_codex(dry_run=dry_run))
             elif target == "claude":
                 files.append(self._remove_claude(dry_run=dry_run))
-        return {"workspace": str(self.workspace.root), "files": files}
+        return {**self._scope(), "files": files}
 
     def _targets(self, targets: list[str]) -> list[str]:
         if not targets or "all" in targets:
@@ -65,10 +69,32 @@ class InstallerModule:
         return normalized
 
     def _mcp_config(self) -> dict:
+        args = ["serve", "--mcp", "--home", str(self.home.root)]
+        if self.kb_name:
+            args.extend(["--kb", self.kb_name])
+        elif self.workspace is not None:
+            args.extend(["--workspace", str(self.workspace.root)])
         return {
             "command": "alcove",
-            "args": ["serve", "--mcp", "--workspace", str(self.workspace.root)],
+            "args": args,
         }
+
+    def _registered_kb_name(self) -> str:
+        if self.workspace is None:
+            return ""
+        workspace_root = self.workspace.root.resolve()
+        for record in self.home.list_knowledge_bases():
+            if record.path.resolve() == workspace_root:
+                return record.name
+        return ""
+
+    def _scope(self) -> dict:
+        payload = {"home": str(self.home.root)}
+        if self.workspace is not None:
+            payload["workspace"] = str(self.workspace.root)
+        if self.kb_name:
+            payload["kb"] = self.kb_name
+        return payload
 
     def _config_text(self, target: str) -> str:
         if target == "codex":
@@ -159,10 +185,7 @@ class InstallerModule:
         return {"target": "claude", "path": str(path), "action": "removed"}
 
     def _codex_path(self) -> Path:
-        return (
-            Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
-            / "config.toml"
-        )
+        return Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))) / "config.toml"
 
     def _claude_path(self) -> Path:
         return Path.home() / ".claude.json"
@@ -178,11 +201,7 @@ class InstallerModule:
 
     def _codex_block(self) -> str:
         args = ", ".join(json.dumps(arg) for arg in self._mcp_config()["args"])
-        return (
-            "[mcp_servers.alcove]\n"
-            "command = \"alcove\"\n"
-            f"args = [{args}]\n"
-        )
+        return f'[mcp_servers.alcove]\ncommand = "alcove"\nargs = [{args}]\n'
 
     def _upsert_toml_table(self, existing: str, header: str, block: str) -> str:
         lines = existing.splitlines()

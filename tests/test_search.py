@@ -255,14 +255,11 @@ def test_search_browse_modes_skip_infrastructure_docs_by_default(tmp_path):
 
     module = SearchModule(workspace)
 
-    assert [row["title"] for row in module.search(SearchRequest(query="needle"))] == [
-        "Source"
-    ]
+    assert [row["title"] for row in module.search(SearchRequest(query="needle"))] == ["Source"]
     assert module.tags() == [{"tag": "agent-harness", "count": 1}]
     assert [row["title"] for row in module.recent(10)] == ["Source"]
     assert [
-        row["title"]
-        for row in module.search(SearchRequest(query="needle", type_filter="Tag"))
+        row["title"] for row in module.search(SearchRequest(query="needle", type_filter="Tag"))
     ] == ["Tag"]
 
 

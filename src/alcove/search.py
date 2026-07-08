@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 import json
+from pathlib import Path
 
+from alcove.home import AlcoveHome
 from alcove.markdown import MarkdownDoc, MarkdownRepository
 from alcove.taxonomy import (
     load_taxonomy,
@@ -39,13 +41,31 @@ class TopicFilter:
 
 class SearchModule:
     def __init__(
-        self, workspace: Workspace, repo: MarkdownRepository | None = None
+        self,
+        workspace: Workspace | None = None,
+        repo: MarkdownRepository | None = None,
+        home: AlcoveHome | None = None,
     ) -> None:
         self.workspace = workspace
-        self.paths = workspace.paths()
-        self.knowledge_root = self.paths.knowledge
+        self.home = home
+        self.paths = workspace.paths() if workspace is not None else None
+        if home is None and workspace is None:
+            home = AlcoveHome.init()
+            self.home = home
+        self.knowledge_root = self.paths.knowledge if self.paths is not None else None
         self.repo = repo or MarkdownRepository()
-        self.taxonomy = load_taxonomy(self.knowledge_root)
+        taxonomy_root = (
+            self.knowledge_root if self.knowledge_root is not None else self.home.paths().root
+        )
+        self.taxonomy = load_taxonomy(taxonomy_root)
+        self.pins_root = self.home.paths().pins if self.home is not None else self.paths.pins
+        self.tasks_root = self.home.paths().tasks if self.home is not None else self.paths.tasks
+        self.mounts_root = self.home.paths().mounts if self.home is not None else self.paths.mounts
+        self.connectors_root = (
+            self.home.paths().connectors
+            if self.home is not None
+            else self.paths.state / "connectors"
+        )
 
     def search(self, request: SearchRequest) -> list[dict]:
         rows: list[dict] = []
@@ -56,26 +76,25 @@ class SearchModule:
         tag_filter = self._normalize_tag_filter(request.tag)
         topic_filter = self._normalize_topic_filter(request.topic)
 
-        for doc in self.repo.list_docs(
-            self.knowledge_root, type_filter=request.type_filter
-        ):
-            if doc.path is None:
-                continue
-            if request.type_filter is None and self._is_infrastructure_doc(doc):
-                continue
-            if not self._matches_filters(doc, request, tag_filter, topic_filter):
-                continue
-            if query and query not in self._search_text(doc):
-                continue
-
-            rows.append(self._row(doc))
-            if len(rows) >= limit:
-                break
-        if request.type_filter in {None, "Pin"}:
-            for doc in self.repo.list_docs(self.paths.pins, type_filter="Pin"):
+        if self.knowledge_root is not None:
+            for doc in self.repo.list_docs(self.knowledge_root, type_filter=request.type_filter):
                 if doc.path is None:
                     continue
-                if not self._is_under(doc.path, self.paths.pins):
+                if request.type_filter is None and self._is_infrastructure_doc(doc):
+                    continue
+                if not self._matches_filters(doc, request, tag_filter, topic_filter):
+                    continue
+                if query and query not in self._search_text(doc):
+                    continue
+
+                rows.append(self._row(doc))
+                if len(rows) >= limit:
+                    break
+        if request.type_filter in {None, "Pin"}:
+            for doc in self.repo.list_docs(self.pins_root, type_filter="Pin"):
+                if doc.path is None:
+                    continue
+                if not self._is_under(doc.path, self.pins_root):
                     continue
                 if not self._matches_filters(doc, request, tag_filter, topic_filter):
                     continue
@@ -121,9 +140,7 @@ class SearchModule:
                 counts[tag] = counts.get(tag, 0) + 1
         return [
             {"tag": tag, "count": count}
-            for tag, count in sorted(
-                counts.items(), key=lambda item: (-item[1], item[0])
-            )
+            for tag, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
         ]
 
     def tag_doctor(self) -> list[dict]:
@@ -157,9 +174,8 @@ class SearchModule:
         topic_filter: TopicFilter | None,
     ) -> bool:
         frontmatter = doc.frontmatter
-        if (
-            tag_filter is not None
-            and tag_filter not in self._normalized_tags(frontmatter.get("tags"))
+        if tag_filter is not None and tag_filter not in self._normalized_tags(
+            frontmatter.get("tags")
         ):
             return False
         if topic_filter is not None:
@@ -171,14 +187,12 @@ class SearchModule:
                 return False
         if (
             request.platform
-            and str(frontmatter.get("platform") or "").casefold()
-            != request.platform.casefold()
+            and str(frontmatter.get("platform") or "").casefold() != request.platform.casefold()
         ):
             return False
         if (
             request.status
-            and str(frontmatter.get("status") or "active").casefold()
-            != request.status.casefold()
+            and str(frontmatter.get("status") or "active").casefold() != request.status.casefold()
         ):
             return False
         if (
@@ -205,8 +219,8 @@ class SearchModule:
 
     def _row(self, doc: MarkdownDoc) -> dict:
         frontmatter = doc.frontmatter
-        assert doc.path is not None
-        title = self._string_or_none(frontmatter.get("title")) or doc.path.stem
+        path = self._doc_path(doc)
+        title = self._string_or_none(frontmatter.get("title")) or path.stem
         return {
             "root": "knowledge",
             "type": self._string_or_none(frontmatter.get("type")),
@@ -224,8 +238,8 @@ class SearchModule:
 
     def _pin_row(self, doc: MarkdownDoc) -> dict:
         frontmatter = doc.frontmatter
-        assert doc.path is not None
-        title = self._string_or_none(frontmatter.get("title")) or doc.path.stem
+        path = self._doc_path(doc)
+        title = self._string_or_none(frontmatter.get("title")) or path.stem
         return {
             "root": "pins",
             "type": "Pin",
@@ -242,7 +256,7 @@ class SearchModule:
         }
 
     def _task_rows(self, type_filter: str | None) -> list[dict]:
-        store = self.paths.tasks / "tasks.json"
+        store = self.tasks_root / "tasks.json"
         if not store.is_file():
             return []
         try:
@@ -285,40 +299,52 @@ class SearchModule:
         }
 
     def _mount_rows(self) -> list[dict]:
-        store = self.paths.mounts / "index.json"
-        if not store.is_file():
-            return []
-        try:
-            data = json.loads(store.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return []
-        if not isinstance(data, dict):
-            return []
+        datasets: list[dict] = []
+        indexes_dir = self.mounts_root / "indexes"
+        if indexes_dir.is_dir():
+            for store in sorted(indexes_dir.glob("*.json")):
+                try:
+                    data = json.loads(store.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(data, dict):
+                    datasets.append(data)
+        else:
+            store = self.mounts_root / "index.json"
+            if not store.is_file():
+                return []
+            try:
+                data = json.loads(store.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                return []
+            if isinstance(data, dict):
+                datasets.append(data)
         rows: list[dict] = []
-        for item in self._object_list(data.get("items")):
-            mount_id = str(item.get("mount_id") or "")
-            rel = str(item.get("relative_path") or "")
-            rows.append(
-                {
-                    "root": "mounts",
-                    "type": "Mounted Item",
-                    "title": self._string_or_none(item.get("title")) or rel,
-                    "domain": None,
-                    "topic": None,
-                    "platform": None,
-                    "date": self._date(item),
-                    "tags": self._tags(item.get("tags")),
-                    "confidence": 0.5,
-                    "status": self._string_or_none(item.get("status")) or "active",
-                    "resource": self._string_or_none(item.get("path")),
-                    "notes": self._string_or_none(item.get("text")) or "",
-                    "path": f"mounts/{mount_id}#{rel}",
-                }
-            )
+        for data in datasets:
+            for item in self._object_list(data.get("items")):
+                mount_id = str(item.get("mount_id") or "")
+                rel = str(item.get("relative_path") or "")
+                rows.append(
+                    {
+                        "root": "mounts",
+                        "type": "Mounted Item",
+                        "title": self._string_or_none(item.get("title")) or rel,
+                        "domain": None,
+                        "topic": None,
+                        "platform": None,
+                        "date": self._date(item),
+                        "tags": self._tags(item.get("tags")),
+                        "confidence": 0.5,
+                        "status": self._string_or_none(item.get("status")) or "active",
+                        "resource": self._string_or_none(item.get("path")),
+                        "notes": self._string_or_none(item.get("text")) or "",
+                        "path": f"mounts/{mount_id}#{rel}",
+                    }
+                )
         return rows
 
     def _connector_rows(self) -> list[dict]:
-        connectors_dir = self.paths.state / "connectors"
+        connectors_dir = self.connectors_root
         if not connectors_dir.is_dir():
             return []
         rows: list[dict] = []
@@ -359,9 +385,7 @@ class SearchModule:
         request: SearchRequest,
         tag_filter: str | None,
     ) -> bool:
-        if tag_filter is not None and tag_filter not in self._normalized_tags(
-            row.get("tags")
-        ):
+        if tag_filter is not None and tag_filter not in self._normalized_tags(row.get("tags")):
             return False
         if (
             request.platform
@@ -372,10 +396,7 @@ class SearchModule:
             row_topic = str(row.get("topic") or "").casefold()
             if request.topic.casefold() not in row_topic:
                 return False
-        if (
-            request.status
-            and str(row.get("status") or "").casefold() != request.status.casefold()
-        ):
+        if request.status and str(row.get("status") or "").casefold() != request.status.casefold():
             return False
         row_date = str(row.get("date") or "")
         if request.date_from or request.date_to:
@@ -388,11 +409,18 @@ class SearchModule:
         return True
 
     def _relative_path(self, doc: MarkdownDoc) -> str:
-        assert doc.path is not None
+        path = self._doc_path(doc)
+        if self.knowledge_root is None:
+            return path.as_posix()
         try:
-            return doc.path.relative_to(self.knowledge_root).as_posix()
+            return path.relative_to(self.knowledge_root).as_posix()
         except ValueError:
-            return doc.path.as_posix()
+            return path.as_posix()
+
+    def _doc_path(self, doc: MarkdownDoc) -> Path:
+        if doc.path is None:
+            raise ValueError("Search result document has no path")
+        return doc.path
 
     def _normalize_tag_filter(self, tag: str | None) -> str | None:
         if tag is None:
@@ -430,6 +458,8 @@ class SearchModule:
         return [item for item in value if isinstance(item, dict)]
 
     def _docs(self) -> list[MarkdownDoc]:
+        if self.knowledge_root is None:
+            return []
         return [
             doc
             for doc in self.repo.list_docs(self.knowledge_root)

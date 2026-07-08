@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from alcove.inbox import InboxModule, InboxPost
 from alcove.lifecycle import score_confidence
 from alcove.markdown import MarkdownRepository
-from alcove.taxonomy import domain_for_topic, load_taxonomy, normalize_tag, normalize_topic, split_domain_topic
+from alcove.taxonomy import domain_for_topic, load_taxonomy, normalize_tag, split_domain_topic
 from alcove.workspace import Workspace
 
 
@@ -81,7 +81,12 @@ class ClassifyModule:
                 score += 10
             if score:
                 scores[tag] = max(scores.get(tag, 0), score)
-        return [tag for tag, _score in sorted(scores.items(), key=lambda item: (-item[1], item[0]))[:max_tags]]
+        return [
+            tag
+            for tag, _score in sorted(scores.items(), key=lambda item: (-item[1], item[0]))[
+                :max_tags
+            ]
+        ]
 
     def list_topics(self) -> list[str]:
         topics = {
@@ -121,7 +126,9 @@ class ClassifyModule:
             stripped = line.strip()
             if not stripped or stripped.startswith("#") or stripped.startswith("---"):
                 continue
-            if stripped.lower().startswith(("source url:", "published at:", "platform:", "date:", "title:", "来源")):
+            if stripped.lower().startswith(
+                ("source url:", "published at:", "platform:", "date:", "title:", "来源")
+            ):
                 continue
             lines.append(stripped)
             if len("\n".join(lines)) >= max_chars:

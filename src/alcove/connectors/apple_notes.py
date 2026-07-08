@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 
+from alcove.home import AlcoveHome
 from alcove.taxonomy import load_taxonomy, normalize_tag
 from alcove.workspace import Workspace
 
@@ -22,11 +23,22 @@ class AppleNotesImportRequest:
 class AppleNotesConnector:
     connector_id = "apple-notes"
 
-    def __init__(self, workspace: Workspace) -> None:
+    def __init__(self, workspace: Workspace | None = None, home: AlcoveHome | None = None) -> None:
         self.workspace = workspace
-        self.paths = workspace.paths()
-        self.taxonomy = load_taxonomy(self.paths.knowledge)
-        self.connector_dir = self.paths.state / "connectors" / self.connector_id
+        self.home = home
+        if home is None and workspace is None:
+            home = AlcoveHome.init()
+            self.home = home
+        self.taxonomy = (
+            load_taxonomy(workspace.paths().knowledge)
+            if workspace
+            else load_taxonomy(home.paths().root)
+        )
+        self.connector_dir = (
+            home.paths().connectors / self.connector_id
+            if home is not None
+            else workspace.paths().state / "connectors" / self.connector_id
+        )
         self.index_path = self.connector_dir / "index.json"
 
     def import_export(self, request: AppleNotesImportRequest) -> dict:

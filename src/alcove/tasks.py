@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, date, datetime, timedelta
 import json
-from pathlib import Path
 
+from alcove.home import AlcoveHome
 from alcove.markdown import normalize_slug
 from alcove.taxonomy import load_taxonomy, normalize_tag
 from alcove.workspace import Workspace
@@ -82,11 +82,19 @@ class Routine:
 
 
 class TasksModule:
-    def __init__(self, workspace: Workspace) -> None:
+    def __init__(self, workspace: Workspace | None = None, home: AlcoveHome | None = None) -> None:
         self.workspace = workspace
-        self.paths = workspace.paths()
-        self.taxonomy = load_taxonomy(self.paths.knowledge)
-        self.store_path = self.paths.tasks / "tasks.json"
+        self.home = home
+        if home is None and workspace is None:
+            home = AlcoveHome.init()
+            self.home = home
+        self.task_root = home.paths().tasks if home is not None else workspace.paths().tasks
+        self.taxonomy = (
+            load_taxonomy(workspace.paths().knowledge)
+            if workspace
+            else load_taxonomy(self.task_root)
+        )
+        self.store_path = self.task_root / "tasks.json"
 
     def idea_add(self, request: AddIdeaRequest) -> Idea:
         data = self._load()

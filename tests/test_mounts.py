@@ -62,7 +62,9 @@ def test_search_includes_mounted_items_after_scan(tmp_path):
     workspace = Workspace.init(tmp_path / "workspace")
     source = tmp_path / "source-docs"
     source.mkdir()
-    (source / "note.md").write_text("# Mounted Note\n\nHistorical archive needle.", encoding="utf-8")
+    (source / "note.md").write_text(
+        "# Mounted Note\n\nHistorical archive needle.", encoding="utf-8"
+    )
     module = MountsModule(workspace)
     module.add(AddMountRequest(path=str(source), name="Archive", tags=["history"]))
     module.scan()

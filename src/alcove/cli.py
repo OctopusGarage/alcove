@@ -15,7 +15,9 @@ from alcove.connectors.github_stars import (
 )
 from alcove.doctor import DoctorModule
 from alcove.errors import AlcoveError
+from alcove.exporter import ExportModule
 from alcove.gardener import GardenerModule
+from alcove.home import AlcoveHome, KnowledgeBaseRecord
 from alcove.inbox import InboxModule, InboxNoteRequest
 from alcove.installer import InstallerModule
 from alcove.knowledge import (
@@ -30,6 +32,7 @@ from alcove.linking import LinkSourceRequest, LinkingModule
 from alcove.mcp_server import run_mcp_server
 from alcove.mounts import AddMountRequest, MountsModule
 from alcove.pins import AddPinRequest, PinsModule
+from alcove.profile_installer import ProfileInstaller
 from alcove.search import SearchModule, SearchRequest
 from alcove.tasks import AddIdeaRequest, AddRoutineRequest, AddTaskRequest, TasksModule
 from alcove.validate import ValidateModule
@@ -49,19 +52,70 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--json", action="store_true")
 
     doctor = sub.add_parser("doctor", help="Check Alcove workspace health")
-    doctor.add_argument("--workspace", required=True)
+    doctor.add_argument("--workspace")
+    doctor.add_argument("--home")
+    doctor.add_argument("--kb")
     doctor.add_argument("--json", action="store_true")
 
     install = sub.add_parser("install", help="Install Alcove MCP config for agents")
-    install.add_argument("--workspace", required=True)
+    install.add_argument("--home")
+    install.add_argument("--workspace")
+    install.add_argument("--kb")
     install.add_argument("--target", action="append", default=["all"])
     install.add_argument("--print", dest="print_config", action="store_true")
     install.add_argument("--status", action="store_true")
     install.add_argument("--uninstall", action="store_true")
     install.add_argument("--json", action="store_true")
 
+    home_cmd = sub.add_parser("home", help="Manage Alcove home")
+    home_sub = home_cmd.add_subparsers(dest="home_command", required=True)
+    home_init = home_sub.add_parser("init", help="Initialize Alcove home")
+    home_init.add_argument("--home")
+    home_init.add_argument("--json", action="store_true")
+
+    hub = sub.add_parser("hub", help="Manage an Alcove hub workspace")
+    hub_sub = hub.add_subparsers(dest="hub_command", required=True)
+    hub_init = hub_sub.add_parser("init", help="Initialize a hub workspace")
+    hub_init.add_argument("path")
+    hub_init.add_argument("--home")
+    hub_init.add_argument("--default-kb", default="")
+    hub_init.add_argument("--target", action="append", default=["all"])
+    hub_init.add_argument("--json", action="store_true")
+    hub_install = hub_sub.add_parser("install", help="Install hub entry files")
+    hub_install.add_argument("path")
+    hub_install.add_argument("--home")
+    hub_install.add_argument("--default-kb", default="")
+    hub_install.add_argument("--target", action="append", default=["all"])
+    hub_install.add_argument("--json", action="store_true")
+
+    global_cmd = sub.add_parser("global", help="Install lightweight global Alcove access")
+    global_sub = global_cmd.add_subparsers(dest="global_command", required=True)
+    global_install = global_sub.add_parser("install", help="Install global-lite MCP")
+    global_install.add_argument("--home")
+    global_install.add_argument("--target", action="append", default=["all"])
+    global_install.add_argument("--print", dest="print_config", action="store_true")
+    global_install.add_argument("--status", action="store_true")
+    global_install.add_argument("--uninstall", action="store_true")
+    global_install.add_argument("--json", action="store_true")
+
+    kb = sub.add_parser("kb", help="Register and list managed knowledge bases")
+    kb.add_argument("--home")
+    kb_sub = kb.add_subparsers(dest="kb_command", required=True)
+    kb_add = kb_sub.add_parser("add", help="Register a managed knowledge base")
+    kb_add.add_argument("name")
+    kb_add.add_argument("path")
+    kb_add.add_argument("--json", action="store_true")
+    kb_list = kb_sub.add_parser("list", help="List registered managed knowledge bases")
+    kb_list.add_argument("--json", action="store_true")
+    kb_install = kb_sub.add_parser("install", help="Install managed KB entry files")
+    kb_install.add_argument("name")
+    kb_install.add_argument("--target", action="append", default=["all"])
+    kb_install.add_argument("--json", action="store_true")
+
     inbox = sub.add_parser("inbox", help="Work with inbox items")
-    inbox.add_argument("--workspace", required=True)
+    inbox.add_argument("--workspace")
+    inbox.add_argument("--home")
+    inbox.add_argument("--kb")
     inbox_sub = inbox.add_subparsers(dest="inbox_command", required=True)
     inbox_peek = inbox_sub.add_parser("peek", help="Show the oldest inbox item")
     inbox_peek.add_argument("--json", action="store_true")
@@ -96,6 +150,11 @@ def build_parser() -> argparse.ArgumentParser:
     inbox_note.add_argument("--supersede-similar", action="store_true")
     inbox_note.add_argument("--validate", action="store_true")
     inbox_note.add_argument("--json", action="store_true")
+    inbox_manual = inbox_sub.add_parser("manual-add", help="Add manual content to inbox")
+    inbox_manual.add_argument("title")
+    inbox_manual.add_argument("--content", required=True)
+    inbox_manual.add_argument("--source", default="")
+    inbox_manual.add_argument("--json", action="store_true")
     inbox_todo = inbox_sub.add_parser("todo", help="Move an inbox item to todo")
     inbox_todo.add_argument("name")
     inbox_todo.add_argument("reason", nargs="?", default="")
@@ -104,7 +163,9 @@ def build_parser() -> argparse.ArgumentParser:
     inbox_delete.add_argument("--confirm", action="store_true")
 
     knowledge = sub.add_parser("knowledge", help="Work with knowledge notes")
-    knowledge.add_argument("--workspace", required=True)
+    knowledge.add_argument("--workspace")
+    knowledge.add_argument("--home")
+    knowledge.add_argument("--kb")
     knowledge_sub = knowledge.add_subparsers(dest="knowledge_command", required=True)
     note_source = knowledge_sub.add_parser("note-source", help="Record a source note")
     note_source.add_argument("--platform", required=True)
@@ -151,17 +212,22 @@ def build_parser() -> argparse.ArgumentParser:
     knowledge_sub.add_parser("topics", help="List known topics/tags/domains")
 
     validate = sub.add_parser("validate", help="Validate an Alcove workspace")
-    validate.add_argument("--workspace", required=True)
+    validate.add_argument("--workspace")
+    validate.add_argument("--home")
+    validate.add_argument("--kb")
     validate.add_argument("--strict-quality", action="store_true")
     validate.add_argument("--json", action="store_true")
 
     gardener = sub.add_parser("gardener", help="Scan knowledge health")
-    gardener.add_argument("--workspace", required=True)
+    gardener.add_argument("--workspace")
+    gardener.add_argument("--home")
+    gardener.add_argument("--kb")
     gardener.add_argument("--prune", action="store_true")
     gardener.add_argument("--json", action="store_true")
 
     pin = sub.add_parser("pin", help="Work with pinned personal notes")
-    pin.add_argument("--workspace", required=True)
+    pin.add_argument("--workspace")
+    pin.add_argument("--home")
     pin_sub = pin.add_subparsers(dest="pin_command", required=True)
     pin_add = pin_sub.add_parser("add", help="Add a pinned personal note")
     pin_add.add_argument("title")
@@ -182,7 +248,8 @@ def build_parser() -> argparse.ArgumentParser:
     pin_archive.add_argument("--json", action="store_true")
 
     idea = sub.add_parser("idea", help="Work with low-friction ideas")
-    idea.add_argument("--workspace", required=True)
+    idea.add_argument("--workspace")
+    idea.add_argument("--home")
     idea_sub = idea.add_subparsers(dest="idea_command", required=True)
     idea_add = idea_sub.add_parser("add", help="Add an idea")
     idea_add.add_argument("title")
@@ -201,7 +268,8 @@ def build_parser() -> argparse.ArgumentParser:
     idea_promote.add_argument("--json", action="store_true")
 
     task = sub.add_parser("task", help="Work with personal tasks")
-    task.add_argument("--workspace", required=True)
+    task.add_argument("--workspace")
+    task.add_argument("--home")
     task_sub = task.add_subparsers(dest="task_command", required=True)
     task_add = task_sub.add_parser("add", help="Add a task")
     task_add.add_argument("title")
@@ -237,7 +305,8 @@ def build_parser() -> argparse.ArgumentParser:
     materialize_due.add_argument("--json", action="store_true")
 
     mount = sub.add_parser("mount", help="Work with mounted external sources")
-    mount.add_argument("--workspace", required=True)
+    mount.add_argument("--workspace")
+    mount.add_argument("--home")
     mount_sub = mount.add_subparsers(dest="mount_command", required=True)
     mount_add = mount_sub.add_parser("add", help="Add a local mount")
     mount_add.add_argument("path")
@@ -254,7 +323,8 @@ def build_parser() -> argparse.ArgumentParser:
     mount_scan.add_argument("--json", action="store_true")
 
     connector = sub.add_parser("connector", help="Work with external connectors")
-    connector.add_argument("--workspace", required=True)
+    connector.add_argument("--workspace")
+    connector.add_argument("--home")
     connector_sub = connector.add_subparsers(dest="connector_command", required=True)
     apple_notes = connector_sub.add_parser("apple-notes", help="Index Apple Notes exports")
     apple_notes_sub = apple_notes.add_subparsers(dest="apple_notes_command", required=True)
@@ -283,7 +353,9 @@ def build_parser() -> argparse.ArgumentParser:
     github_stars_index.add_argument("--json", action="store_true")
 
     link = sub.add_parser("link", help="Promote indexed external items into knowledge")
-    link.add_argument("--workspace", required=True)
+    link.add_argument("--workspace")
+    link.add_argument("--home")
+    link.add_argument("--kb")
     link_sub = link.add_subparsers(dest="link_command", required=True)
     link_source = link_sub.add_parser("source", help="Create a Source from an indexed item")
     link_source.add_argument("item_path")
@@ -294,11 +366,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     serve = sub.add_parser("serve", help="Run Alcove local services")
     serve.add_argument("--mcp", action="store_true", help="Run the MCP server over stdio")
-    serve.add_argument("--workspace", default=".")
+    serve.add_argument("--workspace", default="")
+    serve.add_argument("--home", default="")
+    serve.add_argument("--kb", default="")
 
     search = sub.add_parser("search", help="Search and browse knowledge")
     search.add_argument("query", nargs="?", default="")
-    search.add_argument("--workspace", required=True)
+    search.add_argument("--workspace")
+    search.add_argument("--home")
+    search.add_argument("--kb")
     search.add_argument("--type", dest="type_filter")
     search.add_argument("--tag")
     search.add_argument("--topic")
@@ -313,6 +389,13 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--recent", type=int, help="List recent docs")
     search.add_argument("--unindexed", action="store_true", help="Run validation")
     search.add_argument("--json", action="store_true")
+
+    export = sub.add_parser("export", help="Export Alcove user data")
+    export.add_argument("--home")
+    export_sub = export.add_subparsers(dest="export_command", required=True)
+    export_global = export_sub.add_parser("global", help="Export global Alcove Home state")
+    export_global.add_argument("output_dir")
+    export_global.add_argument("--json", action="store_true")
     return parser
 
 
@@ -423,6 +506,14 @@ def _task_dict(task) -> dict:
     }
 
 
+def _kb_dict(record: KnowledgeBaseRecord) -> dict:
+    return {
+        "name": record.name,
+        "path": str(record.path),
+        "config_path": str(record.config_path),
+    }
+
+
 def _routine_dict(routine) -> dict:
     return {
         "id": routine.id,
@@ -443,6 +534,50 @@ def _argument_error(parser: argparse.ArgumentParser, message: str) -> int:
     parser.print_usage(sys.stderr)
     print(f"{parser.prog}: error: {message}", file=sys.stderr)
     return 2
+
+
+def _print_install_result(result: dict) -> None:
+    if result.get("profile"):
+        print(f"profile: {result['profile']}")
+    if result.get("home"):
+        print(f"home: {result['home']}")
+    if result.get("kb"):
+        print(f"kb: {result['kb']}")
+    if result.get("path"):
+        print(f"path: {result['path']}")
+    if result.get("workspace"):
+        print(f"workspace: {result['workspace']}")
+    for file in result.get("files", []):
+        action = file.get("action")
+        if action is None:
+            action = "installed" if file.get("installed") else "not_found"
+        target = file.get("target") or "file"
+        print(f"{target} | {action} | {file['path']}")
+
+
+def _home_from_args(args) -> AlcoveHome | None:
+    if getattr(args, "home", None):
+        return AlcoveHome.init(Path(args.home))
+    return None
+
+
+def _workspace_from_args(args) -> Workspace | None:
+    if getattr(args, "kb", None):
+        home = (
+            AlcoveHome.init(Path(args.home)) if getattr(args, "home", None) else AlcoveHome.init()
+        )
+        record = home.get_knowledge_base(args.kb)
+        return Workspace.discover(record.path)
+    if getattr(args, "workspace", None):
+        return Workspace.discover(Path(args.workspace))
+    return None
+
+
+def _required_workspace(parser: argparse.ArgumentParser, args) -> Workspace | int:
+    workspace = _workspace_from_args(args)
+    if workspace is None:
+        return _argument_error(parser, "one of --workspace or --kb is required")
+    return workspace
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -470,19 +605,22 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Alcove workspace: {status['root']}")
             return 0
         if args.command == "doctor":
-            report = DoctorModule(Workspace.discover(Path(args.workspace))).check()
+            workspace = _required_workspace(parser, args)
+            if isinstance(workspace, int):
+                return workspace
+            report = DoctorModule(workspace).check()
             if args.json:
                 print(json.dumps(report, ensure_ascii=False, indent=2))
             else:
                 for check in report["checks"]:
-                    print(
-                        f"{check['status']} | {check['name']} | "
-                        f"{check.get('message', '')}"
-                    )
+                    print(f"{check['status']} | {check['name']} | {check.get('message', '')}")
             return 1 if report["status"] == "issues" else 0
         if args.command == "install":
-            workspace = Workspace.discover(Path(args.workspace))
-            installer = InstallerModule(workspace)
+            workspace = _required_workspace(parser, args)
+            if isinstance(workspace, int):
+                return workspace
+            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
+            installer = InstallerModule(workspace, home=home)
             if args.status:
                 result = installer.status(args.target)
             elif args.uninstall:
@@ -498,14 +636,104 @@ def main(argv: list[str] | None = None) -> int:
                 for target, config in result["configs"].items():
                     print(f"# {target}\n{config}")
             else:
-                for file in result["files"]:
-                    action = file.get("action")
-                    if action is None:
-                        action = "installed" if file.get("installed") else "not_found"
-                    print(f"{file['target']} | {action} | {file['path']}")
+                _print_install_result(result)
             return 0
+        if args.command == "home":
+            if args.home_command == "init":
+                home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
+                payload = {
+                    "status": "initialized",
+                    "home": str(home.root),
+                    "paths": {
+                        "config": str(home.paths().config),
+                        "knowledge_bases": str(home.paths().knowledge_bases),
+                        "pins": str(home.paths().pins),
+                        "tasks": str(home.paths().tasks),
+                        "mounts": str(home.paths().mounts),
+                        "connectors": str(home.paths().connectors),
+                    },
+                }
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False, indent=2))
+                else:
+                    print(f"Alcove home: {home.root}")
+                return 0
+            return _argument_error(parser, "the following arguments are required: home_command")
+        if args.command == "hub":
+            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
+            profiles = ProfileInstaller(home)
+            if args.hub_command == "init":
+                result = profiles.hub_init(
+                    args.path,
+                    default_kb=args.default_kb,
+                    targets=args.target,
+                )
+            elif args.hub_command == "install":
+                result = profiles.hub_install(
+                    args.path,
+                    default_kb=args.default_kb,
+                    targets=args.target,
+                )
+            else:
+                return _argument_error(parser, "the following arguments are required: hub_command")
+            if args.json:
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                _print_install_result(result)
+            return 0
+        if args.command == "global":
+            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
+            installer = InstallerModule(None, home=home)
+            if args.global_command == "install":
+                if args.status:
+                    result = installer.status(args.target)
+                elif args.uninstall:
+                    result = installer.uninstall(args.target, dry_run=args.print_config)
+                else:
+                    result = installer.install(args.target, dry_run=args.print_config)
+                result = {"profile": "global-lite", **result}
+                if args.json:
+                    print(json.dumps(result, ensure_ascii=False, indent=2))
+                elif args.print_config and "configs" in result:
+                    for target, config in result["configs"].items():
+                        print(f"# {target}\n{config}")
+                else:
+                    _print_install_result(result)
+                return 0
+            return _argument_error(parser, "the following arguments are required: global_command")
+        if args.command == "kb":
+            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
+            if args.kb_command == "add":
+                record = home.register_knowledge_base(args.name, args.path)
+                payload = {"status": "registered", "knowledge_base": _kb_dict(record)}
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False, indent=2))
+                else:
+                    print(f"knowledge_base: {record.name} | {record.path}")
+                return 0
+            if args.kb_command == "list":
+                records = [_kb_dict(record) for record in home.list_knowledge_bases()]
+                if args.json:
+                    print(json.dumps(records, ensure_ascii=False, indent=2))
+                else:
+                    for record in records:
+                        print(f"{record['name']} | {record['path']}")
+                return 0
+            if args.kb_command == "install":
+                result = ProfileInstaller(home).kb_install(
+                    args.name,
+                    targets=args.target,
+                )
+                if args.json:
+                    print(json.dumps(result, ensure_ascii=False, indent=2))
+                else:
+                    _print_install_result(result)
+                return 0
+            return _argument_error(parser, "the following arguments are required: kb_command")
         if args.command == "inbox":
-            workspace = Workspace.discover(Path(args.workspace))
+            workspace = _required_workspace(parser, args)
+            if isinstance(workspace, int):
+                return workspace
             inbox = InboxModule(workspace)
             if args.inbox_command == "peek":
                 post = inbox.peek()
@@ -573,6 +801,17 @@ def main(argv: list[str] | None = None) -> int:
                     _print_path("concept", result.concept_path)
                     print(f"tags: {','.join(result.tags)}")
                 return 0
+            if args.inbox_command == "manual-add":
+                payload = inbox.add_manual(
+                    title=args.title,
+                    content=args.content,
+                    source=args.source,
+                )
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"inbox: {payload['id']} | {payload['path']}")
+                return 0
             if args.inbox_command == "todo":
                 path = inbox.todo(args.name, args.reason)
                 print(json.dumps({"status": "todo", "path": str(path)}, ensure_ascii=False))
@@ -582,7 +821,9 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             return _argument_error(parser, "the following arguments are required: inbox_command")
         if args.command == "knowledge":
-            workspace = Workspace.discover(Path(args.workspace))
+            workspace = _required_workspace(parser, args)
+            if isinstance(workspace, int):
+                return workspace
             knowledge = KnowledgeModule(workspace)
             if args.knowledge_command == "note-source":
                 result = knowledge.note_source(
@@ -688,9 +929,14 @@ def main(argv: list[str] | None = None) -> int:
                 "the following arguments are required: knowledge_command",
             )
         if args.command == "search":
-            workspace = Workspace.discover(Path(args.workspace))
-            search_module = SearchModule(workspace)
+            workspace = _workspace_from_args(args)
+            home = _home_from_args(args)
+            if workspace is None and home is None:
+                home = AlcoveHome.init()
+            search_module = SearchModule(workspace, home=home)
             if args.unindexed:
+                if workspace is None:
+                    return _argument_error(parser, "search --unindexed requires --workspace")
                 issues = ValidateModule(workspace).validate(strict_quality=False)
                 if args.json:
                     print(json.dumps({"issues": issues}, ensure_ascii=False, indent=2))
@@ -737,8 +983,9 @@ def main(argv: list[str] | None = None) -> int:
                 _print_search_rows(results)
             return 0
         if args.command == "pin":
-            workspace = Workspace.discover(Path(args.workspace))
-            pins = PinsModule(workspace)
+            workspace = _workspace_from_args(args)
+            home = _home_from_args(args)
+            pins = PinsModule(workspace, home=home)
             if args.pin_command == "add":
                 result = pins.add(
                     AddPinRequest(
@@ -766,8 +1013,7 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     for pin in results:
                         print(
-                            f"{pin['priority']} | {pin['status']} | "
-                            f"{pin['title']} | {pin['path']}"
+                            f"{pin['priority']} | {pin['status']} | {pin['title']} | {pin['path']}"
                         )
                 return 0
             if args.pin_command == "archive":
@@ -779,8 +1025,9 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             return _argument_error(parser, "the following arguments are required: pin_command")
         if args.command == "idea":
-            workspace = Workspace.discover(Path(args.workspace))
-            tasks = TasksModule(workspace)
+            workspace = _workspace_from_args(args)
+            home = _home_from_args(args)
+            tasks = TasksModule(workspace, home=home)
             if args.idea_command == "add":
                 idea = tasks.idea_add(
                     AddIdeaRequest(
@@ -827,8 +1074,9 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             return _argument_error(parser, "the following arguments are required: idea_command")
         if args.command == "task":
-            workspace = Workspace.discover(Path(args.workspace))
-            tasks = TasksModule(workspace)
+            workspace = _workspace_from_args(args)
+            home = _home_from_args(args)
+            tasks = TasksModule(workspace, home=home)
             if args.task_command == "add":
                 task = tasks.task_add(
                     AddTaskRequest(
@@ -884,10 +1132,7 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"routine: {routine.id}")
                 return 0
             if args.task_command == "routine-list":
-                results = [
-                    _routine_dict(routine)
-                    for routine in tasks.routine_list(args.status)
-                ]
+                results = [_routine_dict(routine) for routine in tasks.routine_list(args.status)]
                 if args.json:
                     print(json.dumps(results, ensure_ascii=False, indent=2))
                 else:
@@ -911,8 +1156,9 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             return _argument_error(parser, "the following arguments are required: task_command")
         if args.command == "mount":
-            workspace = Workspace.discover(Path(args.workspace))
-            mounts = MountsModule(workspace)
+            workspace = _workspace_from_args(args)
+            home = _home_from_args(args)
+            mounts = MountsModule(workspace, home=home)
             if args.mount_command == "add":
                 mount = mounts.add(
                     AddMountRequest(
@@ -945,10 +1191,11 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             return _argument_error(parser, "the following arguments are required: mount_command")
         if args.command == "connector":
-            workspace = Workspace.discover(Path(args.workspace))
+            workspace = _workspace_from_args(args)
+            home = _home_from_args(args)
             if args.connector_command == "apple-notes":
                 if args.apple_notes_command == "index":
-                    report = AppleNotesConnector(workspace).import_export(
+                    report = AppleNotesConnector(workspace, home=home).import_export(
                         AppleNotesImportRequest(
                             export_dir=args.export_dir,
                             tags=_tags(args),
@@ -957,9 +1204,7 @@ def main(argv: list[str] | None = None) -> int:
                     if args.json:
                         print(json.dumps(report, ensure_ascii=False, indent=2))
                     else:
-                        print(
-                            f"indexed: {report['scanned']}, skipped: {report['skipped']}"
-                        )
+                        print(f"indexed: {report['scanned']}, skipped: {report['skipped']}")
                     return 0
                 return _argument_error(
                     parser,
@@ -967,7 +1212,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
             if args.connector_command == "github-stars":
                 if args.github_stars_command == "index":
-                    report = GitHubStarsConnector(workspace).import_export(
+                    report = GitHubStarsConnector(workspace, home=home).import_export(
                         GitHubStarsImportRequest(
                             export_file=args.export_file,
                             tags=_tags(args),
@@ -976,9 +1221,7 @@ def main(argv: list[str] | None = None) -> int:
                     if args.json:
                         print(json.dumps(report, ensure_ascii=False, indent=2))
                     else:
-                        print(
-                            f"indexed: {report['scanned']}, skipped: {report['skipped']}"
-                        )
+                        print(f"indexed: {report['scanned']}, skipped: {report['skipped']}")
                     return 0
                 return _argument_error(
                     parser,
@@ -989,7 +1232,9 @@ def main(argv: list[str] | None = None) -> int:
                 "the following arguments are required: connector_command",
             )
         if args.command == "link":
-            workspace = Workspace.discover(Path(args.workspace))
+            workspace = _required_workspace(parser, args)
+            if isinstance(workspace, int):
+                return workspace
             if args.link_command == "source":
                 result = LinkingModule(workspace).link_source(
                     LinkSourceRequest(
@@ -1012,15 +1257,31 @@ def main(argv: list[str] | None = None) -> int:
                 parser,
                 "the following arguments are required: link_command",
             )
+        if args.command == "export":
+            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
+            if args.export_command == "global":
+                result = ExportModule(home).export_global(args.output_dir)
+                if args.json:
+                    print(json.dumps(result, ensure_ascii=False, indent=2))
+                else:
+                    print(f"exported: {result['output_dir']}")
+                return 0
+            return _argument_error(
+                parser,
+                "the following arguments are required: export_command",
+            )
         if args.command == "serve":
             if args.mcp:
-                run_mcp_server(args.workspace)
+                workspace = _workspace_from_args(args)
+                workspace_arg = str(workspace.root) if workspace is not None else "."
+                run_mcp_server(workspace_arg, args.home or None)
                 return 0
             return _argument_error(parser, "serve requires --mcp")
         if args.command == "validate":
-            issues = ValidateModule(Workspace.discover(Path(args.workspace))).validate(
-                strict_quality=args.strict_quality
-            )
+            workspace = _required_workspace(parser, args)
+            if isinstance(workspace, int):
+                return workspace
+            issues = ValidateModule(workspace).validate(strict_quality=args.strict_quality)
             if args.json:
                 print(json.dumps({"issues": issues}, ensure_ascii=False, indent=2))
             else:
@@ -1028,9 +1289,10 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"{issue['kind']} | {issue['path']} | {issue['message']}")
             return 1 if issues else 0
         if args.command == "gardener":
-            report = GardenerModule(Workspace.discover(Path(args.workspace))).gardener(
-                prune=args.prune
-            )
+            workspace = _required_workspace(parser, args)
+            if isinstance(workspace, int):
+                return workspace
+            report = GardenerModule(workspace).gardener(prune=args.prune)
             payload = {"issues": report.issues, "actions": report.actions}
             if args.json:
                 print(json.dumps(payload, ensure_ascii=False, indent=2))

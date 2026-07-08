@@ -16,6 +16,7 @@ PLATFORM_READ_ORDER = {
     "xhs": ("summary.md", "ocr-merge.txt", "post.md"),
     "x": ("post.md", "ocr-merge.txt", "summary.md"),
     "web": ("article.md", "summary.md", "post.md"),
+    "manual": ("note.md", "post.md", "summary.md"),
     "fallback": ("post.md", "summary.md", "article.md", "ocr-merge.txt"),
 }
 
@@ -58,9 +59,7 @@ class InboxProcessResult:
 
 
 class InboxModule:
-    def __init__(
-        self, workspace: Workspace, knowledge: KnowledgeModule | None = None
-    ) -> None:
+    def __init__(self, workspace: Workspace, knowledge: KnowledgeModule | None = None) -> None:
         self.workspace = workspace
         self.paths = workspace.paths()
         self.knowledge = knowledge or KnowledgeModule(workspace)
@@ -74,13 +73,29 @@ class InboxModule:
     def read(self, name: str) -> InboxPost:
         return self._read_path(self._find_entry(name))
 
+    def add_manual(
+        self,
+        title: str,
+        content: str,
+        source: str = "",
+    ) -> dict:
+        slug = normalize_slug(title)
+        if not slug:
+            raise ValueError("Manual inbox title cannot be empty")
+        dest = self._unique_folder_path(self.paths.inbox / "manual" / slug)
+        dest.mkdir(parents=True, exist_ok=True)
+        body = [f"# {title.strip()}", ""]
+        if source:
+            body.extend([f"Source URL: {source.strip()}", ""])
+        body.append(content.strip())
+        (dest / "note.md").write_text("\n".join(body).rstrip() + "\n", encoding="utf-8")
+        return {"status": "added", "path": str(dest), "id": f"manual/{dest.name}"}
+
     def note(self, request: InboxNoteRequest) -> InboxProcessResult:
         post = self.read(request.name)
         archive_path = self._archive_post(post, request.topic)
         archive_reference = self._legacy_path(archive_path)
-        tags = self._resolve_tags(
-            post, request.topic, request.tags, request.no_auto_tags
-        )
+        tags = self._resolve_tags(post, request.topic, request.tags, request.no_auto_tags)
         confidence = self._score_confidence(post)
         supersedes = self._similar_sources_to_supersede(
             post,
@@ -221,9 +236,7 @@ class InboxModule:
         if not matches:
             raise FileNotFoundError(f"Inbox item not found: {name}")
         if len(matches) > 1:
-            identifiers = ", ".join(
-                f"{entry.parent.name}/{entry.name}" for entry in matches
-            )
+            identifiers = ", ".join(f"{entry.parent.name}/{entry.name}" for entry in matches)
             raise ValueError(
                 f"Ambiguous inbox item {name!r}; use platform/name. Matches: {identifiers}"
             )
@@ -245,9 +258,9 @@ class InboxModule:
             raise ValueError(f"Invalid inbox identifier {name!r}")
 
         platform, item_name = parts
-        if self._invalid_identifier_component(
-            platform
-        ) or self._invalid_identifier_component(item_name):
+        if self._invalid_identifier_component(platform) or self._invalid_identifier_component(
+            item_name
+        ):
             raise ValueError(f"Invalid inbox identifier {name!r}")
         return platform, item_name
 
@@ -258,9 +271,7 @@ class InboxModule:
         platform = path.parent.name
         metadata = self._capture_metadata(path)
         candidates = PLATFORM_READ_ORDER.get(platform, PLATFORM_READ_ORDER["fallback"])
-        content_path = next(
-            (path / name for name in candidates if (path / name).is_file()), None
-        )
+        content_path = next((path / name for name in candidates if (path / name).is_file()), None)
         if content_path is None:
             raise FileNotFoundError(f"No readable content file found in {path}")
         content = content_path.read_text(encoding="utf-8")
@@ -269,9 +280,7 @@ class InboxModule:
             metadata, "source_url", "canonical_url"
         )
         date = self._date_from_name(path.name) or self._metadata_date(metadata)
-        return InboxPost(
-            path.name, path, platform, title, source, date, content, content_path.name
-        )
+        return InboxPost(path.name, path, platform, title, source, date, content, content_path.name)
 
     def _capture_metadata(self, path: Path) -> dict:
         metadata_path = path / "capture.json"
@@ -289,9 +298,7 @@ class InboxModule:
                 return line[2:].strip()
         return ""
 
-    def _title_from_content_or_metadata(
-        self, content: str, metadata: dict, fallback: str
-    ) -> str:
+    def _title_from_content_or_metadata(self, content: str, metadata: dict, fallback: str) -> str:
         heading = self._first_heading(content)
         metadata_title = self._metadata_string(metadata, "title")
         if heading and heading.lower() not in {"summary", "article", "post", "content"}:

@@ -18,9 +18,7 @@ def _write_xhs_post(root, name="20260707-post"):
         name,
         {
             "post.md": "# sparse\n\n#tag",
-            "summary.md": (
-                "# 代码图谱怎么选\n\n来源：https://example.test/xhs\n\n详细摘要"
-            ),
+            "summary.md": ("# 代码图谱怎么选\n\n来源：https://example.test/xhs\n\n详细摘要"),
         },
     )
 
@@ -68,9 +66,7 @@ def test_cli_doctor_json_reports_workspace_health(tmp_path, capsys):
 
 
 def test_cli_parser_accepts_serve_mcp_command(tmp_path):
-    args = build_parser().parse_args(
-        ["serve", "--mcp", "--workspace", str(tmp_path)]
-    )
+    args = build_parser().parse_args(["serve", "--mcp", "--workspace", str(tmp_path)])
 
     assert args.command == "serve"
     assert args.mcp is True
@@ -270,6 +266,36 @@ def test_cli_inbox_empty_prints_message(tmp_path, capsys):
     assert captured.out.strip() == "Inbox is empty."
 
 
+def test_cli_inbox_manual_add_writes_readable_item(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+
+    add_code = main(
+        [
+            "inbox",
+            "--workspace",
+            str(tmp_path),
+            "manual-add",
+            "Manual Thought",
+            "--content",
+            "Copied manual needle.",
+            "--source",
+            "chat://manual",
+            "--json",
+        ]
+    )
+    add_output = capsys.readouterr()
+    read_code = main(
+        ["inbox", "--workspace", str(tmp_path), "read", "manual/manual-thought", "--json"]
+    )
+    read_output = capsys.readouterr()
+
+    assert add_code == 0
+    assert json.loads(add_output.out)["status"] == "added"
+    assert read_code == 0
+    assert json.loads(read_output.out)["title"] == "Manual Thought"
+
+
 def test_cli_knowledge_note_source_followed_by_search_outputs_matching_title(tmp_path, capsys):
     main(["init", str(tmp_path)])
     capsys.readouterr()
@@ -439,10 +465,7 @@ def test_cli_search_unindexed_returns_validation_issues(tmp_path, capsys):
     captured = capsys.readouterr()
 
     assert code == 1
-    assert any(
-        issue["kind"] == "dead_source_ref"
-        for issue in json.loads(captured.out)["issues"]
-    )
+    assert any(issue["kind"] == "dead_source_ref" for issue in json.loads(captured.out)["issues"])
 
 
 def test_cli_pin_add_list_archive_and_search(tmp_path, capsys):
@@ -470,9 +493,7 @@ def test_cli_pin_add_list_archive_and_search(tmp_path, capsys):
         ["pin", "--workspace", str(tmp_path), "list", "--tag", "personal-notes", "--json"]
     )
     list_output = capsys.readouterr()
-    search_code = main(
-        ["search", "durable", "--workspace", str(tmp_path), "--json"]
-    )
+    search_code = main(["search", "durable", "--workspace", str(tmp_path), "--json"])
     search_output = capsys.readouterr()
     archive_code = main(
         [
@@ -763,6 +784,211 @@ def test_cli_connector_github_stars_index_and_search(tmp_path, capsys):
     assert json.loads(search_output.out)[0]["type"] == "GitHub Star"
 
 
+def test_cli_kb_add_and_list_use_alcove_home_registry(tmp_path, capsys):
+    kb_root = tmp_path / "social_media_posts"
+    main(["init", str(kb_root)])
+    capsys.readouterr()
+    home_root = tmp_path / "home"
+
+    add_code = main(
+        [
+            "kb",
+            "--home",
+            str(home_root),
+            "add",
+            "social_media_posts",
+            str(kb_root),
+            "--json",
+        ]
+    )
+    add_output = capsys.readouterr()
+    list_code = main(["kb", "--home", str(home_root), "list", "--json"])
+    list_output = capsys.readouterr()
+
+    assert add_code == 0
+    assert json.loads(add_output.out)["knowledge_base"]["name"] == "social_media_posts"
+    assert (home_root / "knowledge-bases" / "social_media_posts.yml").is_file()
+    assert list_code == 0
+    assert json.loads(list_output.out)[0]["path"] == str(kb_root.resolve())
+
+
+def test_cli_registered_kb_name_can_replace_workspace_path(tmp_path, capsys):
+    kb_root = tmp_path / "social_media_posts"
+    main(["init", str(kb_root)])
+    capsys.readouterr()
+    home_root = tmp_path / "home"
+    main(
+        [
+            "kb",
+            "--home",
+            str(home_root),
+            "add",
+            "social_media_posts",
+            str(kb_root),
+            "--json",
+        ]
+    )
+    capsys.readouterr()
+    _write_post(kb_root, "web", "20260708-note", {"article.md": "# KB Name\n\nBody"})
+
+    code = main(
+        [
+            "inbox",
+            "--home",
+            str(home_root),
+            "--kb",
+            "social_media_posts",
+            "peek",
+            "--json",
+        ]
+    )
+    output = capsys.readouterr()
+
+    assert code == 0
+    assert json.loads(output.out)["title"] == "KB Name"
+
+
+def test_cli_global_home_features_are_searchable_without_workspace(tmp_path, capsys):
+    home_root = tmp_path / "home"
+    mount_source = tmp_path / "external"
+    mount_source.mkdir()
+    (mount_source / "note.md").write_text(
+        "# Global Mount\n\nGlobal mounted needle.",
+        encoding="utf-8",
+    )
+    stars_file = tmp_path / "stars.json"
+    stars_file.write_text(
+        json.dumps(
+            [
+                {
+                    "full_name": "octopusgarage/alcove",
+                    "html_url": "https://github.com/OctopusGarage/alcove",
+                    "description": "Global connector needle.",
+                    "language": "Python",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    pin_code = main(
+        [
+            "pin",
+            "--home",
+            str(home_root),
+            "add",
+            "Global Pin",
+            "--description",
+            "Global pin needle.",
+            "--json",
+        ]
+    )
+    capsys.readouterr()
+    task_code = main(
+        [
+            "task",
+            "--home",
+            str(home_root),
+            "add",
+            "Global Task",
+            "--notes",
+            "Global task needle.",
+            "--json",
+        ]
+    )
+    capsys.readouterr()
+    mount_code = main(
+        [
+            "mount",
+            "--home",
+            str(home_root),
+            "add",
+            str(mount_source),
+            "--name",
+            "Global Mount",
+            "--json",
+        ]
+    )
+    capsys.readouterr()
+    scan_code = main(["mount", "--home", str(home_root), "scan", "--json"])
+    capsys.readouterr()
+    connector_code = main(
+        [
+            "connector",
+            "--home",
+            str(home_root),
+            "github-stars",
+            "index",
+            str(stars_file),
+            "--json",
+        ]
+    )
+    capsys.readouterr()
+    search_code = main(["search", "global", "--home", str(home_root), "--json"])
+    search_output = capsys.readouterr()
+
+    assert pin_code == 0
+    assert task_code == 0
+    assert mount_code == 0
+    assert scan_code == 0
+    assert connector_code == 0
+    assert (home_root / "pins" / "global-pin.md").is_file()
+    assert (home_root / "tasks" / "tasks.json").is_file()
+    assert (home_root / "mounts" / "indexes" / "global-mount.json").is_file()
+    assert (home_root / "connectors" / "github-stars" / "index.json").is_file()
+    assert search_code == 0
+    roots = {row["root"] for row in json.loads(search_output.out)}
+    assert {"pins", "tasks", "mounts", "connectors"}.issubset(roots)
+
+
+def test_cli_export_global_home_copies_user_state(tmp_path, capsys):
+    home_root = tmp_path / "home"
+    kb_root = tmp_path / "kb"
+    main(["init", str(kb_root)])
+    capsys.readouterr()
+    main(
+        [
+            "kb",
+            "--home",
+            str(home_root),
+            "add",
+            "social_media_posts",
+            str(kb_root),
+            "--json",
+        ]
+    )
+    capsys.readouterr()
+    main(
+        [
+            "pin",
+            "--home",
+            str(home_root),
+            "add",
+            "Exported Pin",
+            "--description",
+            "Backup this pin.",
+            "--json",
+        ]
+    )
+    capsys.readouterr()
+    main(["task", "--home", str(home_root), "add", "Exported Task", "--json"])
+    capsys.readouterr()
+
+    output_dir = tmp_path / "backup"
+    code = main(["export", "--home", str(home_root), "global", str(output_dir), "--json"])
+    captured = capsys.readouterr()
+
+    assert code == 0
+    payload = json.loads(captured.out)
+    assert payload["status"] == "exported"
+    assert (output_dir / "config.yml").is_file()
+    assert (output_dir / "knowledge-bases" / "social_media_posts.yml").is_file()
+    assert (output_dir / "pins" / "exported-pin.md").is_file()
+    assert (output_dir / "tasks" / "tasks.json").is_file()
+    assert (output_dir / "manifest.json").is_file()
+
+
 def test_cli_link_source_promotes_connector_item(tmp_path, capsys):
     main(["init", str(tmp_path)])
     capsys.readouterr()
@@ -952,9 +1178,7 @@ def test_cli_inbox_archive_supports_supersede_no_auto_tags_and_validate(tmp_path
         "20260707-same-source",
         {
             "article.md": (
-                "# Same Source\n\n"
-                "Source URL: https://example.test/same\n\n"
-                "Same Source body."
+                "# Same Source\n\nSource URL: https://example.test/same\n\nSame Source body."
             )
         },
     )

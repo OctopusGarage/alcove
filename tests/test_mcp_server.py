@@ -4,6 +4,7 @@ import asyncio
 import json
 
 from alcove.connectors.github_stars import GitHubStarsConnector, GitHubStarsImportRequest
+from alcove.home import AlcoveHome
 from alcove.knowledge import KnowledgeModule, NoteSourceRequest
 from alcove.mcp_server import (
     create_mcp_server,
@@ -72,6 +73,31 @@ def test_mcp_mount_list_tool_returns_active_mounts(tmp_path):
     assert payload["workspace"] == str(workspace.root)
     assert payload["count"] == 1
     assert payload["mounts"][0]["name"] == "Source"
+
+
+def test_mcp_global_home_tools_do_not_require_workspace(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+
+    pin_payload = pin_add_tool(
+        "",
+        home=str(home.root),
+        title="Global MCP Pin",
+        description="Global MCP pin needle.",
+    )
+    task_payload = task_add_tool(
+        "",
+        home=str(home.root),
+        title="Global MCP Task",
+        notes="Global MCP task needle.",
+    )
+    list_payload = task_list_tool("", home=str(home.root))
+    search_payload = search_tool("", home=str(home.root), query="global mcp")
+
+    assert pin_payload["home"] == str(home.root)
+    assert pin_payload["pin"]["id"] == "global-mcp-pin"
+    assert task_payload["task"]["id"] == "global-mcp-task"
+    assert list_payload["tasks"][0]["title"] == "Global MCP Task"
+    assert {row["root"] for row in search_payload["results"]} == {"pins", "tasks"}
 
 
 def test_mcp_server_registers_v1_tools(tmp_path):

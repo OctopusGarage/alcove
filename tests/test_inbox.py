@@ -29,9 +29,7 @@ def _write_xhs_post(root, name):
         name,
         {
             "post.md": "# short\n\n#tag",
-            "summary.md": (
-                "# 代码图谱怎么选\n\n来源：https://example.test/xhs\n\n详细摘要"
-            ),
+            "summary.md": ("# 代码图谱怎么选\n\n来源：https://example.test/xhs\n\n详细摘要"),
         },
     )
 
@@ -44,10 +42,7 @@ def test_xhs_prefers_summary_over_sparse_post(tmp_path):
 
     assert post.title == "代码图谱怎么选"
     assert post.content_source == "summary.md"
-    assert (
-        post.content
-        == "# 代码图谱怎么选\n\n来源：https://example.test/xhs\n\n详细摘要"
-    )
+    assert post.content == "# 代码图谱怎么选\n\n来源：https://example.test/xhs\n\n详细摘要"
 
 
 def test_peek_returns_oldest_across_platforms(tmp_path):
@@ -69,6 +64,24 @@ def test_peek_returns_none_when_inbox_empty(tmp_path):
     assert InboxModule(workspace).peek() is None
 
 
+def test_add_manual_note_writes_readable_inbox_item(tmp_path):
+    workspace = Workspace.init(tmp_path)
+
+    result = InboxModule(workspace).add_manual(
+        title="Clipboard Note",
+        content="Copied text from another channel.",
+        source="chat://manual",
+    )
+    post = InboxModule(workspace).read("manual/clipboard-note")
+
+    assert result["status"] == "added"
+    assert result["path"] == str(tmp_path / "inbox" / "manual" / "clipboard-note")
+    assert (tmp_path / "inbox" / "manual" / "clipboard-note" / "note.md").is_file()
+    assert post.title == "Clipboard Note"
+    assert post.source == "chat://manual"
+    assert post.content_source == "note.md"
+
+
 def test_read_extracts_title_source_date_and_content_source(tmp_path):
     workspace = Workspace.init(tmp_path)
     _write_post(
@@ -77,10 +90,7 @@ def test_read_extracts_title_source_date_and_content_source(tmp_path):
         "20260706-old",
         {
             "article.md": (
-                "intro\n"
-                "# Extracted Title\n\n"
-                "Source URL: https://example.test/source\n\n"
-                "Body"
+                "intro\n# Extracted Title\n\nSource URL: https://example.test/source\n\nBody"
             )
         },
     )
@@ -149,10 +159,7 @@ def test_note_moves_post_to_archive_writes_source_concept_and_records_legacy_pat
         )
     )
 
-    assert (
-        result.archive_path
-        == tmp_path / "archive" / "agent-harness" / "[xhs] 20260706-old"
-    )
+    assert result.archive_path == tmp_path / "archive" / "agent-harness" / "[xhs] 20260706-old"
     assert result.archive_path.is_dir()
     assert not (tmp_path / "inbox" / "xhs" / "20260706-old").exists()
     assert result.source_path.is_file()
@@ -163,12 +170,8 @@ def test_note_moves_post_to_archive_writes_source_concept_and_records_legacy_pat
     source = repo.read_doc(result.source_path)
     concept = repo.read_doc(result.concept_path)
     assert source.frontmatter["resource"] == "https://example.test/xhs"
-    assert (
-        source.frontmatter["legacy_path"] == "archive/agent-harness/[xhs] 20260706-old"
-    )
-    assert concept.frontmatter["legacy_paths"] == [
-        "archive/agent-harness/[xhs] 20260706-old"
-    ]
+    assert source.frontmatter["legacy_path"] == "archive/agent-harness/[xhs] 20260706-old"
+    assert concept.frontmatter["legacy_paths"] == ["archive/agent-harness/[xhs] 20260706-old"]
 
 
 def test_archive_source_only_uses_fallback_content_when_summary_blank(tmp_path):
@@ -197,9 +200,7 @@ def test_archive_source_only_uses_fallback_content_when_summary_blank(tmp_path):
 
 def test_archive_uses_archived_path_as_resource_when_source_missing(tmp_path):
     workspace = Workspace.init(tmp_path)
-    _write_post(
-        tmp_path, "web", "20260704-nosource", {"article.md": "# No Source\n\nBody"}
-    )
+    _write_post(tmp_path, "web", "20260704-nosource", {"article.md": "# No Source\n\nBody"})
 
     result = InboxModule(workspace).archive(
         "20260704-nosource",
@@ -208,10 +209,7 @@ def test_archive_uses_archived_path_as_resource_when_source_missing(tmp_path):
     )
 
     source = MarkdownRepository().read_doc(result.source_path)
-    assert (
-        source.frontmatter["resource"]
-        == "archive/agent-harness/[web] 20260704-nosource"
-    )
+    assert source.frontmatter["resource"] == "archive/agent-harness/[web] 20260704-nosource"
 
 
 def test_archive_destination_collision_gets_numeric_suffix(tmp_path):
@@ -226,10 +224,7 @@ def test_archive_destination_collision_gets_numeric_suffix(tmp_path):
         summary="Manual summary.",
     )
 
-    assert (
-        result.archive_path
-        == tmp_path / "archive" / "agent-harness" / "[xhs] 20260706-old-2"
-    )
+    assert result.archive_path == tmp_path / "archive" / "agent-harness" / "[xhs] 20260706-old-2"
     assert result.archive_path.is_dir()
     assert collision.is_dir()
 
@@ -270,10 +265,7 @@ def test_platform_name_identifier_disambiguates_duplicate_folder_names(tmp_path)
         summary="Manual summary.",
     )
 
-    assert (
-        result.archive_path
-        == tmp_path / "archive" / "agent-harness" / "[x] 20260706-same"
-    )
+    assert result.archive_path == tmp_path / "archive" / "agent-harness" / "[x] 20260706-same"
     assert result.archive_path.is_dir()
     assert (tmp_path / "inbox" / "web" / "20260706-same").is_dir()
     assert not (tmp_path / "inbox" / "x" / "20260706-same").exists()
@@ -298,9 +290,7 @@ def test_rejects_identifier_that_escapes_inbox(tmp_path):
 
 def test_rejects_platform_identifier_with_nested_item_path(tmp_path):
     workspace = Workspace.init(tmp_path)
-    web_post = _write_post(
-        tmp_path, "web", "20260706-post", {"article.md": "# Web\n\nBody"}
-    )
+    web_post = _write_post(tmp_path, "web", "20260706-post", {"article.md": "# Web\n\nBody"})
 
     with pytest.raises(ValueError, match="Invalid inbox identifier"):
         InboxModule(workspace).archive(

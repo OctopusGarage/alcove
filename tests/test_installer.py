@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from alcove.home import AlcoveHome
 from alcove.installer import InstallerModule
 from alcove.workspace import Workspace
 
@@ -10,8 +11,9 @@ def test_installer_writes_codex_mcp_config(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     workspace = Workspace.init(tmp_path / "workspace")
+    alcove_home = AlcoveHome.init(tmp_path / "alcove-home")
 
-    result = InstallerModule(workspace).install(["codex"])
+    result = InstallerModule(workspace, home=alcove_home).install(["codex"])
 
     config = home / ".codex" / "config.toml"
     assert result["files"][0]["action"] == "created"
@@ -19,6 +21,22 @@ def test_installer_writes_codex_mcp_config(tmp_path, monkeypatch):
     assert "[mcp_servers.alcove]" in config.read_text(encoding="utf-8")
     assert 'command = "alcove"' in config.read_text(encoding="utf-8")
     assert str(workspace.root) in config.read_text(encoding="utf-8")
+    assert str(alcove_home.root) in config.read_text(encoding="utf-8")
+
+
+def test_installer_prefers_registered_kb_name_over_workspace_path(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    workspace = Workspace.init(tmp_path / "workspace")
+    alcove_home = AlcoveHome.init(tmp_path / "alcove-home")
+    alcove_home.register_knowledge_base("social_media_posts", workspace.root)
+
+    InstallerModule(workspace, home=alcove_home).install(["codex"])
+
+    config_text = (home / ".codex" / "config.toml").read_text(encoding="utf-8")
+    assert '"--kb"' in config_text
+    assert '"social_media_posts"' in config_text
+    assert '"--workspace"' not in config_text
 
 
 def test_installer_updates_claude_mcp_config_preserving_other_servers(tmp_path, monkeypatch):
@@ -31,15 +49,23 @@ def test_installer_updates_claude_mcp_config_preserving_other_servers(tmp_path, 
         encoding="utf-8",
     )
     workspace = Workspace.init(tmp_path / "workspace")
+    alcove_home = AlcoveHome.init(tmp_path / "alcove-home")
 
-    result = InstallerModule(workspace).install(["claude"])
+    result = InstallerModule(workspace, home=alcove_home).install(["claude"])
 
     payload = json.loads(claude_config.read_text(encoding="utf-8"))
     assert result["files"][0]["action"] == "updated"
     assert payload["mcpServers"]["other"] == {"command": "other"}
     assert payload["mcpServers"]["alcove"] == {
         "command": "alcove",
-        "args": ["serve", "--mcp", "--workspace", str(workspace.root)],
+        "args": [
+            "serve",
+            "--mcp",
+            "--home",
+            str(alcove_home.root),
+            "--workspace",
+            str(workspace.root),
+        ],
     }
 
 
@@ -78,8 +104,8 @@ def test_installer_uninstall_removes_only_alcove_config(tmp_path, monkeypatch):
     codex_config = home / ".codex" / "config.toml"
     codex_config.parent.mkdir(parents=True)
     codex_config.write_text(
-        "[mcp_servers.other]\ncommand = \"other\"\n\n"
-        "[mcp_servers.alcove]\ncommand = \"alcove\"\nargs = [\"serve\"]\n",
+        '[mcp_servers.other]\ncommand = "other"\n\n'
+        '[mcp_servers.alcove]\ncommand = "alcove"\nargs = ["serve"]\n',
         encoding="utf-8",
     )
     claude_config = home / ".claude.json"

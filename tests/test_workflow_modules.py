@@ -3,8 +3,13 @@ import json
 from alcove.classify import ClassifyModule
 from alcove.gardener import GardenerModule
 from alcove.inbox import InboxModule, InboxNoteRequest
-from alcove.knowledge import AddConceptRequest, AddEntityRequest, AddQuestionRequest, KnowledgeModule
-from alcove.lifecycle import LifecycleModule, score_confidence
+from alcove.knowledge import (
+    AddConceptRequest,
+    AddEntityRequest,
+    AddQuestionRequest,
+    KnowledgeModule,
+)
+from alcove.lifecycle import LifecycleModule
 from alcove.markdown import MarkdownDoc, MarkdownRepository
 from alcove.validate import ValidateModule
 from alcove.workspace import Workspace
@@ -179,6 +184,8 @@ def test_question_entity_and_concept_support_source_refs(tmp_path):
         )
     )
 
-    assert MarkdownRepository().read_doc(question.path).frontmatter["source_refs"] == ["/sources/web/a.md"]
+    assert MarkdownRepository().read_doc(question.path).frontmatter["source_refs"] == [
+        "/sources/web/a.md"
+    ]
     assert "分析调用路径" in MarkdownRepository().read_doc(entity.path).body
     json.dumps({"question": str(question.path), "entity": str(entity.path)}, ensure_ascii=False)

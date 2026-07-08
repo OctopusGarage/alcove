@@ -124,7 +124,9 @@ class KnowledgeModule:
                     f"# 问题\n\n{request.question}\n\n"
                     f"# 稳定答案\n\n{request.answer}\n\n"
                     f"# 相关来源\n\n"
-                    + "\n".join(f"- [{ref}]({ref})" for ref in self._normalize_refs(request.source_refs))
+                    + "\n".join(
+                        f"- [{ref}]({ref})" for ref in self._normalize_refs(request.source_refs)
+                    )
                     + "\n"
                 ),
             ),
@@ -158,7 +160,9 @@ class KnowledgeModule:
                     f"# 适用场景\n\n{request.use_cases}\n\n"
                     f"# 待验证问题\n\n{request.open_questions}\n\n"
                     f"# 相关来源\n\n"
-                    + "\n".join(f"- [{ref}]({ref})" for ref in self._normalize_refs(request.source_refs))
+                    + "\n".join(
+                        f"- [{ref}]({ref})" for ref in self._normalize_refs(request.source_refs)
+                    )
                     + "\n"
                 ),
             ),
@@ -191,14 +195,22 @@ class KnowledgeModule:
             path,
             MarkdownDoc(
                 frontmatter=frontmatter,
-                body=self._concept_body(request.title, request.summary, None, self._normalize_refs(request.source_refs), request.legacy_paths),
+                body=self._concept_body(
+                    request.title,
+                    request.summary,
+                    None,
+                    self._normalize_refs(request.source_refs),
+                    request.legacy_paths,
+                ),
             ),
         )
         self._ensure_indexes(domain, topic, tags)
         self.rebuild_indexes()
         return KnowledgeDocResult(path=path)
 
-    def promote_source(self, source: str | Path, topic: str = "", summary: str = "") -> KnowledgeDocResult:
+    def promote_source(
+        self, source: str | Path, topic: str = "", summary: str = ""
+    ) -> KnowledgeDocResult:
         source_path = Path(source)
         if not source_path.is_absolute():
             source_path = self.knowledge_root / source_path
@@ -209,11 +221,15 @@ class KnowledgeModule:
         request = AddConceptRequest(
             topic=topic or str(doc.frontmatter.get("topic") or "misc"),
             title=str(doc.frontmatter.get("title") or source_path.stem),
-            summary=summary or self._source_summary(doc.body) or str(doc.frontmatter.get("description") or ""),
+            summary=summary
+            or self._source_summary(doc.body)
+            or str(doc.frontmatter.get("description") or ""),
             tags=self._as_list(doc.frontmatter.get("tags")),
             source_refs=[source_ref],
             legacy_paths=self._as_list(doc.frontmatter.get("legacy_path")),
-            confidence=float(doc.frontmatter["confidence"]) if "confidence" in doc.frontmatter else None,
+            confidence=float(doc.frontmatter["confidence"])
+            if "confidence" in doc.frontmatter
+            else None,
             status=str(doc.frontmatter.get("status") or "active"),
             last_verified=str(doc.frontmatter.get("last_verified") or ""),
         )
@@ -443,7 +459,9 @@ class KnowledgeModule:
         return "## 我的判断\n\n" + "\n\n".join(sections) + "\n\n"
 
     def _source_summary(self, body: str) -> str:
-        lines = [line.strip() for line in body.splitlines() if line.strip() and not line.startswith("#")]
+        lines = [
+            line.strip() for line in body.splitlines() if line.strip() and not line.startswith("#")
+        ]
         return "\n".join(lines[:3])
 
     def _append_unique(self, current: object, value: str | None) -> list[str]:
@@ -522,10 +540,9 @@ class KnowledgeModule:
         if desired.get("type") == "Domain":
             return current.get("domain") == desired.get("domain")
         if desired.get("type") == "Topic":
-            return (
-                current.get("domain") == desired.get("domain")
-                and current.get("topic") == desired.get("topic")
-            )
+            return current.get("domain") == desired.get("domain") and current.get(
+                "topic"
+            ) == desired.get("topic")
         if desired.get("type") == "Tag":
             return current.get("tag") == desired.get("tag")
         return False
@@ -536,11 +553,7 @@ class KnowledgeModule:
         for doc in docs:
             if doc.path is None:
                 continue
-            title = (
-                doc.frontmatter.get("title")
-                or doc.frontmatter.get("question")
-                or doc.path.stem
-            )
+            title = doc.frontmatter.get("title") or doc.frontmatter.get("question") or doc.path.stem
             doc_type = doc.frontmatter.get("type", "Document")
             rel_path = doc.path.relative_to(self.knowledge_root).as_posix()
             lines.append(f"- [{doc_type}] [{title}]({rel_path})")

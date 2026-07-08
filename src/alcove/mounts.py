@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 
+from alcove.home import AlcoveHome
 from alcove.markdown import normalize_slug
 from alcove.taxonomy import load_taxonomy, normalize_tag
 from alcove.workspace import Workspace
@@ -12,6 +13,7 @@ from alcove.workspace import Workspace
 
 TEXT_EXTENSIONS = {".md", ".markdown", ".txt", ".rst"}
 SKIP_DIRS = {".git", ".hg", ".svn", ".venv", "node_modules", "__pycache__"}
+MAX_INDEXED_TEXT_BYTES = 1_000_000
 
 
 def now_iso() -> str:
@@ -39,12 +41,22 @@ class Mount:
 
 
 class MountsModule:
-    def __init__(self, workspace: Workspace) -> None:
+    def __init__(self, workspace: Workspace | None = None, home: AlcoveHome | None = None) -> None:
         self.workspace = workspace
-        self.paths = workspace.paths()
-        self.taxonomy = load_taxonomy(self.paths.knowledge)
-        self.store_path = self.paths.mounts / "mounts.json"
-        self.index_path = self.paths.mounts / "index.json"
+        self.home = home
+        if home is None and workspace is None:
+            home = AlcoveHome.init()
+            self.home = home
+        self.global_home = home is not None
+        self.mounts_root = home.paths().mounts if home is not None else workspace.paths().mounts
+        self.indexes_root = home.paths().mount_indexes if home is not None else self.mounts_root
+        self.taxonomy = (
+            load_taxonomy(workspace.paths().knowledge)
+            if workspace
+            else load_taxonomy(self.mounts_root)
+        )
+        self.store_path = self.mounts_root / "mounts.json"
+        self.index_path = self.mounts_root / "index.json"
 
     def add(self, request: AddMountRequest) -> Mount:
         data = self._load_mounts()
@@ -91,7 +103,7 @@ class MountsModule:
             mount_items, mount_skipped = self._scan_mount(mount)
             items.extend(mount_items)
             skipped += mount_skipped
-        self._save_index(items)
+        self._save_index(items, mounts)
         return {
             "mount": asdict(mounts[0]) if len(mounts) == 1 else None,
             "scanned": len(items),
@@ -100,6 +112,17 @@ class MountsModule:
         }
 
     def index_items(self) -> list[dict]:
+        indexes_dir = self.mounts_root / "indexes"
+        if indexes_dir.is_dir():
+            rows: list[dict] = []
+            for path in sorted(indexes_dir.glob("*.json")):
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    continue
+                items = data.get("items") if isinstance(data, dict) else []
+                rows.extend(item for item in items if isinstance(item, dict))
+            return rows
         if not self.index_path.is_file():
             return []
         try:
@@ -119,6 +142,9 @@ class MountsModule:
             if not path.is_file():
                 continue
             if path.suffix.lower() not in TEXT_EXTENSIONS:
+                skipped += 1
+                continue
+            if path.stat().st_size > MAX_INDEXED_TEXT_BYTES:
                 skipped += 1
                 continue
             text = path.read_text(encoding="utf-8", errors="ignore")
@@ -155,7 +181,19 @@ class MountsModule:
             encoding="utf-8",
         )
 
-    def _save_index(self, items: list[dict]) -> None:
+    def _save_index(self, items: list[dict], mounts: list[Mount]) -> None:
+        if self.global_home:
+            self.indexes_root.mkdir(parents=True, exist_ok=True)
+            by_mount: dict[str, list[dict]] = {}
+            for item in items:
+                by_mount.setdefault(str(item.get("mount_id") or ""), []).append(item)
+            for mount in mounts:
+                mount_items = by_mount.get(mount.id, [])
+                (self.indexes_root / f"{mount.id}.json").write_text(
+                    json.dumps({"items": mount_items}, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+            return
         self.index_path.parent.mkdir(parents=True, exist_ok=True)
         self.index_path.write_text(
             json.dumps({"items": items}, ensure_ascii=False, indent=2) + "\n",
