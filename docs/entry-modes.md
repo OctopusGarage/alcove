@@ -110,6 +110,8 @@ alcove global install --default-kb social_media_posts
 
 `lite` keeps the exposed MCP surface small:
 
+- command hints for CLI-only workflows such as blog monitoring, radars,
+  dashboard serving, and publisher syncs,
 - search,
 - pins,
 - prompts save/search/get,
@@ -124,6 +126,10 @@ It intentionally hides heavier/admin operations:
 - gardener,
 - routine administration and planner digest notification,
 - full KB archive/note/delete flows.
+
+Use `alcove_command_hints` when an MCP-only client needs to discover the right
+CLI command for a complex Hub workflow. This keeps discovery available without
+turning global MCP into the full orchestration surface.
 
 Install a wider global surface only when the user explicitly wants it:
 

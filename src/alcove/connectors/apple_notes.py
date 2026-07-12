@@ -209,6 +209,7 @@ class AppleNotesConnector:
         report = self.import_export(
             AppleNotesImportRequest(export_dir=str(export_dir), tags=request.tags)
         )
+        counts = self._local_import_counts(summary, report)
         tags = self._normalize_tags(request.tags)
         ConnectorSourceRegistry(self.workspace, home=self.home).upsert_apple_notes(
             source_id=request.source_id or "local",
@@ -216,7 +217,7 @@ class AppleNotesConnector:
             tags=tags,
             export_dir=export_dir,
             index_path=self.index_path,
-            item_count=int(summary.get("note_count") or report["scanned"]),
+            item_count=counts["indexed_count"],
         )
         self._write_okf_sources_from_registry()
         return {
@@ -224,8 +225,11 @@ class AppleNotesConnector:
             "status": "imported",
             "source": "Notes.app",
             "source_id": request.source_id or "local",
-            "exported": int(summary.get("note_count") or report["scanned"]),
-            "summary": self._summary_counts(summary),
+            "exported": counts["exported_count"],
+            "scanned": counts["indexed_count"],
+            "skipped": counts["skipped_count"],
+            "item_count": counts["indexed_count"],
+            "summary": self._summary_counts(summary, report),
             "diff": self._summary_diff(summary),
         }
 
@@ -274,26 +278,28 @@ class AppleNotesConnector:
         tags = [str(tag) for tag in source.get("tags") or []]
         summary = self.exporter.export_all(export_dir)
         report = self.import_export(AppleNotesImportRequest(export_dir=str(export_dir), tags=tags))
+        counts = self._local_import_counts(summary, report)
         ConnectorSourceRegistry(self.workspace, home=self.home).upsert_apple_notes(
             source_id=source_id,
             source=str(source.get("source") or "Notes.app"),
             tags=self._normalize_tags(tags),
             export_dir=export_dir,
             index_path=self.index_path,
-            item_count=int(summary.get("note_count") or report["scanned"]),
+            item_count=counts["indexed_count"],
         )
         self._write_okf_sources_from_registry()
         return {
             "connector": self.connector_id,
             "id": source_id,
             "status": "refreshed",
-            "exported": int(summary.get("note_count") or report["scanned"]),
-            "scanned": report["scanned"],
-            "skipped": report["skipped"],
-            "reused": report.get("reused", 0),
+            "exported": counts["exported_count"],
+            "scanned": counts["indexed_count"],
+            "skipped": counts["skipped_count"],
+            "reused": counts["reused_count"],
+            "item_count": counts["indexed_count"],
             "export_dir": compact_user_path(export_dir),
             "index_path": compact_user_path(self.index_path),
-            "summary": self._summary_counts(summary),
+            "summary": self._summary_counts(summary, report),
             "diff": self._summary_diff(summary),
             "error": "",
         }
@@ -426,11 +432,32 @@ class AppleNotesConnector:
             return Path(export_dir).expanduser().resolve()
         return (self.connector_dir / "exports" / "full").resolve()
 
-    def _summary_counts(self, summary: dict[str, Any]) -> dict[str, int]:
-        return {
+    def _summary_counts(
+        self,
+        summary: dict[str, Any],
+        report: dict[str, Any] | None = None,
+    ) -> dict[str, int]:
+        counts = {
             "added_count": _int_value(summary.get("added_count"), 0),
             "updated_count": _int_value(summary.get("updated_count"), 0),
             "removed_count": _int_value(summary.get("removed_count"), 0),
+        }
+        if report is not None:
+            counts.update(self._local_import_counts(summary, report))
+        return counts
+
+    def _local_import_counts(
+        self, summary: dict[str, Any], report: dict[str, Any]
+    ) -> dict[str, int]:
+        indexed_count = _int_value(report.get("scanned"), 0)
+        exported_count = _int_value(summary.get("note_count"), indexed_count)
+        explicit_skipped = _int_value(report.get("skipped"), 0)
+        skipped_count = max(explicit_skipped, exported_count - indexed_count)
+        return {
+            "exported_count": exported_count,
+            "indexed_count": indexed_count,
+            "skipped_count": skipped_count,
+            "reused_count": _int_value(report.get("reused"), 0),
         }
 
     def _summary_diff(self, summary: dict[str, Any]) -> dict[str, Any]:

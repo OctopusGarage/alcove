@@ -39,6 +39,10 @@ class SearchRow(TypedDict):
     display_label: NotRequired[str]
     fetch_ref: NotRequired[str]
     fetch_command: NotRequired[str]
+    read_ref: NotRequired[str]
+    read_command: NotRequired[str]
+    read_hint: NotRequired[str]
+    source_ref: NotRequired[str]
     information_quality: NotRequired[dict[str, Any]]
     kb: NotRequired[str]
     source_id: NotRequired[str]
@@ -264,10 +268,12 @@ class SearchRowBuilder:
         mount_id = str(item.get("mount_id") or "")
         rel = str(item.get("relative_path") or "")
         ref = ExternalItemReference.mount(mount_id, rel)
+        presenter = ExternalIndexedItemPresenter(ref, item)
+        source_fields = presenter.source_fields()
         return {
             "root": "mounts",
             "type": "Mounted Item",
-            "title": string_or_none(item.get("title")) or rel,
+            "title": presenter.title,
             "domain": None,
             "topic": None,
             "platform": None,
@@ -280,8 +286,17 @@ class SearchRowBuilder:
             "confidence": 0.5,
             "status": string_or_none(item.get("status")) or "active",
             "resource": string_or_none(item.get("relative_path")) or None,
-            "notes": string_or_none(item.get("text")) or "",
+            "notes": presenter.safe_text(),
             "path": ref.path,
+            "display_id": str(source_fields.get("display_id") or ref.path),
+            "display_label": str(source_fields.get("display_label") or presenter.title),
+            "source_id": str(source_fields.get("source_id") or mount_id),
+            "source_label": str(source_fields.get("source_label") or mount_id),
+            "origin_label": str(source_fields.get("origin_label") or mount_id),
+            "source_ref": str(source_fields.get("source_ref") or ref.path),
+            "read_ref": str(source_fields.get("source_ref") or ref.path),
+            "read_command": "",
+            "read_hint": str(source_fields.get("read_hint") or presenter.read_hint()),
         }
 
     def connector_item(self, connector_id: str, item: dict[str, Any]) -> SearchRow:
@@ -321,6 +336,10 @@ class SearchRowBuilder:
             "origin_label": fields["origin_label"],
             "fetch_ref": fields["fetch_ref"],
             "fetch_command": fields["fetch_command"],
+            "read_ref": fields["fetch_ref"],
+            "read_command": fields["fetch_command"],
+            "read_hint": presenter.read_hint(),
+            "source_ref": fields["fetch_ref"],
         }
         if presenter.is_secret_like():
             row["redacted"] = True

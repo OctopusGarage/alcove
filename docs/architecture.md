@@ -1,28 +1,109 @@
 # Alcove Architecture and Feature Overview
 
-Alcove is a local-first personal information system. The product model is intentionally small:
+Alcove is a local-first personal information system. It separates user-owned
+knowledge data from Alcove-owned indexes, service state, generated views, and
+agent entry profiles.
+
+At the highest level, Alcove is organized as:
 
 ```text
 Alcove
-├── 1. Knowledge Bases / 知识库体系
-├── 2. Pins / 置顶收藏功能
-├── 3. Tasks / 任务事务功能
-└── 4. Global Utilities / 全局工具域
-    ├── Projects / 项目别名
-    └── Prompt Memory / 提示词库
+├── Knowledge Sources
+│   ├── Managed KBs                    user-chosen writable knowledge roots
+│   ├── Mounts                         read-only folder/repository indexes
+│   └── Connectors                     protocol/export/API-backed indexes
+├── Global Personal Memory
+│   ├── Pins                           repeated references and future-practice notes
+│   ├── Tasks / Ideas / Routines       planner state and materialized work
+│   ├── Prompts                        reusable instruction records
+│   └── Projects                       local project aliases
+├── Intelligence Feeds
+│   ├── Radars                         configurable scored information reports
+│   ├── Watchers                       URL/feed change detection
+│   └── Blog Monitor                   article discovery and optional capture
+├── Capture and Write Paths
+│   ├── Clipsmith or compatible collectors
+│   ├── manual inbox drafts
+│   └── governed CLI/MCP write commands
+├── Read and Retrieval Paths
+│   ├── global search
+│   ├── OKF indexes and derived catalogs
+│   └── AI-led inspection of local evidence
+├── External Views
+│   ├── Dashboard                      local browser console
+│   └── Publishers                     Apple Notes readable mirrors
+├── Runtime Services
+│   ├── launchd dashboard server
+│   └── launchd scheduler ticks
+└── Quality and Operations
+    ├── health / validate / gardener
+    ├── smoke tests and AI eval packets
+    ├── export / backup helpers
+    └── CI / gitleaks / project health
 ```
 
-This document records the target relationship model and compares it with the current implementation.
-For the project-wide OKF contract, see [okf-profile.md](okf-profile.md). For
-the read/write interaction model, see
+This document records the relationship model and storage boundaries. For the
+project-wide OKF contract, see [okf-profile.md](okf-profile.md). For the
+read/write interaction model, see
 [read-write-model.md](read-write-model.md).
 
-## 1. Knowledge Bases / 知识库体系
-
-Knowledge bases are one-to-many. Alcove should support multiple knowledge sources with different ownership levels.
+## System Relationship
 
 ```text
-Knowledge Bases
+Agents / CLI / MCP / Dashboard
+        │
+        ▼
+Alcove Application
+        │
+        ├── Managed KBs
+        │   └── inbox / archive / OKF knowledge / indexes
+        ├── Global Memory
+        │   └── pins / tasks / prompts / projects
+        ├── External Indexes
+        │   └── mounts / connectors
+        ├── Intelligence Feeds
+        │   └── radars / watchers / blog monitor
+        ├── Publishers
+        │   └── Apple Notes mirrors
+        ├── Local Service
+        │   └── scheduler / dashboard server
+        └── Health
+            └── validate / repair / eval / smoke
+```
+
+The canonical operating principle is:
+
+```text
+Reads  -> broad, AI-led, evidence-inspecting
+Writes -> narrow, CLI/MCP-governed, index-preserving
+```
+
+Search and MCP tools provide structured candidates. Agents may then inspect
+OKF indexes, source records, connector fetch results, mount mirrors, and local
+files before answering broad questions. Durable writes should go through Alcove
+commands so frontmatter, provenance, indexes, lifecycle state, activity logs,
+and validation expectations stay coherent.
+
+## Feature Groups
+
+```text
+Feature Groups
+├── 1. Knowledge Sources / 知识来源体系
+├── 2. Global Personal Memory / 全局个人记忆
+├── 3. Intelligence Feeds / 信息雷达与监控
+├── 4. Entry Profiles / Agent 入口
+├── 5. Local Service / 本地后台服务
+├── 6. External Views / 外部视图与发布
+└── 7. Operations / 健康检查、导出、备份、评估
+```
+
+## 1. Knowledge Sources / 知识来源体系
+
+Knowledge sources are one-to-many. Alcove supports multiple sources with
+different ownership levels.
+
+```text
+Knowledge Sources
 ├── 1.1 Managed Knowledge Base / 托管知识库
 ├── 1.2 Mounted Knowledge Base / 挂载知识库
 └── 1.3 Connector Knowledge Base / 连接器知识库
@@ -376,7 +457,7 @@ profile source, while `alcove connector refresh --connector chrome-bookmarks
 are removed from both `index.json` and the derived OKF item mirrors on the next
 refresh.
 
-## 2. Pins / 置顶收藏功能
+## 2. Global Personal Memory: Pins / 置顶收藏功能
 
 Pins are a global Alcove feature, not a knowledge base. They are for small, high-value personal reference items that should be easy to retrieve.
 
@@ -456,7 +537,7 @@ Pins should not require selecting a managed KB. They should be globally
 searchable and available through CLI/MCP. The Markdown files are the durable
 data format; `index.json`, `index.md`, and `board.html` can be regenerated.
 
-## 3. Tasks / 任务事务功能
+## 3. Global Personal Memory: Tasks / 任务事务功能
 
 Tasks are a global Alcove feature, not a knowledge base. They manage personal todos, ideas, routines, and future reminder behavior.
 
@@ -505,7 +586,7 @@ routine add
 
 Tasks should not require selecting a managed KB. They should be globally searchable and available through MCP.
 
-## 4. Global Utilities / 全局工具域
+## 4. Global Personal Memory: Projects and Prompts / 全局个人工具域
 
 These features are global Alcove Home utilities. They are not managed knowledge bases, but they are searchable and available through CLI/MCP.
 
@@ -764,7 +845,8 @@ point the user will read, such as `常用收藏.md`, not only standalone pin sea
 results.
 
 Global-lite
-└── MCP-only access from unrelated projects; no local skill files by default
+├── MCP-only access from unrelated projects; no local skill files by default
+└── alcove_command_hints points MCP clients to CLI-only Hub workflows
 
 Managed KB
 ├── raw link                                            -> Clipsmith capture to inbox
@@ -825,6 +907,7 @@ MCP follows the same split. Global-aware tools accept `home` and do not require
 a workspace:
 
 ```text
+alcove_command_hints(home=...)
 alcove_search(home=...)
 alcove_pin_add(home=...)
 alcove_pin_list(home=...)
@@ -883,6 +966,7 @@ MCP toolsets:
 
 ```text
 lite
+├── command hints for CLI-only workflows
 ├── search
 ├── pins
 ├── prompts save/search/get
@@ -890,6 +974,7 @@ lite
 └── inbox manual-add when a default KB is configured
 
 kb
+├── command hints for CLI-only workflows
 ├── search and common memory tools
 ├── inbox review and mutation
 ├── OKF knowledge writes/revisions

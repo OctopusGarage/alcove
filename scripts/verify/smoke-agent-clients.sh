@@ -5,6 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
 root="${ALCOVE_AGENT_CLIENT_SMOKE_DIR:-$repo_root/.tmp/agent-clients}"
+root="$(python3 -c 'import sys; from pathlib import Path; print(Path(sys.argv[1]).expanduser().resolve())' "$root")"
 home="$root/home"
 kb="$root/research_notes"
 hub="$root/hub"
@@ -153,6 +154,7 @@ async def main() -> None:
         payload = {
             "tool_count": len(tool_names),
             "required_tools": [
+                "alcove_command_hints",
                 "alcove_search",
                 "alcove_inbox_peek",
                 "alcove_connector_status",
@@ -160,6 +162,7 @@ async def main() -> None:
             "has_required_tools": all(
                 name in tool_names
                 for name in [
+                    "alcove_command_hints",
                     "alcove_search",
                     "alcove_inbox_peek",
                     "alcove_connector_status",

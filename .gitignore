@@ -51,4 +51,4 @@ test-results/
 *.sqlite
 *.sqlite3
 
-docs/superpowers/specs
+docs/superpowers/

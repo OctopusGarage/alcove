@@ -321,6 +321,18 @@ async def main() -> None:
                 raise SystemExit(f"{name} failed: {payload}")
             return payload
 
+        command_hints = await call("guidance", "alcove_command_hints", {
+            "home": str(home),
+            "workspace": str(kb),
+        })
+        command_hint_ids = {
+            str(workflow.get("id") or "")
+            for workflow in command_hints.get("workflows", [])
+            if isinstance(workflow, dict)
+        }
+        if not {"blog_monitor", "radars", "dashboard"}.issubset(command_hint_ids):
+            raise SystemExit(f"command hints missed expected CLI workflows: {command_hints}")
+
         await call("inbox", "alcove_inbox_manual_add", {
             "workspace": str(kb),
             "title": "MCP Matrix Inbox",
@@ -719,6 +731,7 @@ async def main() -> None:
         "lite": await inspect_toolset(
             "lite",
             {
+                "alcove_command_hints",
                 "alcove_search",
                 "alcove_pin_add",
                 "alcove_task_add",
@@ -736,6 +749,7 @@ async def main() -> None:
         "kb": await inspect_toolset(
             "kb",
             {
+                "alcove_command_hints",
                 "alcove_search",
                 "alcove_inbox_peek",
                 "alcove_inbox_note",
@@ -786,6 +800,7 @@ async def main() -> None:
                 "alcove blog check <source-id> --json",
             ],
             "covered_by": ["isolated smoke blog-monitor-smoke.json", "Hub entry skill routing"],
+            "mcp_discovery_tool": "alcove_command_hints",
         },
         "radars": {
             "reason": "Radar definitions and runs are user-selected CLI workflows; MCP search can discover generated reports.",
@@ -795,6 +810,7 @@ async def main() -> None:
                 "alcove radar run <radar-id> --json",
             ],
             "covered_by": ["isolated smoke radar-list/run/status", "Hub entry skill routing"],
+            "mcp_discovery_tool": "alcove_command_hints",
         },
         "dashboard": {
             "reason": "Dashboard is served over local HTTP and validated by browser smoke, not MCP calls.",
@@ -803,6 +819,7 @@ async def main() -> None:
                 "alcove serve --dashboard --home ~/.alcove",
             ],
             "covered_by": ["dashboard browser smoke", "real-home dashboard build"],
+            "mcp_discovery_tool": "alcove_command_hints",
         },
     }
     called_tools = {str(check.get("tool") or "") for check in checks}

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Final
 
+from alcove.entry_policy import default_toolset_for_entry
+
 MCP_TOOL_INVENTORY: Final[dict[str, tuple[str, ...]]] = {
+    "guidance": ("alcove_command_hints",),
     "search": ("alcove_search",),
     "inbox": (
         "alcove_inbox_peek",
@@ -95,18 +98,8 @@ MCP_TOOL_INVENTORY: Final[dict[str, tuple[str, ...]]] = {
 }
 
 MCP_TOOLSET_ALIASES: Final[dict[str, str]] = {
-    "": "full",
     "admin": "full",
     "all": "full",
-    "full": "full",
-    "hub": "full",
-    "hub-full": "full",
-    "global": "lite",
-    "global-lite": "lite",
-    "kb": "kb",
-    "knowledge-base": "kb",
-    "lite": "lite",
-    "light": "lite",
 }
 
 
@@ -119,9 +112,29 @@ def all_mcp_tools() -> set[str]:
 
 
 def resolve_mcp_toolset(toolset: str | None) -> tuple[str, set[str]]:
-    canonical = MCP_TOOLSET_ALIASES.get((toolset or "").strip().lower())
+    normalized = (toolset or "").strip().lower()
+    canonical = MCP_TOOLSET_ALIASES.get(normalized)
     if canonical is None:
-        choices = ", ".join(sorted(name for name in MCP_TOOLSET_ALIASES if name))
+        try:
+            canonical = default_toolset_for_entry(normalized)
+        except ValueError:
+            canonical = None
+    if canonical is None:
+        choices = ", ".join(
+            sorted(
+                [
+                    *MCP_TOOLSET_ALIASES,
+                    "full",
+                    "global",
+                    "global-lite",
+                    "hub",
+                    "hub-full",
+                    "kb",
+                    "knowledge-base",
+                    "lite",
+                ]
+            )
+        )
         raise ValueError(f"Unknown MCP toolset: {toolset}. Expected one of: {choices}")
     if canonical == "full":
         return canonical, all_mcp_tools()
@@ -134,6 +147,7 @@ def resolve_mcp_toolset(toolset: str | None) -> tuple[str, set[str]]:
 
 def _lite_tools() -> set[str]:
     return {
+        "alcove_command_hints",
         "alcove_search",
         "alcove_pin_add",
         "alcove_pin_list",
@@ -160,6 +174,7 @@ def _lite_tools() -> set[str]:
 
 def _kb_tools() -> set[str]:
     return {
+        "alcove_command_hints",
         "alcove_search",
         "alcove_inbox_peek",
         "alcove_inbox_read",

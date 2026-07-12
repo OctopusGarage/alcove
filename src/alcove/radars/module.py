@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, List
 
@@ -18,6 +18,77 @@ from alcove.radars.models import (
     RadarSource,
     now_iso,
 )
+
+
+@dataclass(frozen=True)
+class _RadarRuntimeState:
+    definition: RadarDefinition
+    latest_run: dict[str, Any]
+    latest_reports: dict[str, str]
+    report_state: str
+    operational_status: str
+
+    @property
+    def status_label(self) -> str:
+        if self.operational_status == "current":
+            return "Current"
+        if self.operational_status == "configured":
+            return "Configured, not run yet"
+        if self.operational_status == "stale":
+            return "Stale"
+        return self.operational_status.replace("-", " ").title() or "Inactive"
+
+    @property
+    def report_label(self) -> str:
+        if self.report_state == "current":
+            return "Latest run report"
+        if self.report_state == "historical":
+            return "Historical migrated report"
+        return "No report yet"
+
+    @property
+    def run_command(self) -> str:
+        return f"alcove radar run {self.definition.id} --json"
+
+    def status_row(self) -> dict[str, Any]:
+        return {
+            "id": self.definition.id,
+            "name": self.definition.name,
+            "status": self.definition.status,
+            "operational_status": self.operational_status,
+            "status_label": self.status_label,
+            "schedule": self.definition.schedule.as_dict(),
+            "sources": len(self.definition.sources),
+            "enabled_sources": len(
+                [source for source in self.definition.sources if source.enabled]
+            ),
+            "last_run": self.latest_run,
+            "latest_reports": self.latest_reports,
+            "report_state": self.report_state,
+            "report_label": self.report_label,
+            "run_command": self.run_command,
+        }
+
+    def dashboard_row(self) -> dict[str, Any]:
+        return {
+            "id": self.definition.id,
+            "name": self.definition.name,
+            "status": self.operational_status,
+            "definition_status": self.definition.status,
+            "status_label": self.status_label,
+            "schedule_enabled": self.definition.schedule.enabled,
+            "ttl_hours": self.definition.schedule.ttl_hours,
+            "source_count": len(self.definition.sources),
+            "enabled_source_count": len(
+                [source for source in self.definition.sources if source.enabled]
+            ),
+            "tags": list(self.definition.tags),
+            "last_run": self.latest_run,
+            "latest_reports": self.latest_reports,
+            "report_state": self.report_state,
+            "report_label": self.report_label,
+            "run_command": self.run_command,
+        }
 
 
 class RadarModule:
@@ -287,21 +358,19 @@ class RadarModule:
             raise ValueError(f"unsupported AI summary provider: {provider}")
 
     def _status_row(self, definition: RadarDefinition) -> dict[str, Any]:
+        return self._runtime_state(definition).status_row()
+
+    def _runtime_state(self, definition: RadarDefinition) -> _RadarRuntimeState:
         latest_run = self._latest_run(definition.id)
         latest_reports = self._latest_reports(definition.id)
         report_state = self._latest_report_state(latest_run, latest_reports)
-        return {
-            "id": definition.id,
-            "name": definition.name,
-            "status": definition.status,
-            "schedule": definition.schedule.as_dict(),
-            "sources": len(definition.sources),
-            "enabled_sources": len([source for source in definition.sources if source.enabled]),
-            "last_run": latest_run,
-            "latest_reports": latest_reports,
-            "report_state": report_state,
-            "report_label": self._report_label(report_state),
-        }
+        return _RadarRuntimeState(
+            definition=definition,
+            latest_run=latest_run,
+            latest_reports=latest_reports,
+            report_state=report_state,
+            operational_status=self._operational_status(definition, latest_run, report_state),
+        )
 
     def _latest_run(self, radar_id: str) -> dict[str, Any]:
         run_root = self.runs_root / radar_id
@@ -344,30 +413,19 @@ class RadarModule:
             return "current"
         return "historical"
 
-    def _report_label(self, report_state: str) -> str:
+    def _operational_status(
+        self,
+        definition: RadarDefinition,
+        latest_run: dict[str, Any],
+        report_state: str,
+    ) -> str:
+        if definition.status != "active":
+            return definition.status or "inactive"
         if report_state == "current":
-            return "Latest run report"
-        if report_state == "historical":
-            return "Historical migrated report"
-        return "No report yet"
+            return "current"
+        if latest_run:
+            return "stale"
+        return "configured"
 
     def _dashboard_row(self, definition: RadarDefinition) -> dict[str, Any]:
-        latest_run = self._latest_run(definition.id)
-        latest_reports = self._latest_reports(definition.id)
-        report_state = self._latest_report_state(latest_run, latest_reports)
-        return {
-            "id": definition.id,
-            "name": definition.name,
-            "status": definition.status,
-            "schedule_enabled": definition.schedule.enabled,
-            "ttl_hours": definition.schedule.ttl_hours,
-            "source_count": len(definition.sources),
-            "enabled_source_count": len(
-                [source for source in definition.sources if source.enabled]
-            ),
-            "tags": list(definition.tags),
-            "last_run": latest_run,
-            "latest_reports": latest_reports,
-            "report_state": report_state,
-            "report_label": self._report_label(report_state),
-        }
+        return self._runtime_state(definition).dashboard_row()

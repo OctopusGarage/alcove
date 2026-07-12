@@ -322,11 +322,19 @@ def test_apple_notes_import_local_exports_indexes_and_registers_source(tmp_path)
 
     assert result["status"] == "imported"
     assert result["scanned"] == 1
+    assert result["exported"] == 1
+    assert result["item_count"] == 1
+    assert result["summary"]["indexed_count"] == 1
+    assert result["summary"]["exported_count"] == 1
     assert result["export_dir"].endswith(".alcove/connectors/apple-notes/exports/full")
     assert result["summary"] == {
         "added_count": 1,
         "updated_count": 0,
         "removed_count": 0,
+        "exported_count": 1,
+        "indexed_count": 1,
+        "skipped_count": 0,
+        "reused_count": 0,
     }
     rows = SearchModule(workspace).search(SearchRequest(query="connector needle"))
     assert rows[0]["title"] == "Local Apple Note"

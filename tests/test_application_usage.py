@@ -19,9 +19,13 @@ def test_application_global_mutations_record_usage_and_activity(tmp_path):
     home = AlcoveHome.init(tmp_path / "home")
     app = AlcoveApplication(AlcoveRuntime.resolve(home=home.root))
 
-    app.global_home.pin_add_payload(AddPinRequest(title="Usage Pin", content="Pin body."))
-    app.global_home.task_add_payload(AddTaskRequest(title="Usage Task", notes="Task body."))
-    app.global_home.prompt_save_payload(
+    pin_payload = app.global_home.pin_add_payload(
+        AddPinRequest(title="Usage Pin", content="Pin body.")
+    )
+    task_payload = app.global_home.task_add_payload(
+        AddTaskRequest(title="Usage Task", notes="Task body.")
+    )
+    prompt_payload = app.global_home.prompt_save_payload(
         AddPromptRequest(title="Usage Prompt", content="Prompt body.")
     )
 
@@ -36,6 +40,13 @@ def test_application_global_mutations_record_usage_and_activity(tmp_path):
     }
     assert {event["action"] for event in activity} >= {"pin.add", "task.add", "prompt.save"}
     assert all("/Users/" not in json.dumps(event, ensure_ascii=False) for event in activity)
+    assert pin_payload["write_contract"]["area"] == "pin"
+    assert pin_payload["write_contract"]["post_write_checks"] == [
+        "alcove pin rebuild-index --json",
+        "alcove okf catalog build --json",
+    ]
+    assert task_payload["write_contract"]["source_of_truth"] == "tasks"
+    assert prompt_payload["write_contract"]["action"] == "prompt.save"
 
 
 def test_application_managed_kb_mutation_records_usage_and_activity(tmp_path):
@@ -43,7 +54,7 @@ def test_application_managed_kb_mutation_records_usage_and_activity(tmp_path):
     workspace = Workspace.init(tmp_path / "kb")
     app = AlcoveApplication(AlcoveRuntime.resolve(workspace=workspace.root, home=home.root))
 
-    app.knowledge.note_source_payload(
+    payload = app.knowledge.note_source_payload(
         NoteSourceRequest(
             platform="web",
             title="Usage Source",
@@ -61,6 +72,8 @@ def test_application_managed_kb_mutation_records_usage_and_activity(tmp_path):
     assert activity[0]["area"] == "knowledge"
     assert activity[0]["action"] == "knowledge.note_source"
     assert activity[0]["summary"] == "Noted source: Usage Source"
+    assert payload["write_contract"]["area"] == "knowledge"
+    assert payload["write_contract"]["source_of_truth"] == "managed-kb knowledge"
 
 
 def test_application_external_mutations_record_usage_and_activity(tmp_path):
@@ -85,9 +98,11 @@ def test_application_external_mutations_record_usage_and_activity(tmp_path):
         encoding="utf-8",
     )
 
-    app.external.mount_add_payload(AddMountRequest(path=str(mounted), name="Usage Mount"))
-    app.external.mount_scan_payload("usage-mount")
-    app.external.github_stars_index_payload(
+    mount_payload = app.external.mount_add_payload(
+        AddMountRequest(path=str(mounted), name="Usage Mount")
+    )
+    scan_payload = app.external.mount_scan_payload("usage-mount")
+    connector_payload = app.external.github_stars_index_payload(
         GitHubStarsImportRequest(export_file=str(export_file), tags=["usage"])
     )
 
@@ -105,6 +120,9 @@ def test_application_external_mutations_record_usage_and_activity(tmp_path):
         "mount.scan",
         "connector.github_stars.index",
     }
+    assert mount_payload["write_contract"]["area"] == "mount"
+    assert scan_payload["write_contract"]["action"] == "mount.scan"
+    assert connector_payload["write_contract"]["source_of_truth"] == "connector indexes"
 
 
 def _activity(home: AlcoveHome) -> list[dict]:

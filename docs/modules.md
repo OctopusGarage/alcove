@@ -2,6 +2,56 @@
 
 This document summarizes Alcove's feature modules and their storage contracts.
 
+## Module Map
+
+```text
+Alcove Modules
+├── Knowledge Sources
+│   ├── Managed KBs              1-to-many, user-chosen directories
+│   ├── Mounts                   1-to-many, read-only external folders
+│   └── Connectors               1-to-many, external protocol/export indexes
+├── Capture and Knowledge Writes
+│   ├── Clipsmith adapter         default collector, replaceable
+│   ├── manual inbox drafts       copied text or AI discussion summaries
+│   └── governed knowledge writes Source / Concept / Question / Entity
+├── Global Personal Memory
+│   ├── Pins                     regular references and todo-style future work
+│   ├── Tasks / Ideas / Routines planner state and notifications
+│   ├── Prompts                  reusable instructions
+│   └── Projects                 local project aliases
+├── Intelligence Feeds
+│   ├── Configurable Radars       tech/news/stocks/sports or user-defined
+│   ├── Watchers                  URL/feed change detection
+│   └── Blog Monitor              article discovery and optional capture
+├── Observation and Publishing
+│   ├── Dashboard                 local browser console
+│   └── Apple Notes Publisher     readable mirrors for selected modules
+├── Background Runtime
+│   └── Local Service             launchd dashboard + scheduler ticks
+└── Operations
+    ├── Health / Validate / Gardener
+    ├── OKF catalog build
+    ├── Export
+    └── Smoke / AI eval / quality gates
+```
+
+Storage ownership summary:
+
+```text
+~/.alcove
+├── global module data            pins, tasks, prompts, projects
+├── derived/search state           mounts, connectors, dashboard, stats
+├── operational state              service logs, watcher/blog/radar runs
+├── publisher state                definitions, renders, target note ids
+└── managed KB registry            pointers to user-chosen KB roots
+
+<managed-kb-root>
+├── inbox                          captures and manual drafts
+├── archive                        processed raw evidence
+├── knowledge                      OKF source/concept/question/entity notes
+└── todo                           deferred inbox items
+```
+
 ## Managed Knowledge Bases
 
 Managed KBs are user-chosen directories registered under

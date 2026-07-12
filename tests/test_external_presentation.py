@@ -57,3 +57,44 @@ def test_apple_notes_presentation_redacts_secret_like_text():
     assert presenter.connector_fields()["source_label"] == "Apple Notes · iCloud/Secrets"
     assert presenter.origin_label() == "Apple Notes / iCloud/Secrets"
     assert presenter.safe_text() == "[redacted: secret-like connector content]"
+
+
+def test_mount_presentation_owns_source_ref_and_read_hint():
+    item = {
+        "source_kind": "mount",
+        "mount_id": "research-archive",
+        "mount_name": "Research Archive",
+        "type": "Mounted Item",
+        "title": "Agent Notes",
+        "relative_path": "notes/agent.md",
+        "path": "~/archives/notes/agent.md",
+        "text": "Mounted research note.",
+        "status": "active",
+        "indexed_at": "2026-07-10T00:00:00+00:00",
+    }
+
+    presenter = ExternalIndexedItemPresenter.from_item(item)
+
+    assert presenter is not None
+    assert presenter.dashboard_item() == {
+        "title": "Agent Notes",
+        "type": "Mounted Item",
+        "path": "notes/agent.md",
+        "source": "Research Archive",
+        "resource": "mounts/research-archive#notes/agent.md",
+        "status": "active",
+        "notes": "Mounted research note.",
+        "updated_at": "2026-07-10T00:00:00+00:00",
+        "display_id": "mounts/research-archive#notes/agent.md",
+        "display_label": "Agent Notes",
+        "source_id": "research-archive",
+        "source_label": "Research Archive",
+        "origin_label": "Research Archive",
+        "source_ref": "mounts/research-archive#notes/agent.md",
+        "read_hint": (
+            "Use the mount source reference to inspect the external file "
+            "from the configured mount root."
+        ),
+        "read_ref_available": True,
+        "read_ref_pattern": "mounts/<id>#<relative-path>",
+    }

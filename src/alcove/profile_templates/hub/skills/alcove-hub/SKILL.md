@@ -106,7 +106,7 @@ alcove mount add /path/to/folder --name name --json
 alcove connector fetch "connectors/<id>#<path>" --json
 alcove blog list --status '' --json
 alcove blog check --json
-alcove blog check openai --json
+alcove blog check <source-id> --json
 alcove radar list --json
 alcove radar status <radar-id> --json
 alcove radar run <radar-id> --json

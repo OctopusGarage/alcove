@@ -82,6 +82,13 @@ AI quality eval:
 scripts/eval-ai.sh
 ```
 
+Focused AI eval for a known risk area:
+
+```bash
+ALCOVE_AI_EVAL_SUITES=isolated,mcp_matrix ALCOVE_AI_EVAL_PROVIDER=none ALCOVE_AI_EVAL_RUN_CHECK=0 scripts/eval-ai.sh
+ALCOVE_AI_EVAL_SUITES=isolated,mcp_matrix ALCOVE_AI_EVAL_SKIP_REFRESH=1 scripts/eval-ai.sh
+```
+
 Focused data/OKF health check for the current machine:
 
 ```bash
@@ -121,6 +128,9 @@ ALCOVE_AI_EVAL_PROVIDER=none scripts/eval-ai.sh
 - Use `scripts/eval-ai.sh` when the user asks for AI eval or when quality of
   summarization, classification, dashboard usefulness, agent prompts, or
   workflow intent routing matters.
+- Prefer `scripts/agent-quality-gate.sh --mode coach --json` to choose focused
+  `ALCOVE_AI_EVAL_SUITES`; do not run full AI eval by habit during normal
+  regression work.
 - Use `scripts/agent-quality-gate.sh --mode coach` when the user asks whether
   the current change needs smoke/eval, or when the changed files span multiple
   modules and the correct verification set is not obvious.

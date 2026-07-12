@@ -15,6 +15,11 @@ SECRET_LIKE_RE = re.compile(
 class ExternalIndexedItemPresenter:
     """User-facing projection for one indexed connector or mount item."""
 
+    @classmethod
+    def from_item(cls, item: dict[str, Any]) -> "ExternalIndexedItemPresenter | None":
+        ref = external_reference_from_item(item)
+        return cls(ref, item) if ref else None
+
     def __init__(self, ref: ExternalItemReference, item: dict[str, Any]) -> None:
         self.ref = ref
         self.item = item
@@ -61,7 +66,14 @@ class ExternalIndexedItemPresenter:
         return connector_name or self.origin_label()
 
     def fetch_command(self) -> str:
+        if self.ref.kind != "connector":
+            return ""
         return f"alcove connector fetch {self.ref.path} --json"
+
+    def read_hint(self) -> str:
+        if self.ref.kind == "connector":
+            return "Fetch connector detail with `alcove connector fetch <fetch_ref> --json`."
+        return "Use the mount source reference to inspect the external file from the configured mount root."
 
     def connector_fields(self) -> dict[str, str]:
         if self.ref.kind != "connector":
@@ -76,6 +88,21 @@ class ExternalIndexedItemPresenter:
             "fetch_command": self.fetch_command(),
         }
 
+    def source_fields(self) -> dict[str, Any]:
+        if self.ref.kind == "connector":
+            return self.dashboard_connector_fields()
+        return {
+            "display_id": self.display_id(),
+            "display_label": self.display_label(),
+            "source_id": self.ref.source_id,
+            "source_label": self.source_label(),
+            "origin_label": self.origin_label(),
+            "source_ref": self.ref.path,
+            "read_hint": self.read_hint(),
+            "read_ref_available": True,
+            "read_ref_pattern": "mounts/<id>#<relative-path>",
+        }
+
     def dashboard_connector_fields(self) -> dict[str, Any]:
         if self.ref.kind != "connector":
             return {}
@@ -85,9 +112,35 @@ class ExternalIndexedItemPresenter:
             "source_id": self.ref.source_id,
             "source_label": self.source_label(),
             "origin_label": self.origin_label(),
+            "fetch_ref": self.ref.path,
+            "fetch_command": self.fetch_command(),
             "fetch_ref_available": True,
             "fetch_command_pattern": "alcove connector fetch <fetch_ref> --json",
         }
+
+    def dashboard_item(self, *, max_notes_chars: int = 400) -> dict[str, Any]:
+        row: dict[str, Any] = {
+            "title": self.title,
+            "type": str(self.item.get("type") or self.item.get("source_kind") or "External Item"),
+            "path": "" if self.ref.kind == "connector" else self.ref.relative_path,
+            "source": str(
+                self.item.get("connector_name") or self.item.get("mount_name") or self.ref.source_id
+            ),
+            "resource": self.resource_label(),
+            "status": str(self.item.get("status") or "active"),
+            "notes": self.safe_text(max_notes_chars),
+            "updated_at": str(self.item.get("indexed_at") or self.item.get("updated_at") or ""),
+        }
+        row.update(self.source_fields())
+        return row
+
+    def resource_label(self) -> str:
+        resource = str(self.item.get("resource") or "").strip()
+        if self.ref.kind == "connector" and self.ref.source_id == "apple-notes" and not resource:
+            return "Apple Notes"
+        if self.ref.kind == "mount" and not resource:
+            return self.ref.path
+        return resource
 
     def public_item(self) -> dict[str, Any]:
         public = dict(self.item)
@@ -165,3 +218,16 @@ def _looks_identifier_heavy(text: str) -> bool:
         and re.fullmatch(r"[A-Za-z0-9_:/%.-]+", value) is not None
         and (digit_ratio >= 0.2 or any(marker in value for marker in ("_", ":", "/", "%")))
     )
+
+
+def external_reference_from_item(item: dict[str, Any]) -> ExternalItemReference | None:
+    relative_path = str(item.get("relative_path") or "")
+    if not relative_path:
+        return None
+    connector = str(item.get("connector") or "")
+    if connector:
+        return ExternalItemReference.connector(connector, relative_path)
+    mount_id = str(item.get("mount_id") or "")
+    if mount_id:
+        return ExternalItemReference.mount(mount_id, relative_path)
+    return None

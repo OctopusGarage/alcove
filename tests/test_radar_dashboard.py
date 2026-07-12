@@ -7,7 +7,8 @@ from alcove.radars import RadarDefinition, RadarModule, RadarSource
 
 def test_dashboard_snapshot_lists_generic_radars(tmp_path) -> None:
     home = AlcoveHome.init(tmp_path / ".alcove")
-    RadarModule(home).upsert_definition(
+    module = RadarModule(home)
+    module.upsert_definition(
         RadarDefinition(
             id="sports-news",
             name="Sports News",
@@ -25,11 +26,24 @@ def test_dashboard_snapshot_lists_generic_radars(tmp_path) -> None:
     snapshot = DashboardModule(home).snapshot()
 
     assert snapshot["summary"]["counts"]["radars"] == 1
+    assert snapshot["summary"]["counts"]["radars_current"] == 0
+    assert snapshot["summary"]["counts"]["radars_configured"] == 1
+    assert snapshot["summary"]["counts"]["radars_stale"] == 0
     assert (
         next(module for module in snapshot["modules"] if module["id"] == "radars")["href"]
         == "/radars"
     )
     assert snapshot["radars"][0]["id"] == "sports-news"
+    assert snapshot["radars"][0]["status"] == "configured"
+    assert snapshot["radars"][0]["definition_status"] == "active"
+    assert snapshot["radars"][0]["status_label"] == "Configured, not run yet"
+    assert snapshot["radars"][0]["run_command"] == "alcove radar run sports-news --json"
+    status_row = module.status("sports-news")["radars"][0]
+    assert snapshot["radars"][0]["status"] == status_row["operational_status"]
+    assert snapshot["radars"][0]["status_label"] == status_row["status_label"]
+    assert snapshot["radars"][0]["report_state"] == status_row["report_state"]
+    assert snapshot["radars"][0]["report_label"] == status_row["report_label"]
+    assert snapshot["radars"][0]["run_command"] == status_row["run_command"]
     assert snapshot["radars"][0]["source_count"] == 1
     assert any(
         row["type"] == "radar" and row["title"] == "Sports News" and row["href"] == "/radars"

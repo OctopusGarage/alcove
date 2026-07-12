@@ -113,6 +113,23 @@ CLI/MCP writes centralize:
 - dashboard/search index refreshes,
 - user-confirmation boundaries for inbox mutation.
 
+Application mutation payloads include a `write_contract` object:
+
+```text
+write_contract
+├── area                   inbox / knowledge / pin / prompt / task / mount / connector
+├── action                 exact governed mutation name
+├── target                 user-facing id/path/title for the changed record
+├── governed_by            normally "alcove CLI/MCP"
+├── source_of_truth        source data area that was changed
+├── confirmation_required  whether the payload is a preview or needs explicit user confirmation
+└── post_write_checks      validation/rebuild commands useful after manual repair or follow-up
+```
+
+This contract is intentionally returned by the application seam, so CLI, MCP,
+skills, dashboard diagnostics, and future agents can reason about writes
+without reverse-engineering each module's internal files.
+
 ## Entry Mode Mapping
 
 The read/write split is enforced differently by each entry mode:
@@ -137,6 +154,50 @@ Managed KB workspace
 This keeps unrelated projects from seeing the full Alcove admin surface while
 still allowing low-friction memory writes. Use `--toolset full` only for a hub
 or administrative session where broad control is intentional.
+
+The entry-mode defaults are code-level policy, not only documentation:
+
+```text
+src/alcove/entry_policy.py
+├── hub         -> default MCP toolset: full
+├── global      -> default MCP toolset: lite
+├── managed-kb  -> default MCP toolset: kb
+└── service     -> no MCP toolset; deterministic background work
+```
+
+`src/alcove/mcp_toolsets.py` resolves aliases such as `global-lite`,
+`knowledge-base`, and `hub-full` through that policy. This keeps installer,
+MCP, and agent-entry defaults from drifting.
+
+## Read Result Contract
+
+Search rows are a candidate interface shared by CLI, MCP, dashboard, and agent
+skills. Every row should expose stable evidence fields:
+
+```text
+path             row-local canonical path
+title            display title, never a raw full local path when avoidable
+type             semantic type
+status           lifecycle status
+published_at     source publication time when known
+collected_at     Alcove ingestion/index time when known
+updated_at       latest known update time
+notes            preview text, redacted when needed
+```
+
+External index rows also expose a unified read reference:
+
+```text
+source_ref       stable external source reference
+read_ref         reference agents can follow for detail
+read_command     command when detail fetch is command-backed
+read_hint        short instruction for how to inspect the evidence
+```
+
+For connectors, `read_ref` normally equals `fetch_ref` and `read_command` is
+`alcove connector fetch <fetch_ref> --json`. For mounts, `read_ref` is the
+mount source reference such as `mounts/<id>#<relative-path>` and the agent may
+inspect the mounted source file through the configured mount root.
 
 ## Direct File Edits
 

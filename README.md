@@ -1,8 +1,11 @@
+<a id="readme-top"></a>
+
 # Alcove
 
 [![CI](https://github.com/OctopusGarage/alcove/actions/workflows/ci.yml/badge.svg)](https://github.com/OctopusGarage/alcove/actions/workflows/ci.yml)
 [![Gitleaks](https://github.com/OctopusGarage/alcove/actions/workflows/gitleaks.yml/badge.svg)](https://github.com/OctopusGarage/alcove/actions/workflows/gitleaks.yml)
 [![Project Health](https://github.com/OctopusGarage/alcove/actions/workflows/project-health.yml/badge.svg)](https://github.com/OctopusGarage/alcove/actions/workflows/project-health.yml)
+[![Coverage](https://codecov.io/gh/OctopusGarage/alcove/branch/main/graph/badge.svg)](https://codecov.io/gh/OctopusGarage/alcove)
 [![Pages](https://github.com/OctopusGarage/alcove/actions/workflows/pages.yml/badge.svg)](https://octopusgarage.github.io/alcove/)
 [![version](https://img.shields.io/badge/version-0.1.0-blue)](pyproject.toml)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.12-brightgreen)](https://www.python.org/)
@@ -10,25 +13,136 @@
 [![Ruff](https://img.shields.io/badge/lint-Ruff-261230)](https://docs.astral.sh/ruff/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Alcove is a local-first personal information system for managed knowledge bases,
-pins, tasks, projects, prompts, mounted sources, external connectors, and
-agent-readable memory.
+<p align="center">
+  A local-first personal intelligence hub for managed knowledge bases, global memory,
+  external indexes, scheduled radars, dashboard views, and AI-agent entry workflows.
+  <br />
+  <br />
+  <a href="docs/usage.md"><strong>Read the usage guide »</strong></a>
+  <br />
+  <br />
+  <a href="https://octopusgarage.github.io/alcove/">Website</a>
+  ·
+  <a href="docs/architecture.md">Architecture</a>
+  ·
+  <a href="docs/README.md">Documentation</a>
+  ·
+  <a href="https://github.com/OctopusGarage/alcove/issues/new?template=bug_report.yml">Report Bug</a>
+  ·
+  <a href="https://github.com/OctopusGarage/alcove/issues/new?template=feature_request.yml">Request Feature</a>
+</p>
 
-Website: https://octopusgarage.github.io/alcove/
+<details>
+  <summary>Table of Contents</summary>
+  <ol>
+    <li><a href="#about-the-project">About The Project</a></li>
+    <li><a href="#features">Features</a></li>
+    <li><a href="#architecture">Architecture</a></li>
+    <li><a href="#getting-started">Getting Started</a></li>
+    <li><a href="#core-workflows">Core Workflows</a></li>
+    <li><a href="#operations">Operations</a></li>
+    <li><a href="#documentation">Documentation</a></li>
+    <li><a href="#development">Development</a></li>
+    <li><a href="#license">License</a></li>
+  </ol>
+</details>
 
-It keeps global user state separate from managed knowledge bases:
+## About The Project
 
-- Global state lives in `~/.alcove` by default, or `ALCOVE_HOME`.
+Alcove keeps personal knowledge work inspectable, portable, and agent-friendly.
+It stores user data in local Markdown, YAML, and JSON, while providing governed
+CLI/MCP write paths and broad AI-led read paths.
+
+The core model:
+
+```text
+Read  -> search candidates, inspect local evidence, synthesize with context
+Write -> route through Alcove CLI/MCP contracts, update indexes, validate
+```
+
+Data ownership is explicit:
+
+- `~/.alcove` stores global memory, indexes, service state, dashboard snapshots,
+  radars, publishers, automations, and usage rollups.
 - Managed knowledge bases live wherever the user chooses and are registered
   under `~/.alcove/knowledge-bases/`.
-- Pins, tasks, prompts, projects, mounts, connector indexes, and dashboard state
-  are global by default.
-- User automation jobs live under `~/.alcove/automations/`.
-- Usage statistics are local and privacy-safe: search text is not stored by
-  default, only query length, result counts, filters, surface, and a local salted
-  hash.
+- Mounts and connectors index external sources without taking ownership of the
+  original data.
+- The dashboard and Apple Notes publisher are derived views, not source-of-truth
+  stores.
 
-## Install
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Features
+
+- **Managed knowledge bases** — inbox capture, manual drafts, archive, OKF notes,
+  taxonomy, validation, and indexed retrieval.
+- **Global personal memory** — pins, prompts, tasks, ideas, routines, and local
+  project aliases under Alcove Home.
+- **External knowledge sources** — read-only mounts plus Apple Notes, GitHub
+  Stars, and Chrome Bookmarks connectors.
+- **Agent entry modes** — Hub workspace, lightweight global MCP, managed-KB
+  workspace, and local service runtime.
+- **Configurable radars and monitors** — scheduled information reports, watched
+  feeds/pages, blog discovery, optional capture, optional AI summary, and
+  Telegram/Feishu/tmux-claude-bot notification sinks.
+- **Local dashboard** — browser-facing workbench generated from local data.
+- **External readable mirrors** — Apple Notes publishing for selected personal
+  memory views.
+- **Health and repair** — cross-module data checks, OKF validation, safe index
+  rebuilds, deep local maintenance, and agent smoke/eval hooks.
+
+### Built With
+
+- **Language / runtime** — Python 3.12+
+- **Packaging / environment** — [uv](https://docs.astral.sh/uv/)
+- **CLI / MCP** — argparse, [FastMCP](https://github.com/jlowin/fastmcp)
+- **Data formats** — Markdown + YAML frontmatter, JSON, YAML
+- **Quality gates** — Ruff, mypy, pytest, pytest-cov, pip-audit, gitleaks
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Architecture
+
+```text
+Codex / Claude Code / CLI / MCP / Dashboard
+                    │
+                    ▼
+             Alcove Application
+                    │
+   ┌────────────────┼────────────────┐
+   │                │                │
+Managed KBs   Global Memory   External Indexes
+ inbox          pins           mounts
+ archive        prompts        connectors
+ OKF notes      tasks          fetch refs
+ validation     projects       OKF mirrors
+   │                │                │
+   └────────────────┼────────────────┘
+                    ▼
+       Global OKF Catalog / Search Rows
+                    │
+        Dashboard / Publishers / Service
+```
+
+Key design rules:
+
+- **Reads are broad.** Agents can search, inspect OKF files, follow source refs,
+  fetch connector details, and read mounted evidence.
+- **Writes are narrow.** Durable mutations should go through Alcove CLI/MCP so
+  frontmatter, provenance, indexes, activity logs, and health checks remain
+  consistent.
+- **Derived files are disposable.** Rebuild dashboard snapshots, usage rollups,
+  JSON indexes, and OKF catalogs from source-of-truth data.
+
+See [docs/architecture.md](docs/architecture.md) and
+[docs/read-write-model.md](docs/read-write-model.md) for the full model.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Getting Started
+
+### Installation
 
 ```sh
 uv tool install git+https://github.com/OctopusGarage/alcove.git
@@ -38,60 +152,46 @@ alcove --version
 For local development:
 
 ```sh
+git clone https://github.com/OctopusGarage/alcove.git
+cd alcove
 uv sync
 uv run alcove --version
 uv tool install --force -e .
 ```
 
-## Quick Start
+### First Setup
 
 ```sh
 alcove home init
 alcove kb add research_notes /path/to/research_notes
 alcove hub init ~/AlcoveHub --default-kb research_notes
+alcove hub install ~/AlcoveHub --default-kb research_notes
 alcove global install --default-kb research_notes
 alcove kb install research_notes
 ```
 
-For local Alcove development, install Hub/KB workflow skills as symlinks to the
-source templates:
+Entry profiles:
+
+| Mode | Purpose |
+| --- | --- |
+| Hub workspace | Main AI workspace for broad personal knowledge work. |
+| Global MCP | Lightweight search/save access from unrelated projects. |
+| Managed KB workspace | Focused capture, inbox review, and OKF note workflows. |
+| Local service | launchd dashboard server and deterministic scheduler ticks. |
+
+Development link mode keeps Alcove-owned skills and commands symlinked to the
+repository templates:
 
 ```sh
 alcove hub install ~/AlcoveHub --default-kb research_notes --link
 alcove kb install research_notes --link
 ```
 
-Both install modes support Claude Code and Codex. By default `--target all`
-writes both sets of files:
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-| Agent | Installed files |
-| --- | --- |
-| Claude Code | `CLAUDE.md`, `.claude/skills/*/SKILL.md`, `.claude/commands/*.md` |
-| Codex | `AGENTS.md`, `.agents/skills/*/SKILL.md` |
+## Core Workflows
 
-`--link` only symlinks Alcove-owned skills and Claude commands. `AGENTS.md` and
-`CLAUDE.md` stay normal files with an Alcove-managed section.
-
-Check installed entry profiles:
-
-```sh
-alcove hub init ~/AlcoveHub --default-kb research_notes --status --json
-alcove global install --status --json
-alcove kb install research_notes --status --json
-```
-
-Entry profiles:
-
-- `alcove hub init`: local hub workspace for broad personal knowledge work.
-- `alcove global install`: lightweight MCP access from unrelated projects
-  (`--toolset lite` by default).
-- `alcove kb install`: managed-KB workflow files, commands, and skills.
-- `alcove service install`: optional macOS launchd services for the dashboard
-  and deterministic maintenance ticks.
-
-## Core Commands
-
-Managed KB:
+### Managed KB
 
 ```sh
 alcove inbox --kb research_notes peek
@@ -103,26 +203,19 @@ alcove knowledge --kb research_notes note-source \
   --title "Example" \
   --topic agent-engineering/agent-harness \
   --summary "Summary"
-alcove knowledge --kb research_notes revise \
-  concepts/agent-engineering/agent-harness/example.md \
-  --append "AI discussion follow-up" \
-  --tag mcp \
-  --json
 alcove search "Example" --kb research_notes
 ```
 
-Global memory:
+### Global Memory
 
 ```sh
 alcove pin add "Useful Pattern" --description "Short reusable note" --tag reference
 alcove prompt save "Code Review Lens" --content "Review for correctness." --tag review
 alcove task add "Wire MCP search" --priority high --tag mcp
 alcove project add alcove /path/to/alcove --note "Personal information core"
-alcove publish init apple-notes --root-folder "iCloud/Alcove" --json
-alcove publish run apple-notes --json
 ```
 
-External indexes:
+### External Indexes
 
 ```sh
 alcove mount add /path/to/repos --name repos --type local-folder --tag repos
@@ -133,168 +226,96 @@ alcove connector apple-notes import-local --tag apple-notes --json
 alcove connector status --json
 ```
 
-Configurable radars:
+### Radars, Watchers, and Blogs
 
 ```sh
 alcove radar preset list --json
 alcove radar init tech-news --from-preset tech-news --json
-alcove radar init world-news --from-preset world-news --json
-alcove radar init stocks --from-preset stocks --json
-alcove radar init sports-news --from-preset sports-news --json
-alcove radar list --json
-alcove radar run tech-news --json
 alcove radar run tech-news --force --ai --notify --json
-alcove radar run tech-news --skip-fetch --force --ai --notify --json
-alcove radar import-social-radar ~/.social_radar --json
-```
-
-Automations:
-
-```sh
-alcove automation list --json
-alcove automation add-git-sync notes ~/notes --commit-message "chore: sync notes" --json
-alcove automation run-due --json
-alcove automation import-social-radar ~/.social_radar --home ~/.alcove --json
-```
-
-MCP and dashboard:
-
-```sh
-alcove serve --mcp
-alcove serve --mcp --kb research_notes
-alcove dashboard --home ~/.alcove build
-alcove serve --dashboard --home ~/.alcove --port 8765
-```
-
-Local service and watchers:
-
-```sh
-alcove service install --dashboard --scheduler --load
-alcove service status
-alcove service tick --json
 alcove watch add "Example Blog" https://example.com/feed.xml --kind rss --kb research_notes
-alcove watch check --stale --json
-alcove blog add "Anthropic Engineering" https://www.anthropic.com/engineering \
-  --id anthropic --discover playwright --link-pattern /engineering/ \
-  --kb social_media_posts --inbox-path inbox/anthropic --capture --json
-alcove blog add "OpenAI Engineering" https://openai.com/news/engineering/ \
-  --id openai --discover playwright --link-pattern /index/ \
-  --kb social_media_posts --inbox-path inbox/openai --capture --json
-alcove blog seed openai --json
 alcove blog check --stale --json
 ```
 
-The service layer keeps deterministic work outside AI-agent sessions: dashboard
-serving, stale connector refreshes, due routine materialization, OKF catalog
-rebuilds, usage rollups, health checks, scheduled radar runs, publisher syncs, user automation
-jobs, watched-source change detection, and blog article discovery. Blog sources
-can optionally capture new articles into a managed KB inbox through the configured
-capture adapter. AI summarization and
-notifications are opt-in. When `--notify` is enabled with Telegram environment
-variables configured, Alcove sends one message per new article with its title,
-link, and captured `summary.md` content when available.
-Discovery or capture failures are recorded under `~/.alcove/blog-monitor/`,
-mark the source as `needs_attention`, and send a Telegram failure alert when
-notifications are enabled.
-
-Radar AI analysis is opt-in. A radar definition can enable
-`ai_summary.enabled: true` and `notify.enabled: true` to run `codex exec` or
-`claude -p` after the deterministic report is written, then send notifications
-through configured sinks. `telegram` sends the core summary, top links, and the
-Markdown and HTML report files when available. `feishu` sends a custom-bot text
-message with the same summary and top links through a webhook; local report
-paths are not included in notification text. `tcb` delegates notification text
-and report attachments to a running `tmux-claude-bot` service through
-`tcb notify --attach`, which is the preferred Feishu/Lark attachment path. If AI
-fails, the notification falls back to the deterministic report. Manual Hub
-requests can force a fresh run with `--force --ai --notify`, or analyze already
-fetched data with `--skip-fetch --force --ai --notify`.
-
-Notification credentials can be provided through process environment variables
-or a local secret file at `~/.alcove/.env`:
+### Dashboard and Publishers
 
 ```sh
-ALCOVE_TELEGRAM_BOT_TOKEN=...
-ALCOVE_TELEGRAM_CHAT_ID=...
-ALCOVE_FEISHU_WEBHOOK_URL=...
-ALCOVE_FEISHU_SECRET=...
+alcove dashboard --home ~/.alcove build
+alcove serve --dashboard --home ~/.alcove --port 8765
+alcove publish init apple-notes --root-folder "iCloud/Alcove" --json
+alcove publish run apple-notes --json
 ```
 
-Alcove-specific values take precedence over generic `TELEGRAM_*` environment
-variables, so a stale shell variable cannot override `~/.alcove/.env`.
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-Health:
+## Operations
+
+Run a normal health check:
 
 ```sh
 alcove health --home ~/.alcove --json
 alcove health --home ~/.alcove --kb research_notes --fix --json
 ```
 
-`--fix` repairs safe metadata/index drift: missing managed-KB OKF schema,
-pin/prompt indexes, and the global OKF catalog.
-
-Export:
+Run a local full-maintenance pass:
 
 ```sh
-alcove export global ~/alcove-backup --json
-alcove export kb research_notes ~/alcove-backup/research_notes --json
-alcove export all ~/alcove-backup-all --json
+alcove health --home ~/.alcove --fix --deep --json
 ```
 
-## Default Capture Adapter
-
-Alcove inboxes accept capture bundles from any collector that writes the inbox
-contract. The default capture adapter is Clipsmith:
-
-- GitHub: https://github.com/OctopusGarage/clipsmith
-- Project page: https://octopusgarage.github.io/clipsmith/
-
-Default handoff:
+`--deep` rescans mounts, rebuilds usage rollups, rebuilds the dashboard snapshot,
+and rebuilds the global OKF catalog. Connector refresh remains explicit:
 
 ```sh
-clipsmith sink inbox "<bundle_dir>" "<managed-kb-root>" --json
+alcove health --home ~/.alcove --fix --deep --refresh-stale-connectors --json
 ```
 
-## Backup Recommendation
+Serve deterministic background work through launchd:
 
-Alcove data is local-first. Back up managed KB roots and `~/.alcove` outside the
-runtime. Recommended tools:
+```sh
+alcove service install --dashboard --scheduler --load
+alcove service status
+alcove service tick --json
+```
 
-- Scheduled Git sync: https://github.com/OctopusGarage/git-auto-sync
-- Git encryption before remote sync: https://github.com/AGWA/git-crypt
+Back up managed KB roots and `~/.alcove` outside the Alcove runtime. Recommended
+tools:
 
-Alcove does not manage backup scheduling or encryption keys.
+- scheduled Git sync: https://github.com/OctopusGarage/git-auto-sync
+- optional Git encryption: https://github.com/AGWA/git-crypt
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Documentation
 
-- [Documentation Index](docs/README.md): map of user guides, architecture, ADRs,
-  and historical notes.
-- [Usage Guide](docs/usage.md): common CLI/MCP workflows.
-- [Entry Modes](docs/entry-modes.md): hub, global MCP, managed KB, and MCP
-  toolsets.
-- [Modules](docs/modules.md): feature modules and storage contracts.
-- [Configurable Radars](docs/radars.md): generic information radar definitions,
-  source adapters, scheduling, and Social Radar migration.
-- [Alcove OKF Profile](docs/okf-profile.md): official OKF compatibility plus
-  Alcove's stricter write/index rules.
-- [Read/Write Operating Model](docs/read-write-model.md): broad AI-led reads and
-  narrow CLI/MCP-governed writes.
-- [Data and Backup](docs/data-and-backup.md): data locations, export, sync,
-  encryption.
-- [Architecture](docs/architecture.md): relationship model and implementation overview.
-- [Local Smoke / Agent Eval](docs/evals/local-smoke.md): verification and repair
-  workflows.
-- [Agent Quality Gates](docs/evals/agent-quality-gates.md): Codex/Claude hook
-  automation and AI eval trigger rules.
+- [Documentation Index](docs/README.md)
+- [Usage Guide](docs/usage.md)
+- [Entry Modes](docs/entry-modes.md)
+- [Architecture](docs/architecture.md)
+- [Modules](docs/modules.md)
+- [OKF Profile](docs/okf-profile.md)
+- [Read/Write Model](docs/read-write-model.md)
+- [Data and Backup](docs/data-and-backup.md)
+- [Coverage Setup](docs/coverage.md)
+- [Smoke and Agent Eval](docs/evals/local-smoke.md)
 
-## Verification
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Development
 
 ```sh
-scripts/smoke.sh
-scripts/smoke-mcp-matrix.sh
-scripts/agent-quality-gate.sh --mode coach
-scripts/check.sh
+uv sync
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy
+uv run pytest
+scripts/verify/check.sh
 ```
 
-See [docs/evals/local-smoke.md](docs/evals/local-smoke.md) for the full
-verification matrix.
+Coverage is generated as `coverage.xml` by pytest and uploaded in CI from the
+Ubuntu matrix job. See [docs/coverage.md](docs/coverage.md) for Codecov setup.
+
+## License
+
+Distributed under the MIT License. See [LICENSE](LICENSE).
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>

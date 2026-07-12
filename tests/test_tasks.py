@@ -253,7 +253,7 @@ def test_task_digest_builds_report_and_can_notify(tmp_path, monkeypatch):
 
     assert digest["status"] == "sent"
     assert digest["counts"] == {"ideas": 1, "tasks": 1, "routines": 1}
-    assert digest["text"].count(digest["title"]) == 1
+    assert digest["title"] not in digest["text"]
     assert "✅ Pending tasks" in digest["text"]
     assert "💡 Ideas" in digest["text"]
     assert "🔁 Active routines" in digest["text"]
@@ -268,13 +268,15 @@ def test_task_digest_text_is_readable_and_keeps_ids_in_payload(tmp_path):
     module = TasksModule(home=home)
     task = module.task_add(AddTaskRequest(title="Review task references"))
     idea = module.idea_add(AddIdeaRequest(title="Review idea references"))
-    routine = module.routine_add(AddRoutineRequest(title="Review routine references"))
+    routine = module.routine_add(AddRoutineRequest(title="Review routine references", every_days=7))
 
     digest = module.task_digest(period="weekly", today="2026-07-12")
 
     assert "1. Review task references" in digest["text"]
     assert "1. Review idea references" in digest["text"]
     assert "1. Review routine references" in digest["text"]
+    assert "Frequency: every 7 days" in digest["text"]
+    assert "Frequency: daily" not in digest["text"]
     assert f"[task:{task.id}]" not in digest["text"]
     assert f"[idea:{idea.id}]" not in digest["text"]
     assert f"[routine:{routine.id}]" not in digest["text"]

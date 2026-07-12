@@ -124,14 +124,21 @@ SUITE_COMMANDS: dict[str, GateCommand] = {
         display="ALCOVE_AI_EVAL_PROVIDER=none scripts/eval-ai.sh",
         argv=("scripts/eval-ai.sh",),
         env={"ALCOVE_AI_EVAL_PROVIDER": "none"},
-        reason="build deterministic evidence packet and AI eval prompt without a model call",
+        reason="build the scoped deterministic evidence packet and AI eval prompt without a model call",
     ),
     "ai_review": GateCommand(
         id="ai_review",
         display="ALCOVE_AI_EVAL_SKIP_REFRESH=1 scripts/eval-ai.sh",
         argv=("scripts/eval-ai.sh",),
         env={"ALCOVE_AI_EVAL_SKIP_REFRESH": "1"},
-        reason="ask the configured AI reviewer to judge product and agent-facing quality",
+        reason="ask the configured AI reviewer to judge the scoped product and agent-facing quality",
+    ),
+    "docs_alignment": GateCommand(
+        id="docs_alignment",
+        display="scripts/check-docs-drift.sh",
+        argv=("scripts/check-docs-drift.sh",),
+        env={},
+        reason="Documentation alignment check for user-facing behavior and data contract changes",
     ),
     "check": GateCommand(
         id="check",
@@ -306,6 +313,41 @@ RISK_RULES: tuple[RiskRule, ...] = (
     ),
 )
 
+DOCS_ALIGNMENT_RULE = RiskRule(
+    id="docs_alignment",
+    label="Documentation alignment for user-facing behavior, storage, and agent contracts",
+    patterns=(),
+    suites=("docs_alignment",),
+    requires_ai_eval=False,
+)
+
+DOCS_ALIGNMENT_SOURCE_PATTERNS = (
+    "src/alcove/**",
+    "frontend/dashboard/**",
+    "scripts/**",
+    "pyproject.toml",
+)
+
+DOCS_ALIGNMENT_DOC_PATTERNS = (
+    "README.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "docs/**",
+    ".agents/**",
+    ".claude/**",
+)
+
+DOCS_ALIGNMENT_RISK_IDS = {
+    "agent_entries",
+    "search_okf",
+    "mcp_cli",
+    "inbox_capture",
+    "connectors_mounts",
+    "dashboard",
+    "memory_writes",
+    "radars",
+}
+
 
 IGNORED_PREFIXES = (
     ".git/",
@@ -353,6 +395,8 @@ def build_gate_plan(
     matched_rules = tuple(
         rule for rule in RISK_RULES if any(rule.matches(path) for path in normalized)
     )
+    if _needs_docs_alignment(changed_files=normalized, matched_rules=matched_rules):
+        matched_rules = (*matched_rules, DOCS_ALIGNMENT_RULE)
     risk_areas = tuple(rule.id for rule in matched_rules)
     requires_ai_eval = any(rule.requires_ai_eval for rule in matched_rules)
 
@@ -360,6 +404,7 @@ def build_gate_plan(
     if matched_rules:
         command_ids.append("smoke")
         for suite in (
+            "docs_alignment",
             "agent_clients",
             "mcp_matrix",
             "dashboard_browser",
@@ -371,11 +416,16 @@ def build_gate_plan(
         ):
             if any(suite in rule.suites for rule in matched_rules):
                 command_ids.append(suite)
+        ai_eval_suites = _ai_eval_suites_for_command_ids(command_ids)
         if requires_ai_eval:
             command_ids.extend(("ai_packet", "ai_review"))
         command_ids.append("check")
+    else:
+        ai_eval_suites = ()
 
-    commands = tuple(SUITE_COMMANDS[id_] for id_ in _dedupe(command_ids))
+    commands = tuple(
+        _command_for_id(id_, ai_eval_suites=ai_eval_suites) for id_ in _dedupe(command_ids)
+    )
     message = _build_message(
         mode=mode,
         surface=surface,
@@ -452,6 +502,16 @@ def hook_response(plan: GatePlan, *, exit_code: int) -> dict[str, object]:
     }
 
 
+def docs_drift_exit_code(*, repo_root: Path) -> int:
+    changed_files = discover_changed_files(repo_root)
+    plan = build_gate_plan(changed_files=changed_files, mode="strict", surface="manual")
+    if "docs_alignment" not in plan.risk_areas:
+        print("docs drift check: ok")
+        return 0
+    print(plan.message)
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run or report Alcove agent quality gates.")
     parser.add_argument("--repo-root", default="")
@@ -525,7 +585,7 @@ def _build_message(
         else "Strict mode executes the required checks and blocks on failure."
     )
     return (
-        f"Alcove agent quality gate detected eval-sensitive changes "
+        f"Alcove agent quality gate detected verification-sensitive changes "
         f"(surface={surface}, mode={mode}, ai_eval_required={ai_line}).\n"
         f"{mode_line}\n\n"
         f"Changed files:\n{files}\n\n"
@@ -569,6 +629,27 @@ def _matches_pattern(path: str, pattern: str) -> bool:
     return False
 
 
+def _needs_docs_alignment(
+    *,
+    changed_files: tuple[str, ...],
+    matched_rules: tuple[RiskRule, ...],
+) -> bool:
+    if not any(rule.id in DOCS_ALIGNMENT_RISK_IDS for rule in matched_rules):
+        return False
+    if any(_matches_any(path, DOCS_ALIGNMENT_DOC_PATTERNS) for path in changed_files):
+        return False
+    return any(
+        _matches_any(path, DOCS_ALIGNMENT_SOURCE_PATTERNS)
+        and not path.startswith("tests/")
+        and not path.startswith("scripts/verify/")
+        for path in changed_files
+    )
+
+
+def _matches_any(path: str, patterns: tuple[str, ...]) -> bool:
+    return any(_matches_pattern(path, pattern) for pattern in patterns)
+
+
 def _dedupe(values: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -577,6 +658,63 @@ def _dedupe(values: list[str]) -> list[str]:
             seen.add(value)
             result.append(value)
     return result
+
+
+def _ai_eval_suites_for_command_ids(command_ids: list[str]) -> tuple[str, ...]:
+    suite_ids = []
+    for command_id in command_ids:
+        if command_id == "smoke":
+            suite_ids.append("isolated")
+        elif command_id in {
+            "real_home",
+            "real_integrations",
+            "agent_clients",
+            "mcp_matrix",
+            "dashboard_browser",
+            "radar_reports",
+            "export_restore",
+            "messy_inbox",
+        }:
+            suite_ids.append(command_id)
+    selected = set(suite_ids)
+    return tuple(
+        suite
+        for suite in (
+            "isolated",
+            "real_home",
+            "real_integrations",
+            "agent_clients",
+            "mcp_matrix",
+            "dashboard_browser",
+            "radar_reports",
+            "export_restore",
+            "messy_inbox",
+        )
+        if suite in selected
+    )
+
+
+def _command_for_id(command_id: str, *, ai_eval_suites: tuple[str, ...]) -> GateCommand:
+    command = SUITE_COMMANDS[command_id]
+    if command_id not in {"ai_packet", "ai_review"} or not ai_eval_suites:
+        return command
+    suite_value = ",".join(ai_eval_suites)
+    env = dict(command.env)
+    env["ALCOVE_AI_EVAL_SUITES"] = suite_value
+    if command_id == "ai_packet":
+        env.setdefault("ALCOVE_AI_EVAL_RUN_CHECK", "0")
+    display_prefix = f"ALCOVE_AI_EVAL_SUITES={suite_value} "
+    if command_id == "ai_packet":
+        display_prefix += "ALCOVE_AI_EVAL_PROVIDER=none ALCOVE_AI_EVAL_RUN_CHECK=0 "
+    else:
+        display_prefix += "ALCOVE_AI_EVAL_SKIP_REFRESH=1 "
+    return GateCommand(
+        id=command.id,
+        display=f"{display_prefix}scripts/eval-ai.sh",
+        argv=command.argv,
+        env=env,
+        reason=command.reason,
+    )
 
 
 if __name__ == "__main__":

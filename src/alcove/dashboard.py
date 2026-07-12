@@ -5,7 +5,6 @@ from datetime import UTC, datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
-import re
 import shutil
 import subprocess
 from typing import Any
@@ -13,7 +12,8 @@ from typing import Any
 from alcove.blog_monitor import BlogMonitorModule
 from alcove.connector_display import connector_display_name
 from alcove.connector_sources import ConnectorSourceRegistry
-from alcove.external_index import ExternalIndexStore, ExternalItemReference
+from alcove.dashboard_search_index import build_dashboard_search_index
+from alcove.external_index import ExternalIndexStore
 from alcove.external_presentation import ExternalIndexedItemPresenter
 from alcove.home import AlcoveHome
 from alcove.markdown import MarkdownRepository, normalize_slug
@@ -606,7 +606,9 @@ class DashboardModule:
             "connectors": len(connector_rows),
             "connector_items": sum(row["count"] for row in connector_rows),
             "radars": len(radar_rows),
-            "radars_active": len([row for row in radar_rows if row["status"] == "active"]),
+            "radars_current": len([row for row in radar_rows if row["status"] == "current"]),
+            "radars_configured": len([row for row in radar_rows if row["status"] == "configured"]),
+            "radars_stale": len([row for row in radar_rows if row["status"] == "stale"]),
             "blog_sources": len(blog_rows),
             "blog_sources_active": len([row for row in blog_rows if row["status"] == "active"]),
             "knowledge_bases": len(kb_rows),
@@ -698,7 +700,7 @@ class DashboardModule:
             "usage": usage_summary,
             "health": health,
         }
-        snapshot["search_index"] = self._search_index(snapshot)
+        snapshot["search_index"] = build_dashboard_search_index(snapshot)
         return snapshot
 
     def _home_label(self) -> str:
@@ -902,7 +904,9 @@ class DashboardModule:
                 "metric": counts["radars"],
                 "detail": (
                     f"{self._count_phrase(counts['radars'], 'radar')}; "
-                    f"{counts['radars_active']} active"
+                    f"{counts['radars_current']} current / "
+                    f"{counts['radars_configured']} configured / "
+                    f"{counts['radars_stale']} stale"
                 ),
             },
             {
@@ -1345,31 +1349,20 @@ class DashboardModule:
         return items
 
     def _external_item(self, item: dict[str, Any]) -> dict[str, Any]:
+        presenter = ExternalIndexedItemPresenter.from_item(item)
+        if presenter:
+            return presenter.dashboard_item()
         text = str(item.get("text") or "")
-        source_kind = str(item.get("source_kind") or "")
-        connector = str(item.get("connector") or "")
-        relative_path = str(item.get("relative_path") or "")
-        public_resource = self._public_resource(str(item.get("resource") or ""))
-        ref = (
-            ExternalItemReference.connector(connector, relative_path)
-            if connector and relative_path
-            else None
-        )
-        presenter = ExternalIndexedItemPresenter(ref, item) if ref else None
-        title = str(item.get("title") or item.get("relative_path") or "")
-        row: dict[str, Any] = {
-            "title": title,
+        return {
+            "title": str(item.get("title") or item.get("relative_path") or ""),
             "type": str(item.get("type") or item.get("source_kind") or "External Item"),
-            "path": "" if source_kind == "connector" else relative_path,
+            "path": str(item.get("relative_path") or ""),
             "source": str(item.get("connector_name") or item.get("mount_name") or ""),
-            "resource": public_resource or ("Apple Notes" if connector == "apple-notes" else ""),
+            "resource": self._public_resource(str(item.get("resource") or "")),
             "status": str(item.get("status") or "active"),
-            "notes": presenter.safe_text(400) if presenter else text[:400],
+            "notes": text[:400],
             "updated_at": str(item.get("indexed_at") or item.get("updated_at") or ""),
         }
-        if presenter:
-            row.update(presenter.dashboard_connector_fields())
-        return row
 
     def _title_from_markdown(self, text: str) -> str:
         for line in text.splitlines():
@@ -1695,196 +1688,6 @@ class DashboardModule:
             return path or str(event.get("summary") or action or "event")
         return str(event.get("summary") or action or "event")
 
-    def _search_index(self, snapshot: dict[str, Any]) -> list[dict[str, str]]:
-        rows: list[dict[str, str]] = []
-        for pin in snapshot["pins"]["all"]:
-            rows.append(
-                {
-                    "type": "pin",
-                    "title": str(pin["title"]),
-                    "text": self._deduplicated_search_text(
-                        [
-                            str(pin["title"]),
-                            str(pin["summary"]),
-                            " ".join(pin["tags"]),
-                            str(pin["content"]),
-                        ]
-                    ),
-                    "href": "/pins",
-                }
-            )
-        for prompt in snapshot.get("prompts", []):
-            rows.append(
-                {
-                    "type": "prompt",
-                    "title": str(prompt.get("title") or ""),
-                    "text": "\n".join(
-                        str(part)
-                        for part in [
-                            prompt.get("description"),
-                            prompt.get("content"),
-                            " ".join(prompt.get("use_cases") or []),
-                            " ".join(prompt.get("tags") or []),
-                            prompt.get("status"),
-                        ]
-                        if part
-                    ),
-                    "href": "/library",
-                }
-            )
-        for task in snapshot["tasks"]["pending"]:
-            rows.append(
-                {
-                    "type": "task",
-                    "title": str(task.get("display_title") or task.get("title") or ""),
-                    "text": "\n".join(
-                        str(part)
-                        for part in [
-                            task.get("notes"),
-                            task.get("status"),
-                            task.get("priority"),
-                            task.get("due"),
-                            task.get("due_state"),
-                            f"overdue {task.get('overdue_days')} days"
-                            if task.get("overdue")
-                            else "",
-                            "generated_from_routine" if task.get("generated_from_routine") else "",
-                            task.get("source_routine_id"),
-                            task.get("instance_due"),
-                        ]
-                        if part
-                    ),
-                    "href": "/planner",
-                }
-            )
-        for idea in snapshot["tasks"].get("ideas", []):
-            rows.append(
-                {
-                    "type": "idea",
-                    "title": str(idea.get("title") or ""),
-                    "text": str(idea.get("notes") or ""),
-                    "href": "/planner",
-                }
-            )
-        for routine in snapshot["tasks"].get("routines", []):
-            rows.append(
-                {
-                    "type": "routine",
-                    "title": str(routine.get("title") or ""),
-                    "text": str(routine.get("notes") or ""),
-                    "href": "/planner",
-                }
-            )
-        for project in snapshot.get("projects", []):
-            rows.append(
-                {
-                    "type": "project",
-                    "title": str(project.get("alias") or ""),
-                    "text": "\n".join(
-                        str(part)
-                        for part in [
-                            project.get("alias"),
-                            project.get("target_label"),
-                            project.get("note"),
-                        ]
-                        if part
-                    ),
-                    "href": "/library",
-                }
-            )
-        for module in snapshot["modules"]:
-            rows.append(
-                {
-                    "type": "module",
-                    "title": str(module["title"]),
-                    "text": f"{module['subtitle']} {module['detail']}",
-                    "href": str(module["href"]),
-                }
-            )
-        for radar in snapshot.get("radars", []):
-            rows.append(
-                {
-                    "type": "radar",
-                    "title": str(radar.get("name") or radar.get("id") or ""),
-                    "text": " ".join(
-                        [
-                            str(radar.get("id") or ""),
-                            str(radar.get("status") or ""),
-                            "scheduled" if radar.get("schedule_enabled") else "manual",
-                            f"{radar.get('source_count', 0)} sources",
-                            str(radar.get("report_label") or ""),
-                            " ".join(radar.get("tags") or []),
-                        ]
-                    ),
-                    "href": "/radars",
-                }
-            )
-        for kb in snapshot.get("knowledge", {}).get("managed", []):
-            omitted_titles = [
-                str(item.get("title") or "")
-                for item in kb.get("omitted_items") or []
-                if isinstance(item, dict)
-            ]
-            rows.append(
-                {
-                    "type": "knowledge-base",
-                    "title": str(kb.get("name") or ""),
-                    "text": " ".join(
-                        [
-                            f"{kb.get('item_count', 0)} knowledge items",
-                            f"{kb.get('omitted_item_count', 0)} omitted from snapshot list",
-                            "omitted: " + ", ".join(omitted_titles),
-                            f"{kb.get('inbox_count', 0)} inbox items",
-                            f"{kb.get('archive_count', 0)} archived items",
-                        ]
-                    ),
-                    "href": "/knowledge",
-                }
-            )
-            for item in kb.get("search_items") or kb.get("items", []):
-                if self._is_structural_knowledge_item(item):
-                    continue
-                rows.append(self._search_index_external_row("knowledge-item", item))
-        for mount in snapshot.get("sources", {}).get("mounts", []):
-            rows.append(
-                {
-                    "type": "mount",
-                    "title": str(mount.get("name") or mount.get("id") or ""),
-                    "text": " ".join(
-                        [
-                            str(mount.get("type") or ""),
-                            str(mount.get("status") or ""),
-                            f"{mount.get('count', 0)} items",
-                        ]
-                    ),
-                    "href": "/knowledge",
-                }
-            )
-            for item in mount.get("items", []):
-                rows.append(self._search_index_external_row("mount-item", item))
-        for connector in snapshot.get("sources", {}).get("connectors", []):
-            rows.append(
-                {
-                    "type": "connector",
-                    "title": str(connector.get("id") or connector.get("connector") or ""),
-                    "text": " ".join(
-                        [
-                            self._public_resource(str(connector.get("source") or "")),
-                            str(connector.get("status") or ""),
-                            f"{connector.get('count', 0)} items",
-                        ]
-                    ),
-                    "href": "/knowledge",
-                }
-            )
-            for item in connector.get("items", []):
-                rows.append(self._search_index_external_row("connector-item", item))
-        return rows
-
-    def _is_structural_knowledge_item(self, item: dict[str, Any]) -> bool:
-        relative_path = str(item.get("relative_path") or "")
-        return self._is_structural_knowledge_relative_path(relative_path)
-
     def _is_structural_knowledge_path(self, path: Path, kb_root: Path) -> bool:
         try:
             relative_path = path.relative_to(kb_root).as_posix()
@@ -1900,69 +1703,6 @@ class DashboardModule:
                 "knowledge/topics/",
             )
         )
-
-    def _search_index_external_row(
-        self,
-        row_type: str,
-        item: dict[str, Any],
-    ) -> dict[str, str]:
-        return {
-            "type": row_type,
-            "title": str(item.get("title") or ""),
-            "text": "\n".join(
-                str(part)
-                for part in [
-                    item.get("type"),
-                    self._public_resource(str(item.get("resource") or "")),
-                    item.get("status"),
-                    self._search_text_summary(str(item.get("notes") or "")),
-                ]
-                if part
-            ),
-            "href": "/knowledge",
-        }
-
-    def _search_text_summary(self, value: str, max_chars: int = 280) -> str:
-        lines: list[str] = []
-        in_frontmatter = False
-        for line in value.splitlines():
-            stripped = line.strip()
-            if stripped == "---":
-                in_frontmatter = not in_frontmatter
-                continue
-            if in_frontmatter or not stripped:
-                continue
-            if stripped.startswith("#"):
-                stripped = stripped.lstrip("#").strip()
-                if not stripped:
-                    continue
-            stripped = re.sub(r"^[-*]\s+", "", stripped)
-            stripped = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", stripped)
-            stripped = stripped.strip("`")
-            if stripped.startswith(("type:", "status:", "domain:", "topic:")):
-                continue
-            lines.append(stripped)
-            if len(" ".join(lines)) >= max_chars:
-                break
-        text = " ".join(lines).strip()
-        if len(text) <= max_chars:
-            return text
-        return text[: max_chars - 1].rstrip() + "…"
-
-    def _deduplicated_search_text(self, parts: list[str]) -> str:
-        rows: list[str] = []
-        seen: set[str] = set()
-        for part in parts:
-            for line in part.splitlines() or [part]:
-                cleaned = line.strip()
-                if not cleaned:
-                    continue
-                key = " ".join(cleaned.casefold().split())
-                if not key or key in seen:
-                    continue
-                rows.append(cleaned)
-                seen.add(key)
-        return "\n".join(rows)
 
     def _public_resource(self, value: str) -> str:
         if value.startswith(("~", "/", ".")):

@@ -273,6 +273,8 @@ ALCOVE_AGENT_CLIENT_SMOKE_CODEX=1 ALCOVE_AGENT_CLIENT_SMOKE_CLAUDE=1 scripts/smo
 - Maps changed files to risk areas: agent entries, AI eval, OKF/search,
   CLI/MCP, inbox/capture, connectors/mounts, dashboard, memory writes, and
   verification infrastructure.
+- Selects focused AI eval suites with `ALCOVE_AI_EVAL_SUITES` so everyday
+  regression checks do not refresh unrelated smoke evidence.
 - Emits valid hook JSON for Codex and Claude Code when `--hook-json` is used.
 - Defaults to coach mode so hooks report required checks without blocking.
 - Supports strict mode with `ALCOVE_AGENT_GATE_MODE=strict`, which executes the

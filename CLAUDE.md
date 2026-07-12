@@ -35,10 +35,17 @@ scripts/check.sh
 - See `docs/evals/agent-quality-gates.md` before changing hook, command,
   subagent, skill, AI eval, MCP routing, search, inbox, dashboard, or
   verification behavior.
+- Claude path-scoped documentation rules live in `.claude/rules/`.
+- Keep implementation and docs aligned in the same change. Use
+  `/alcove-doc-sync` when code changes user-visible behavior, storage,
+  CLI/MCP contracts, agent entries, dashboard, radars, connectors, mounts, OKF,
+  smoke, eval, or install flows.
 
 ## Rules
 
 - Prefer `scripts/smoke.sh` for normal implementation checks.
+- Run `scripts/check-docs-drift.sh` when changed source behavior may need docs
+  updates.
 - Run `scripts/smoke-real-home.sh` when global home, dashboard, search, pins,
   tasks, prompts, projects, mounts, or connectors changed.
 - Run `scripts/smoke-real-integrations.sh` only when explicitly asked or when

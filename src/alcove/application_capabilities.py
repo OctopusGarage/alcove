@@ -174,17 +174,30 @@ class _SystemCapabilities(_Capability):
             raise ValueError("Alcove home is required")
         return self.runtime.scope_payload(ExportModule(self.runtime.home).export_all(output_dir))
 
-    def okf_catalog_build_payload(self) -> dict[str, Any]:
+    def okf_catalog_build_payload(self, *, include_all_status: bool = False) -> dict[str, Any]:
         if self.runtime.home is None:
             raise ValueError("Alcove home is required")
-        return self.runtime.scope_payload(OkfCatalogModule(self.runtime.home).build())
+        return self.runtime.scope_payload(
+            OkfCatalogModule(self.runtime.home).build(include_all_status=include_all_status)
+        )
 
-    def health_payload(self, *, fix: bool = False, strict: bool = False) -> dict[str, Any]:
+    def health_payload(
+        self,
+        *,
+        fix: bool = False,
+        strict: bool = False,
+        deep: bool = False,
+        refresh_stale_connectors: bool = False,
+        refresh_all_connectors: bool = False,
+    ) -> dict[str, Any]:
         if self.runtime.home is None and self.runtime.workspace is None:
             raise ValueError("Alcove home or workspace is required")
         report = HealthModule(home=self.runtime.home, workspace=self.runtime.workspace).check(
             fix=fix,
             strict=strict,
+            deep=deep,
+            refresh_stale_connectors=refresh_stale_connectors,
+            refresh_all_connectors=refresh_all_connectors,
         )
         return self.runtime.scope_payload(report)
 
@@ -262,7 +275,13 @@ class _InboxCapabilities(_Capability):
             summary=f"Archived inbox item: {name}",
             metadata={"item": name, "topic": topic},
         )
-        return self._process_payload(result, validate=validate)
+        return self._process_payload(
+            result,
+            validate=validate,
+            area="inbox",
+            action="inbox.archive",
+            target=name,
+        )
 
     def inbox_note_payload(
         self, request: InboxNoteRequest, *, validate: bool = False
@@ -275,7 +294,13 @@ class _InboxCapabilities(_Capability):
             summary=f"Noted inbox item: {request.name}",
             metadata={"item": request.name, "topic": request.topic},
         )
-        return self._process_payload(result, validate=validate)
+        return self._process_payload(
+            result,
+            validate=validate,
+            area="inbox",
+            action="inbox.note",
+            target=request.name,
+        )
 
     def inbox_manual_add_payload(
         self, title: str, content: str, source: str = ""
@@ -288,7 +313,15 @@ class _InboxCapabilities(_Capability):
             summary=f"Added manual inbox item: {title}",
             metadata={"title": title, "source": source},
         )
-        return self.runtime.scope_payload(payload)
+        return self.runtime.scope_payload(
+            self._governed_write(
+                payload,
+                area="inbox",
+                action="inbox.manual_add",
+                target=title,
+                source_of_truth="managed-kb inbox",
+            )
+        )
 
     def inbox_todo_payload(self, name: str, reason: str = "") -> dict[str, Any]:
         workspace = self.runtime.require_workspace()
@@ -299,7 +332,15 @@ class _InboxCapabilities(_Capability):
             summary=f"Deferred inbox item: {name}",
             metadata={"item": name},
         )
-        return self.runtime.scope_payload({"status": "todo", "path": str(path)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "todo", "path": str(path)},
+                area="inbox",
+                action="inbox.todo",
+                target=name,
+                source_of_truth="managed-kb todo",
+            )
+        )
 
     def inbox_delete_payload(self, name: str, *, confirm: bool = False) -> dict[str, Any]:
         workspace = self.runtime.require_workspace()
@@ -310,10 +351,25 @@ class _InboxCapabilities(_Capability):
             summary=f"Deleted inbox item: {name}",
             metadata={"item": name},
         )
-        return self.runtime.scope_payload(payload)
+        return self.runtime.scope_payload(
+            self._governed_write(
+                payload,
+                area="inbox",
+                action="inbox.delete",
+                target=name,
+                source_of_truth="managed-kb inbox",
+                confirmation_required=not confirm,
+            )
+        )
 
     def _process_payload(
-        self, result: InboxProcessResult, *, validate: bool = False
+        self,
+        result: InboxProcessResult,
+        *,
+        validate: bool = False,
+        area: str,
+        action: str,
+        target: str,
     ) -> dict[str, Any]:
         payload = {
             "archive": str(result.archive_path),
@@ -327,7 +383,15 @@ class _InboxCapabilities(_Capability):
             payload["validation"] = _SystemCapabilities(self.runtime).validate_payload(
                 strict_quality=False
             )["issues"]
-        return self.runtime.scope_payload(payload)
+        return self.runtime.scope_payload(
+            self._governed_write(
+                payload,
+                area=area,
+                action=action,
+                target=target,
+                source_of_truth="managed-kb knowledge",
+            )
+        )
 
 
 class _ExternalCapabilities(_Capability):
@@ -400,7 +464,15 @@ class _ExternalCapabilities(_Capability):
             },
             metadata={"connector": connector or "all", "source_id": source_id},
         )
-        return self._connector_payload(payload)
+        return self._connector_payload(
+            self._governed_write(
+                payload,
+                area="connector",
+                action="connector.refresh",
+                target=connector or "all",
+                source_of_truth="connector indexes",
+            )
+        )
 
     def mount_list_payload(self, status: str = "active") -> dict[str, Any]:
         mounts = [
@@ -417,7 +489,15 @@ class _ExternalCapabilities(_Capability):
             summary=f"Mounted source: {mount.name}",
             metadata={"id": mount.id, "name": mount.name, "type": mount.type},
         )
-        return self.runtime.scope_payload({"status": "mounted", "mount": asdict(mount)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "mounted", "mount": asdict(mount)},
+                area="mount",
+                action="mount.add",
+                target=mount.id,
+                source_of_truth="mount registry",
+            )
+        )
 
     def mount_scan_payload(
         self,
@@ -441,7 +521,15 @@ class _ExternalCapabilities(_Capability):
             },
             metadata={"mount_id": mount_id or ""},
         )
-        return self.payloads.scope(self.payloads.mount_scan_report(report))
+        return self.payloads.scope(
+            self._governed_write(
+                self.payloads.mount_scan_report(report),
+                area="mount",
+                action="mount.scan",
+                target=mount_id or "all",
+                source_of_truth="mount indexes",
+            )
+        )
 
     def apple_notes_index_payload(self, request: AppleNotesImportRequest) -> dict[str, Any]:
         report = AppleNotesConnector(
@@ -449,7 +537,15 @@ class _ExternalCapabilities(_Capability):
             home=self.runtime.home,
         ).import_export(request)
         self._record_connector_index("apple_notes", report)
-        return self._connector_payload(report)
+        return self._connector_payload(
+            self._governed_write(
+                report,
+                area="connector",
+                action="connector.apple_notes.index",
+                target=request.export_dir,
+                source_of_truth="connector indexes",
+            )
+        )
 
     def apple_notes_import_local_payload(
         self, request: AppleNotesLocalImportRequest
@@ -459,7 +555,15 @@ class _ExternalCapabilities(_Capability):
             home=self.runtime.home,
         ).import_local(request)
         self._record_connector_index("apple_notes", report)
-        return self._connector_payload(report)
+        return self._connector_payload(
+            self._governed_write(
+                report,
+                area="connector",
+                action="connector.apple_notes.import_local",
+                target=request.source_id,
+                source_of_truth="connector indexes",
+            )
+        )
 
     def github_stars_index_payload(self, request: GitHubStarsImportRequest) -> dict[str, Any]:
         report = GitHubStarsConnector(
@@ -467,7 +571,15 @@ class _ExternalCapabilities(_Capability):
             home=self.runtime.home,
         ).import_export(request)
         self._record_connector_index("github_stars", report)
-        return self._connector_payload(report)
+        return self._connector_payload(
+            self._governed_write(
+                report,
+                area="connector",
+                action="connector.github_stars.index",
+                target=request.source_id,
+                source_of_truth="connector indexes",
+            )
+        )
 
     def github_stars_import_url_payload(
         self, request: GitHubStarsUrlImportRequest
@@ -477,7 +589,15 @@ class _ExternalCapabilities(_Capability):
             home=self.runtime.home,
         ).import_url(request)
         self._record_connector_index("github_stars", report)
-        return self._connector_payload(report)
+        return self._connector_payload(
+            self._governed_write(
+                report,
+                area="connector",
+                action="connector.github_stars.import_url",
+                target=request.source,
+                source_of_truth="connector indexes",
+            )
+        )
 
     def chrome_bookmarks_index_payload(
         self, request: ChromeBookmarksImportRequest
@@ -487,7 +607,15 @@ class _ExternalCapabilities(_Capability):
             home=self.runtime.home,
         ).import_export(request)
         self._record_connector_index("chrome_bookmarks", report)
-        return self._connector_payload(report)
+        return self._connector_payload(
+            self._governed_write(
+                report,
+                area="connector",
+                action="connector.chrome_bookmarks.index",
+                target=request.source_id,
+                source_of_truth="connector indexes",
+            )
+        )
 
     def chrome_bookmarks_import_local_payload(
         self, request: ChromeBookmarksLocalImportRequest
@@ -497,7 +625,15 @@ class _ExternalCapabilities(_Capability):
             home=self.runtime.home,
         ).import_local(request)
         self._record_connector_index("chrome_bookmarks", report)
-        return self._connector_payload(report)
+        return self._connector_payload(
+            self._governed_write(
+                report,
+                area="connector",
+                action="connector.chrome_bookmarks.import_local",
+                target=request.source_id,
+                source_of_truth="connector indexes",
+            )
+        )
 
     def connector_fetch_payload(self, item_path: str) -> dict[str, Any]:
         return self._connector_payload(
@@ -515,7 +651,13 @@ class _ExternalCapabilities(_Capability):
             summary=f"Linked source into KB: {request.item_path}",
             metadata={"item_path": request.item_path, "topic": request.topic},
         )
-        return payload
+        return self._governed_write(
+            payload,
+            area="knowledge",
+            action="knowledge.link_source",
+            target=request.item_path,
+            source_of_truth="managed-kb knowledge",
+        )
 
     def _record_connector_index(self, connector: str, report: dict[str, Any]) -> None:
         scanned = int(report.get("scanned") or report.get("count") or 0)
@@ -547,11 +689,17 @@ class _ManagedKnowledgeCapabilities(_Capability):
             metadata={"title": request.title, "topic": request.topic, "platform": request.platform},
         )
         return self.runtime.scope_payload(
-            {
-                "status": "noted",
-                "source_path": str(result.source_path),
-                "concept_path": str(result.concept_path) if result.concept_path else "",
-            }
+            self._governed_write(
+                {
+                    "status": "noted",
+                    "source_path": str(result.source_path),
+                    "concept_path": str(result.concept_path) if result.concept_path else "",
+                },
+                area="knowledge",
+                action="knowledge.note_source",
+                target=request.title,
+                source_of_truth="managed-kb knowledge",
+            )
         )
 
     def knowledge_add_concept_payload(self, request: AddConceptRequest) -> dict[str, Any]:
@@ -563,7 +711,15 @@ class _ManagedKnowledgeCapabilities(_Capability):
             summary=f"Added concept: {request.title}",
             metadata={"title": request.title, "topic": request.topic},
         )
-        return self.runtime.scope_payload({"status": "noted", "okf_concept": str(result.path)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "noted", "okf_concept": str(result.path)},
+                area="knowledge",
+                action="knowledge.add_concept",
+                target=request.title,
+                source_of_truth="managed-kb knowledge",
+            )
+        )
 
     def knowledge_revise_payload(self, request: ReviseKnowledgeRequest) -> dict[str, Any]:
         workspace = self.runtime.require_workspace()
@@ -579,7 +735,15 @@ class _ManagedKnowledgeCapabilities(_Capability):
             summary=f"Revised knowledge: {title}",
             metadata={"path": request.path, "title": title},
         )
-        return self.runtime.scope_payload({"status": "revised", "path": str(result.path)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "revised", "path": str(result.path)},
+                area="knowledge",
+                action="knowledge.revise",
+                target=request.path,
+                source_of_truth="managed-kb knowledge",
+            )
+        )
 
     def knowledge_delete_payload(
         self,
@@ -597,7 +761,16 @@ class _ManagedKnowledgeCapabilities(_Capability):
             summary=f"Deleted knowledge: {title}" if confirm else f"Preview delete: {title}",
             metadata={"path": path, "title": title, "confirmed": str(confirm)},
         )
-        return self.runtime.scope_payload(payload)
+        return self.runtime.scope_payload(
+            self._governed_write(
+                payload,
+                area="knowledge",
+                action="knowledge.delete",
+                target=path,
+                source_of_truth="managed-kb knowledge",
+                confirmation_required=not confirm,
+            )
+        )
 
     def knowledge_add_question_payload(self, request: AddQuestionRequest) -> dict[str, Any]:
         workspace = self.runtime.require_workspace()
@@ -608,7 +781,15 @@ class _ManagedKnowledgeCapabilities(_Capability):
             summary=f"Added question: {request.question}",
             metadata={"question": request.question, "topic": request.topic},
         )
-        return self.runtime.scope_payload({"status": "added", "okf_question": str(result.path)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "added", "okf_question": str(result.path)},
+                area="knowledge",
+                action="knowledge.add_question",
+                target=request.question,
+                source_of_truth="managed-kb knowledge",
+            )
+        )
 
     def knowledge_add_entity_payload(self, request: AddEntityRequest) -> dict[str, Any]:
         workspace = self.runtime.require_workspace()
@@ -619,7 +800,15 @@ class _ManagedKnowledgeCapabilities(_Capability):
             summary=f"Added entity: {request.name}",
             metadata={"name": request.name, "topic": request.topic, "kind": request.kind},
         )
-        return self.runtime.scope_payload({"status": "added", "okf_entity": str(result.path)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "added", "okf_entity": str(result.path)},
+                area="knowledge",
+                action="knowledge.add_entity",
+                target=request.name,
+                source_of_truth="managed-kb knowledge",
+            )
+        )
 
     def knowledge_promote_payload(
         self, source: str, topic: str = "", summary: str = ""
@@ -632,7 +821,15 @@ class _ManagedKnowledgeCapabilities(_Capability):
             summary=f"Promoted source: {source}",
             metadata={"source": source, "topic": topic},
         )
-        return self.runtime.scope_payload({"status": "promoted", "okf_concept": str(result.path)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "promoted", "okf_concept": str(result.path)},
+                area="knowledge",
+                action="knowledge.promote",
+                target=source,
+                source_of_truth="managed-kb knowledge",
+            )
+        )
 
     def knowledge_refresh_payload(
         self,
@@ -649,7 +846,15 @@ class _ManagedKnowledgeCapabilities(_Capability):
             summary=f"Refreshed topic: {topic}",
             metadata={"topic": topic, "in_place": str(in_place)},
         )
-        return self.runtime.scope_payload(result)
+        return self.runtime.scope_payload(
+            self._governed_write(
+                result,
+                area="knowledge",
+                action="knowledge.refresh",
+                target=topic or "all",
+                source_of_truth="managed-kb indexes",
+            )
+        )
 
     def knowledge_topics_payload(self) -> dict[str, Any]:
         workspace = self.runtime.require_workspace()

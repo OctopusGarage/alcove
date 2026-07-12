@@ -8,6 +8,7 @@ from alcove.home import AlcoveHome
 from alcove.knowledge import AddConceptRequest, KnowledgeModule, NoteSourceRequest
 from alcove.markdown import MarkdownRepository
 from alcove.mcp_server import (
+    command_hints_tool,
     create_mcp_server,
     gardener_tool,
     get_topic_tool,
@@ -181,6 +182,36 @@ def test_mcp_okf_catalog_build_tool_uses_global_home(tmp_path):
     assert (home.root / "okf" / "index.md").is_file()
 
 
+def test_mcp_okf_catalog_build_tool_accepts_all_status(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+
+    payload = okf_catalog_build_tool("", home=str(home.root), include_all_status=True)
+
+    assert payload["include_all_status"] is True
+
+
+def test_mcp_command_hints_exposes_cli_only_workflows(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+
+    payload = command_hints_tool(home=str(home.root))
+
+    workflow_ids = {workflow["id"] for workflow in payload["workflows"]}
+    assert {"blog_monitor", "radars", "dashboard", "publishers"} <= workflow_ids
+    assert payload["status"] == "ok"
+    assert payload["home"].endswith("/home")
+    assert all(workflow["surface"] == "cli" for workflow in payload["workflows"])
+
+    blog = next(workflow for workflow in payload["workflows"] if workflow["id"] == "blog_monitor")
+    assert any("alcove blog check" in command for command in blog["commands"])
+
+
+def test_mcp_command_hints_can_filter_by_workflow(tmp_path):
+    payload = command_hints_tool(home=str(tmp_path / "home"), workflow="radar")
+
+    assert [workflow["id"] for workflow in payload["workflows"]] == ["radars"]
+    assert any("alcove radar run" in command for command in payload["workflows"][0]["commands"])
+
+
 def test_mcp_server_registers_v1_tools(tmp_path):
     Workspace.init(tmp_path)
     mcp = create_mcp_server(str(tmp_path))
@@ -188,6 +219,7 @@ def test_mcp_server_registers_v1_tools(tmp_path):
     tools = asyncio.run(mcp.list_tools())
 
     assert {tool.name for tool in tools} >= {
+        "alcove_command_hints",
         "alcove_search",
         "alcove_inbox_peek",
         "alcove_inbox_read",
@@ -266,6 +298,7 @@ def test_mcp_server_lite_toolset_keeps_global_common_tools_small(tmp_path):
     tools = {tool.name for tool in asyncio.run(mcp.list_tools())}
 
     assert "alcove_search" in tools
+    assert "alcove_command_hints" in tools
     assert "alcove_pin_add" in tools
     assert "alcove_task_add" in tools
     assert "alcove_prompt_save" in tools
@@ -283,6 +316,7 @@ def test_mcp_server_kb_toolset_keeps_kb_workflow_without_admin_tools(tmp_path):
     tools = {tool.name for tool in asyncio.run(mcp.list_tools())}
 
     assert "alcove_inbox_peek" in tools
+    assert "alcove_command_hints" in tools
     assert "alcove_inbox_note" in tools
     assert "alcove_knowledge_revise" in tools
     assert "alcove_knowledge_delete" in tools

@@ -109,8 +109,9 @@ Notification behavior:
     custom bot webhooks do not upload local files, so local report paths are not
     included in the message.
   - `tcb`: sends notification text and report files through a running
-    `tmux-claude-bot` service using `tcb notify --attach`. This is the preferred
-    Feishu/Lark attachment path.
+    [`tmux-claude-bot`](https://github.com/OctopusGarage/tmux-claude-bot)
+    service using `tcb notify --attach`. This is the preferred Feishu/Lark
+    attachment path.
 - Notification text does not include local report paths. Channels with document
   upload support should send report files as attachments instead of exposing
   local filesystem paths in chat.
@@ -146,9 +147,11 @@ notify:
       document_formats: [md, html]
 ```
 
-This requires `tmux-claude-bot` to be installed and running with the desired
-chat adapter configured. Alcove delegates file upload to `tcb notify --attach`,
-so it does not need Feishu app credentials or Telegram tokens for this sink.
+This requires
+[`tmux-claude-bot`](https://github.com/OctopusGarage/tmux-claude-bot) to be
+installed and running with the desired chat adapter configured. Alcove delegates
+file upload to `tcb notify --attach`, so it does not need Feishu app credentials
+or Telegram tokens for this sink.
 
 Hub/manual patterns:
 

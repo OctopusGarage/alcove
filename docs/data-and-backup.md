@@ -104,10 +104,11 @@ successful sync and updates by note id on later runs. Generated Apple Notes are
 readable mirrors. The source data remains in Alcove, such as `~/.alcove/pins`,
 `~/.alcove/tasks`, `~/.alcove/prompts`, and `~/.alcove/projects`.
 
-The default Apple Notes publisher mirrors only compact, user-facing views:
-regular pins, todo pins, planner digest, prompt library, and project registry.
-High-volume indexes and operational data remain in Alcove rather than being
-copied into Notes.
+The default Apple Notes publisher mirrors selected, user-facing views: regular
+pins, todo pins, planner digest, prompt library, and project registry. Pin note
+content is preserved in full and formatted with outlines and section spacing.
+High-volume knowledge bases, connector indexes, mount indexes, radar archives,
+and operational logs remain in Alcove rather than being copied into Notes.
 
 Usage logs are local operational data. Search events store query length, result
 count, filters, surface, outcome, and a local salted query hash. Raw query text

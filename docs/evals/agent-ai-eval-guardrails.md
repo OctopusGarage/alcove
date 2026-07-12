@@ -43,7 +43,9 @@ Alcove keeps the enforcement core tool-neutral:
 
 1. `scripts/agent-quality-gate.sh` maps changed files to required suites.
 2. `scripts/eval-ai.sh` builds canonical evidence and asks an AI reviewer for a
-   schema-validated judgement.
+   schema-validated judgement. When called by the gate, it receives
+   `ALCOVE_AI_EVAL_SUITES` and refreshes only the selected suites; direct manual
+   use remains full by default.
 3. `.codex/config.toml` and `.claude/settings.json` call the same gate from a
    Stop hook.
 4. `AGENTS.md`, `CLAUDE.md`, `.agents/skills/alcove-smoke/SKILL.md`, and
@@ -99,7 +101,8 @@ deterministic fixture first, then expose that fixture in the AI eval packet.
 - `off`: disables hook planning.
 
 Use strict mode for release hardening or prompt/routing work where regressions
-are expensive:
+are expensive. Strict mode still uses the selected suite plan; run
+`scripts/eval-ai.sh` directly when a deliberate full AI review is needed:
 
 ```sh
 ALCOVE_AGENT_GATE_MODE=strict codex
@@ -135,7 +138,8 @@ search presentation, or agent instructions.
 1. Run `scripts/agent-quality-gate.sh --mode coach --json` to see the selected
    suites.
 2. Run the listed deterministic suites.
-3. Run `scripts/eval-ai.sh` when the plan includes `ai_packet` and `ai_review`.
+3. Run the listed scoped `scripts/eval-ai.sh` commands when the plan includes
+   `ai_packet` and `ai_review`.
 4. Read `.tmp/ai-eval/ai-review.json`; fix blocking and should-fix findings.
 5. Rerun the failed focused suite, then `scripts/check.sh`.
 6. Report pass/fail evidence and any remaining external risks.

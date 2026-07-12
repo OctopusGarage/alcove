@@ -5,13 +5,16 @@ Codex, Claude Code, and humans decide when those checks must run.
 
 ## Operating Model
 
-Agent quality gates are intentionally layered:
+Agent quality gates are intentionally layered and scoped:
 
 1. Cheap deterministic checks prove commands, schemas, indexes, and browser
    smoke behavior.
-2. AI eval reviews product quality: summarization usefulness, routing quality,
-   prompt quality, dashboard usefulness, and whether useful evidence is hidden.
-3. Hooks run in coach mode by default so everyday agent work is not blocked by
+2. AI eval reviews product quality only when the change can affect user or
+   agent judgement: summarization usefulness, routing quality, prompt quality,
+   dashboard usefulness, and whether useful evidence is hidden.
+3. Documentation drift checks catch user-visible implementation changes that
+   did not update related docs.
+4. Hooks run in coach mode by default so everyday agent work is not blocked by
    expensive evals. Strict mode is available for release work or risky changes.
    When strict mode fails, the hook returns a `decision: "block"` response so
    Codex or Claude Code continues with the failure reason instead of silently
@@ -62,6 +65,34 @@ re-enter the gate.
 See [Agent AI Eval Guardrails](agent-ai-eval-guardrails.md) for the source
 research behind the Codex/Claude hook, skill, command, and subagent layering.
 
+## Documentation Drift Guard
+
+Alcove uses a layered documentation guard:
+
+- `AGENTS.md` gives Codex and other agents the stable project rule.
+- `CLAUDE.md` gives Claude Code the stable project rule.
+- `.claude/rules/docs-alignment.md` adds Claude Code path-scoped rules for
+  implementation and documentation files.
+- `$alcove-doc-sync` and `/alcove-doc-sync` provide the reusable doc-sync
+  checklist.
+- `scripts/check-docs-drift.sh` and the shared quality gate detect
+  documentation-sensitive source changes without a related docs update.
+
+Codex "rules" are intentionally not used for documentation guidance. In Codex,
+rules control which commands may run outside the sandbox; project behavior
+guidance belongs in `AGENTS.md`, skills, and hooks.
+
+The docs drift guard triggers when source files under `src/alcove/`,
+`frontend/dashboard/`, `scripts/`, or `pyproject.toml` touch user-visible risk
+areas without a related change under `docs/`, `README.md`, `AGENTS.md`,
+`CLAUDE.md`, `.agents/`, or `.claude/`.
+
+Manual check:
+
+```sh
+scripts/check-docs-drift.sh
+```
+
 ## AI Eval Trigger Rules
 
 The gate requires AI eval when changed files touch any of these areas:
@@ -79,14 +110,25 @@ The gate requires AI eval when changed files touch any of these areas:
 For AI-sensitive changes, the gate requires:
 
 ```sh
-ALCOVE_AI_EVAL_PROVIDER=none scripts/eval-ai.sh
-ALCOVE_AI_EVAL_SKIP_REFRESH=1 scripts/eval-ai.sh
+ALCOVE_AI_EVAL_SUITES=<selected-suites> ALCOVE_AI_EVAL_PROVIDER=none ALCOVE_AI_EVAL_RUN_CHECK=0 scripts/eval-ai.sh
+ALCOVE_AI_EVAL_SUITES=<selected-suites> ALCOVE_AI_EVAL_SKIP_REFRESH=1 scripts/eval-ai.sh
 ```
 
-The first command refreshes deterministic evidence and writes the AI eval
-packet/prompt without calling a model. The second command reuses that evidence
-and asks the configured reviewer, usually Codex in Codex and Claude in Claude
-Code.
+The first command refreshes only the deterministic suites selected for the
+current change and writes the AI eval packet/prompt without calling a model. The
+second command reuses that evidence and asks the configured reviewer, usually
+Codex in Codex and Claude in Claude Code. The packet includes an
+`evaluation_scope` field so the reviewer focuses on refreshed evidence and does
+not treat unrelated cached suites as blocking gaps.
+
+Direct manual use remains full by default:
+
+```sh
+scripts/eval-ai.sh
+```
+
+Use full eval for release hardening, broad prompt/routing rewrites, or when a
+bug spans multiple modules and the focused plan no longer matches the risk.
 
 ## Deterministic Trigger Rules
 
@@ -94,6 +136,8 @@ All matched changes require `scripts/smoke.sh` and `scripts/check.sh`.
 
 Additional focused checks are selected by file area:
 
+- Documentation-sensitive source changes without related docs:
+  `scripts/check-docs-drift.sh`
 - Agent entry/profile changes: `scripts/smoke-agent-clients.sh`
 - MCP/CLI/search changes: `scripts/smoke-mcp-matrix.sh`
 - Dashboard changes: `scripts/smoke-dashboard-browser.sh`
@@ -146,3 +190,5 @@ scripts/agent-quality-gate.sh \
   verification-sensitive surface is added.
 - Direct `scripts/eval-ai.sh` remains the source of truth for the AI review
   packet and reviewer schema.
+- Hook-triggered AI eval must pass `ALCOVE_AI_EVAL_SUITES` so everyday
+  regression checks refresh only the suites implied by the changed files.

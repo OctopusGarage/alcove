@@ -143,6 +143,59 @@ def _write_minimal_packet_artifacts(
         },
     )
     _write_json(
+        fixtures / "publisher-run-ambiguous.json",
+        {
+            "status": "partial",
+            "updated": 0,
+            "skipped": 0,
+            "errors": 1,
+            "targets": [
+                {
+                    "id": "pins_regular",
+                    "status": "failed",
+                    "error_code": "TARGET_AMBIGUOUS",
+                    "error": "Multiple notes match Regular Pins",
+                    "remediation_hint": "Choose the intended note or rename duplicate Apple Notes.",
+                    "details": {
+                        "candidates": [
+                            {
+                                "note_id": "dup-a",
+                                "folder_path": "iCloud/Alcove/pins",
+                                "title": "Regular Pins",
+                            },
+                            {
+                                "note_id": "dup-b",
+                                "folder_path": "iCloud/Alcove/pins",
+                                "title": "Regular Pins",
+                            },
+                        ]
+                    },
+                }
+            ],
+        },
+    )
+    _write_json(
+        fixtures / "publisher-service-tick.json",
+        {
+            "status": "ok",
+            "publishers": {
+                "status": "checked",
+                "ran": 1,
+                "skipped": 0,
+                "updated": 1,
+                "errors": 0,
+                "publishers": [
+                    {
+                        "status": "success",
+                        "publisher": "apple-notes",
+                        "updated": 1,
+                        "errors": 0,
+                    }
+                ],
+            },
+        },
+    )
+    _write_json(
         fixtures / "publisher-render-quality.json",
         {
             "status": "passed",
@@ -171,12 +224,7 @@ def _write_minimal_packet_artifacts(
         fixtures / "task-digest.json",
         {
             "title": "📋 Alcove weekly planner digest · 2026-07-12",
-            "text": (
-                "📋 Alcove weekly planner digest · 2026-07-12\n\n"
-                "✅ Pending tasks (1)\n\n"
-                "1. Smoke Task\n"
-                "   Priority: high"
-            ),
+            "text": ("✅ Pending tasks (1)\n\n1. Smoke Task\n   Priority: high"),
             "counts": {"tasks": 1, "ideas": 0, "routines": 0},
             "items": {"tasks": [{"id": "smoke-task"}], "ideas": [], "routines": []},
         },
@@ -581,6 +629,59 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
         },
     )
     _write_json(
+        fixtures / "publisher-run-ambiguous.json",
+        {
+            "status": "partial",
+            "updated": 0,
+            "skipped": 0,
+            "errors": 1,
+            "targets": [
+                {
+                    "id": "pins_regular",
+                    "status": "failed",
+                    "error_code": "TARGET_AMBIGUOUS",
+                    "error": "Multiple notes match Regular Pins",
+                    "remediation_hint": "Choose the intended note or rename duplicate Apple Notes.",
+                    "details": {
+                        "candidates": [
+                            {
+                                "note_id": "dup-a",
+                                "folder_path": "iCloud/Alcove/pins",
+                                "title": "Regular Pins",
+                            },
+                            {
+                                "note_id": "dup-b",
+                                "folder_path": "iCloud/Alcove/pins",
+                                "title": "Regular Pins",
+                            },
+                        ]
+                    },
+                }
+            ],
+        },
+    )
+    _write_json(
+        fixtures / "publisher-service-tick.json",
+        {
+            "status": "ok",
+            "publishers": {
+                "status": "checked",
+                "ran": 1,
+                "skipped": 0,
+                "updated": 1,
+                "errors": 0,
+                "publishers": [
+                    {
+                        "status": "success",
+                        "publisher": "apple-notes",
+                        "updated": 1,
+                        "errors": 0,
+                    }
+                ],
+            },
+        },
+    )
+    _write_json(
         fixtures / "publisher-render-quality.json",
         {
             "status": "passed",
@@ -930,6 +1031,15 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
     assert packet["evidence"]["smoke"]["blog_monitor"]["status"] == "passed"
     assert packet["evidence"]["smoke"]["publisher_run"]["updated"] == 5
     assert packet["evidence"]["smoke"]["publisher_run_unchanged"]["skipped"] == 5
+    assert packet["evidence"]["smoke"]["publisher_run_ambiguous"]["errors"] == 1
+    assert (
+        packet["evidence"]["smoke"]["publisher_run_ambiguous"]["targets"][0]["error_code"]
+        == "TARGET_AMBIGUOUS"
+    )
+    ambiguous_target = packet["evidence"]["smoke"]["publisher_run_ambiguous"]["targets"][0]
+    assert ambiguous_target["remediation_hint"]
+    assert ambiguous_target["details"]["candidates"][0]["note_id"] == "dup-a"
+    assert packet["evidence"]["smoke"]["publisher_service_tick"]["publishers"]["ran"] == 1
     assert packet["evidence"]["smoke"]["publisher_render_quality"]["status"] == "passed"
     assert any(
         "render quality" in question.lower()
@@ -1229,7 +1339,15 @@ def test_eval_packet_agent_entries_follow_registered_kb_name(tmp_path):
         smoke_root=smoke_root,
         real_home_report=real_home_report,
         real_integrations_dir=integrations,
+        selected_suites=("isolated", "dashboard_browser"),
     )
+
+    assert packet["evaluation_scope"]["mode"] == "focused"
+    assert packet["evaluation_scope"]["refreshed_suites"] == [
+        "isolated",
+        "dashboard_browser",
+    ]
+    assert "real_home" in packet["evaluation_scope"]["cached_or_skipped_suites"]
 
     entries = packet["evidence"]["agent_entries"]
     assert entries["managed_kb_entry_root"].endswith("smoke/social_media_posts")
@@ -1342,7 +1460,7 @@ def test_eval_packet_includes_extended_smoke_evidence(tmp_path):
         packet["evidence"]["smoke"]["task_digest"]["text"].count(
             packet["evidence"]["smoke"]["task_digest"]["title"]
         )
-        == 1
+        == 0
     )
     assert packet["evidence"]["dashboard_browser"]["checks_truncated_count"] > 0
     assert packet["evidence"]["radar_reports"]["status"] == "passed"
@@ -1464,6 +1582,7 @@ def test_build_eval_bundle_writes_packet_prompt_and_missing_artifact_warnings(tm
         smoke_root=smoke_root,
         real_home_report=tmp_path / "missing-real-home.json",
         real_integrations_dir=tmp_path / "missing-integrations",
+        selected_suites=("isolated", "mcp_matrix"),
     )
 
     packet = json.loads(result.packet_path.read_text(encoding="utf-8"))
@@ -1471,7 +1590,10 @@ def test_build_eval_bundle_writes_packet_prompt_and_missing_artifact_warnings(tm
     assert result.packet_path.is_file()
     assert result.prompt_path.is_file()
     assert packet["schema"] == "alcove.ai_eval_packet.v1"
+    assert packet["evaluation_scope"]["mode"] == "focused"
     assert packet["warnings"]
     assert "Return JSON only" in prompt
+    assert "Evaluation scope: focused" in prompt
+    assert "Refreshed suites: isolated, mcp_matrix" in prompt
     assert '"module_scores": [' in prompt
     assert "capture_inbox" in prompt

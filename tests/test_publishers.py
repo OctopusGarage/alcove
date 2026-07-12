@@ -339,6 +339,7 @@ def test_publisher_reports_ambiguous_target_without_hiding_other_targets(tmp_pat
     assert result["errors"] == 1
     assert result["targets"][0]["status"] == "failed"
     assert result["targets"][0]["error_code"] == "TARGET_AMBIGUOUS"
+    assert "duplicate Apple Notes" in result["targets"][0]["remediation_hint"]
 
 
 def test_publisher_can_recreate_missing_stateful_note_when_configured(tmp_path):

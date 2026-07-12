@@ -5,14 +5,28 @@ import json
 from pathlib import Path
 from typing import Any
 
+import yaml
+
+from alcove.automations import AutomationsModule
+from alcove.blog_monitor import BlogMonitorModule
+from alcove.connector_sources import ConnectorSourceRegistry
+from alcove.connectors.apple_notes import AppleNotesConnector
+from alcove.connectors.chrome_bookmarks import ChromeBookmarksConnector
+from alcove.connectors.github_stars import GitHubStarsConnector
+from alcove.dashboard import DASHBOARD_SNAPSHOT_VERSION, DashboardModule
 from alcove.home import AlcoveHome
 from alcove.markdown import MarkdownDoc, MarkdownRepository
+from alcove.mounts import MountsModule
 from alcove.okf import okf_schema_for
 from alcove.okf_catalog import CATALOG_FILES, OkfCatalogModule
 from alcove.paths import compact_user_path
 from alcove.pins import PIN_REQUIRED_FIELDS, PIN_SCHEMA, PinsModule
 from alcove.prompts import PROMPT_REQUIRED_FIELDS, PROMPT_SCHEMA, PromptsModule
+from alcove.publishers import PublisherModule
+from alcove.radars import RadarModule
+from alcove.usage import UsageRecorder
 from alcove.validate import ValidateModule
+from alcove.watchers import WatcherModule
 from alcove.workspace import Workspace
 
 
@@ -40,10 +54,24 @@ class HealthModule:
         self.workspace = workspace
         self.repo = repo or MarkdownRepository()
 
-    def check(self, *, fix: bool = False, strict: bool = False) -> dict[str, Any]:
-        actions: list[dict[str, str]] = []
+    def check(
+        self,
+        *,
+        fix: bool = False,
+        strict: bool = False,
+        deep: bool = False,
+        refresh_stale_connectors: bool = False,
+        refresh_all_connectors: bool = False,
+    ) -> dict[str, Any]:
+        actions: list[dict[str, Any]] = []
         if fix:
-            actions.extend(self._safe_rebuilds())
+            actions.extend(
+                self._safe_rebuilds(
+                    deep=deep,
+                    refresh_stale_connectors=refresh_stale_connectors,
+                    refresh_all_connectors=refresh_all_connectors,
+                )
+            )
 
         issues: list[HealthIssue] = []
         counts: dict[str, int] = {}
@@ -64,8 +92,14 @@ class HealthModule:
             "actions": actions,
         }
 
-    def _safe_rebuilds(self) -> list[dict[str, str]]:
-        actions: list[dict[str, str]] = []
+    def _safe_rebuilds(
+        self,
+        *,
+        deep: bool = False,
+        refresh_stale_connectors: bool = False,
+        refresh_all_connectors: bool = False,
+    ) -> list[dict[str, Any]]:
+        actions: list[dict[str, Any]] = []
         repaired_workspaces: set[Path] = set()
         if self.workspace is not None:
             actions.extend(self._repair_workspace_okf_schemas(self.workspace))
@@ -115,7 +149,68 @@ class HealthModule:
                     "path": compact_user_path(str(catalog["root"])),
                 }
             )
+            if refresh_stale_connectors or refresh_all_connectors:
+                actions.append(self._refresh_connectors(stale_only=not refresh_all_connectors))
+            if deep:
+                mount_report = MountsModule(home=self.home).scan()
+                actions.append(
+                    {
+                        "module": "mounts",
+                        "action": "scanned",
+                        "path": compact_user_path(self.home.paths().mounts),
+                        "scanned": str(int(mount_report.get("scanned") or 0)),
+                        "skipped": str(int(mount_report.get("skipped") or 0)),
+                        "reused": str(int(mount_report.get("reused") or 0)),
+                    }
+                )
+                usage_report = UsageRecorder(self.home).write_rollups()
+                actions.append(
+                    {
+                        "module": "usage",
+                        "action": "rolled_up",
+                        "path": compact_user_path(self.home.paths().stats),
+                        "events": str(int(usage_report.get("total_events") or 0)),
+                    }
+                )
+                dashboard_report = DashboardModule(self.home).build(build_frontend=False)
+                actions.append(
+                    {
+                        "module": "dashboard",
+                        "action": "rebuilt",
+                        "path": compact_user_path(str(dashboard_report.get("snapshot") or "")),
+                    }
+                )
+                catalog = OkfCatalogModule(self.home).build()
+                actions.append(
+                    {
+                        "module": "okf_catalog",
+                        "action": "rebuilt",
+                        "path": compact_user_path(str(catalog["root"])),
+                    }
+                )
         return actions
+
+    def _refresh_connectors(self, *, stale_only: bool) -> dict[str, Any]:
+        reports = [
+            AppleNotesConnector(self.workspace, home=self.home).refresh_sources(
+                stale_only=stale_only
+            ),
+            GitHubStarsConnector(self.workspace, home=self.home).refresh_sources(
+                stale_only=stale_only
+            ),
+            ChromeBookmarksConnector(self.workspace, home=self.home).refresh_sources(
+                stale_only=stale_only
+            ),
+        ]
+        return {
+            "module": "connectors",
+            "action": "refreshed_stale" if stale_only else "refreshed_all",
+            "path": compact_user_path(self.home.paths().connectors) if self.home else "",
+            "refreshed": str(sum(int(report.get("refreshed") or 0) for report in reports)),
+            "skipped": str(sum(int(report.get("skipped") or 0) for report in reports)),
+            "reused": str(sum(int(report.get("reused") or 0) for report in reports)),
+            "errors": str(sum(int(report.get("errors") or 0) for report in reports)),
+        }
 
     def _repair_workspace_okf_schemas(self, workspace: Workspace) -> list[dict[str, str]]:
         repaired = 0
@@ -229,7 +324,15 @@ class HealthModule:
         self._check_json_store(paths.projects / "projects.json", "projects", issues, counts)
         self._check_mounts(paths.mounts, issues, counts)
         self._check_connectors(paths.connectors, issues, counts)
+        self._check_connector_sources(home, issues, counts)
         self._check_catalog(paths.okf, issues, counts)
+        self._check_dashboard(home, issues, counts)
+        self._check_publishers(home, issues, counts)
+        self._check_radars(home, issues, counts)
+        self._check_watchers(home, issues, counts)
+        self._check_blogs(home, issues, counts)
+        self._check_automations(home, issues, counts)
+        self._check_usage_stats(home, issues, counts)
 
     def _check_registered_kbs(
         self,
@@ -391,6 +494,62 @@ class HealthModule:
             )
         counts["connectors"] = connectors
 
+    def _check_connector_sources(
+        self,
+        home: AlcoveHome,
+        issues: list[HealthIssue],
+        counts: dict[str, int],
+    ) -> None:
+        root = home.paths().connectors
+        source_paths = sorted(root.glob("*/sources/*.yml"), key=lambda path: path.as_posix())
+        counts["connector_sources"] = len(source_paths)
+        for path in source_paths:
+            try:
+                yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except (OSError, yaml.YAMLError) as exc:
+                self._issue(
+                    issues,
+                    "error",
+                    "connectors",
+                    "invalid_yaml",
+                    path,
+                    f"Could not parse connector source YAML: {exc}",
+                    "Repair the source registry or re-import the connector source.",
+                )
+        try:
+            status_rows = ConnectorSourceRegistry(home=home).status().get("sources", [])
+        except Exception as exc:
+            self._issue(
+                issues,
+                "error",
+                "connectors",
+                "invalid_connector_sources",
+                root,
+                f"Connector source registry cannot be loaded: {exc}",
+                "Repair connector source YAML under ~/.alcove/connectors/*/sources/.",
+            )
+            return
+        counts["connector_source_status_rows"] = len(
+            [row for row in status_rows if isinstance(row, dict)]
+        )
+        for row in status_rows:
+            if not isinstance(row, dict):
+                continue
+            status = str(row.get("status") or "")
+            if status not in {"stale", "error"}:
+                continue
+            connector = str(row.get("connector") or "")
+            source_id = str(row.get("id") or "")
+            self._issue(
+                issues,
+                "warning",
+                "connectors",
+                "connector_source_error" if status == "error" else "connector_source_stale",
+                root / connector / "sources" / f"{source_id}.yml",
+                f"Connector source {connector}/{source_id} is {status}.",
+                "Run `alcove connector refresh --stale --json` or inspect the connector source.",
+            )
+
     def _check_catalog(
         self,
         root: Path,
@@ -415,6 +574,212 @@ class HealthModule:
                     "Run `alcove okf catalog build` or `alcove health --fix`.",
                 )
         counts["okf_catalog_files"] = existing
+
+    def _check_dashboard(
+        self,
+        home: AlcoveHome,
+        issues: list[HealthIssue],
+        counts: dict[str, int],
+    ) -> None:
+        path = home.root / "dashboard" / "snapshot.json"
+        if not path.exists():
+            counts["dashboard_snapshots"] = 0
+            return
+        payload = self._read_json(path, issues, "dashboard")
+        counts["dashboard_snapshots"] = 1 if payload else 0
+        required = {"snapshot_version", "generated_at", "summary", "modules", "usage"}
+        missing = sorted(field for field in required if field not in payload)
+        version = payload.get("snapshot_version")
+        if missing or version != DASHBOARD_SNAPSHOT_VERSION:
+            self._issue(
+                issues,
+                "error",
+                "dashboard",
+                "invalid_dashboard_snapshot",
+                path,
+                "Dashboard snapshot is missing required fields or has an unsupported version.",
+                "Run `alcove dashboard --home <home> build` or `alcove health --fix --deep`.",
+            )
+
+    def _check_publishers(
+        self,
+        home: AlcoveHome,
+        issues: list[HealthIssue],
+        counts: dict[str, int],
+    ) -> None:
+        definitions_root = home.root / "publishers" / "definitions"
+        counts["publisher_definitions"] = self._check_yaml_tree(
+            definitions_root, "publishers", issues
+        )
+        runs_root = home.root / "publishers" / "runs"
+        counts["publisher_runs"] = self._check_json_tree(runs_root, "publishers", issues)
+        if definitions_root.exists():
+            try:
+                PublisherModule(home).list(status="")
+            except Exception as exc:
+                self._issue(
+                    issues,
+                    "error",
+                    "publishers",
+                    "invalid_publisher_definitions",
+                    definitions_root,
+                    f"Publisher definitions cannot be loaded: {exc}",
+                    "Repair publisher definitions or re-run `alcove publish init apple-notes`.",
+                )
+
+    def _check_radars(
+        self,
+        home: AlcoveHome,
+        issues: list[HealthIssue],
+        counts: dict[str, int],
+    ) -> None:
+        definitions_root = home.root / "radars" / "definitions"
+        counts["radar_definitions"] = self._check_yaml_tree(definitions_root, "radars", issues)
+        counts["radar_runs"] = self._check_json_tree(
+            home.root / "radars" / "runs", "radars", issues
+        )
+        if definitions_root.exists():
+            try:
+                RadarModule(home).list(status="")
+            except Exception as exc:
+                self._issue(
+                    issues,
+                    "error",
+                    "radars",
+                    "invalid_radar_definitions",
+                    definitions_root,
+                    f"Radar definitions cannot be loaded: {exc}",
+                    "Repair radar definitions or re-run `alcove radar init`.",
+                )
+
+    def _check_watchers(
+        self,
+        home: AlcoveHome,
+        issues: list[HealthIssue],
+        counts: dict[str, int],
+    ) -> None:
+        root = home.root / "watchers" / "sources"
+        counts["watch_sources"] = self._check_yaml_tree(root, "watchers", issues)
+        if root.exists():
+            try:
+                WatcherModule(home).list_sources(status="")
+            except Exception as exc:
+                self._issue(
+                    issues,
+                    "error",
+                    "watchers",
+                    "invalid_watch_sources",
+                    root,
+                    f"Watcher sources cannot be loaded: {exc}",
+                    "Repair watcher sources or recreate them through `alcove watch add`.",
+                )
+
+    def _check_blogs(
+        self,
+        home: AlcoveHome,
+        issues: list[HealthIssue],
+        counts: dict[str, int],
+    ) -> None:
+        sources_root = home.root / "blog-monitor" / "sources"
+        counts["blog_sources"] = self._check_yaml_tree(sources_root, "blog_monitor", issues)
+        counts["blog_runs"] = self._check_json_tree(
+            home.root / "blog-monitor" / "runs", "blog_monitor", issues
+        )
+        if sources_root.exists():
+            try:
+                BlogMonitorModule(home).list_sources(status="")
+            except Exception as exc:
+                self._issue(
+                    issues,
+                    "error",
+                    "blog_monitor",
+                    "invalid_blog_sources",
+                    sources_root,
+                    f"Blog monitor sources cannot be loaded: {exc}",
+                    "Repair blog sources or recreate them through `alcove blog add`.",
+                )
+
+    def _check_automations(
+        self,
+        home: AlcoveHome,
+        issues: list[HealthIssue],
+        counts: dict[str, int],
+    ) -> None:
+        jobs_root = home.root / "automations" / "jobs"
+        counts["automation_jobs"] = self._check_yaml_tree(jobs_root, "automations", issues)
+        counts["automation_runs"] = self._check_json_tree(
+            home.root / "automations" / "runs", "automations", issues
+        )
+        if jobs_root.exists():
+            try:
+                AutomationsModule(home).list_jobs(status="")
+            except Exception as exc:
+                self._issue(
+                    issues,
+                    "error",
+                    "automations",
+                    "invalid_automation_jobs",
+                    jobs_root,
+                    f"Automation jobs cannot be loaded: {exc}",
+                    "Repair automation jobs or recreate them through `alcove automation add-*`.",
+                )
+
+    def _check_usage_stats(
+        self,
+        home: AlcoveHome,
+        issues: list[HealthIssue],
+        counts: dict[str, int],
+    ) -> None:
+        summary_path = home.paths().stats / "summary.json"
+        if summary_path.exists():
+            self._read_json(summary_path, issues, "usage")
+            counts["usage_summary_files"] = 1
+        else:
+            counts["usage_summary_files"] = 0
+        counts["usage_daily_files"] = self._check_json_tree(
+            home.paths().stats / "daily", "usage", issues
+        )
+
+    def _check_yaml_tree(
+        self,
+        root: Path,
+        module: str,
+        issues: list[HealthIssue],
+    ) -> int:
+        if not root.exists():
+            return 0
+        count = 0
+        for path in sorted(
+            [*root.glob("*.yml"), *root.glob("*.yaml")], key=lambda item: item.as_posix()
+        ):
+            count += 1
+            try:
+                yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except (OSError, yaml.YAMLError) as exc:
+                self._issue(
+                    issues,
+                    "error",
+                    module,
+                    "invalid_yaml",
+                    path,
+                    f"Could not parse YAML: {exc}",
+                    "Repair or recreate the module configuration.",
+                )
+        return count
+
+    def _check_json_tree(
+        self,
+        root: Path,
+        module: str,
+        issues: list[HealthIssue],
+    ) -> int:
+        if not root.exists():
+            return 0
+        count = 0
+        for path in sorted(root.glob("*.json"), key=lambda item: item.as_posix()):
+            count += 1
+            self._read_json(path, issues, module)
+        return count
 
     def _check_markdown_okf(
         self,

@@ -69,6 +69,9 @@ def build_parser() -> argparse.ArgumentParser:
     health.add_argument("--kb")
     health.add_argument("--strict", action="store_true")
     health.add_argument("--fix", action="store_true")
+    health.add_argument("--deep", action="store_true")
+    health.add_argument("--refresh-stale-connectors", action="store_true")
+    health.add_argument("--refresh-all-connectors", action="store_true")
     health.add_argument("--json", action="store_true")
 
     install = sub.add_parser("install", help="Install Alcove MCP config for agents")
@@ -96,6 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     okf_catalog_build = okf_catalog_sub.add_parser(
         "build", help="Build ~/.alcove/okf from module source-of-truth data"
     )
+    okf_catalog_build.add_argument("--include-all-status", action="store_true")
     okf_catalog_build.add_argument("--json", action="store_true")
 
     hub = sub.add_parser("hub", help="Manage an Alcove hub workspace")
@@ -1245,6 +1249,9 @@ def main(argv: list[str] | None = None) -> int:
             report = AlcoveApplication(runtime).system.health_payload(
                 fix=args.fix,
                 strict=args.strict,
+                deep=args.deep,
+                refresh_stale_connectors=args.refresh_stale_connectors,
+                refresh_all_connectors=args.refresh_all_connectors,
             )
             if args.json:
                 print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -1303,7 +1310,9 @@ def main(argv: list[str] | None = None) -> int:
             runtime = AlcoveRuntime.resolve(home=args.home)
             app = AlcoveApplication(runtime)
             if args.okf_command == "catalog" and args.okf_catalog_command == "build":
-                payload = app.system.okf_catalog_build_payload()
+                payload = app.system.okf_catalog_build_payload(
+                    include_all_status=args.include_all_status
+                )
                 if args.json:
                     print(json.dumps(payload, ensure_ascii=False, indent=2))
                 else:

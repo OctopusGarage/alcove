@@ -238,6 +238,7 @@ source-of-truth files and the derived indexes together:
 alcove health --home ~/.alcove --json
 alcove health --home ~/.alcove --kb social_media_posts --strict --json
 alcove health --home ~/.alcove --kb social_media_posts --fix --json
+alcove health --home ~/.alcove --fix --deep --json
 ```
 
 Coverage:
@@ -249,13 +250,27 @@ Coverage:
 - mount JSON indexes plus derived `~/.alcove/mounts/okf/` item counts,
 - connector JSON indexes plus derived `~/.alcove/connectors/<id>/okf/` item
   counts,
-- global OKF catalog files under `~/.alcove/okf/`.
+- global OKF catalog files under `~/.alcove/okf/`,
+- dashboard snapshot shape when a snapshot exists,
+- publisher definitions/runs,
+- radar definitions/runs,
+- watcher and blog-monitor source configs/runs,
+- automation job configs/runs,
+- usage stats rollups when present.
 
 Default mode is read-only. `--fix` only performs safe local repairs: it fills
 missing `schema` metadata for recognized managed-KB OKF documents, then rebuilds
 safe derived data such as the pin index, prompt index, and global OKF catalog.
 It does not refresh network connectors, export Apple Notes, rescan mounts, or
-rewrite managed KB note bodies. Those operations remain explicit:
+rewrite managed KB note bodies.
+
+`--fix --deep` is a local full-maintenance pass. It additionally rescans mounts,
+refreshes usage rollups, rebuilds the dashboard snapshot, and rebuilds the
+global OKF catalog after those derived views are current. Connector refresh is
+still explicit: use `--refresh-stale-connectors` or `--refresh-all-connectors`
+when external-source refresh is intended.
+
+Individual repair commands remain available:
 
 ```sh
 alcove mount scan <mount-id> --json
@@ -318,7 +333,12 @@ Rebuild it through the governed derived-index path:
 
 ```sh
 alcove okf --home ~/.alcove catalog build --json
+alcove okf --home ~/.alcove catalog build --include-all-status --json
 ```
+
+The default catalog lists active working records for the main read path. Use
+`--include-all-status` for audit and cleanup flows where archived, deleted, or
+otherwise inactive records must remain visible.
 
 MCP exposes the same operation as `alcove_okf_catalog_build`.
 

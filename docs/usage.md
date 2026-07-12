@@ -110,6 +110,7 @@ connectors:
 
 ```sh
 alcove okf --home ~/.alcove catalog build --json
+alcove okf --home ~/.alcove catalog build --include-all-status --json
 ```
 
 Check all module data, OKF files, and derived indexes together:
@@ -118,11 +119,19 @@ Check all module data, OKF files, and derived indexes together:
 alcove health --home ~/.alcove --json
 alcove health --home ~/.alcove --kb research_notes --strict --json
 alcove health --home ~/.alcove --kb research_notes --fix --json
+alcove health --home ~/.alcove --fix --deep --json
+alcove health --home ~/.alcove --fix --deep --refresh-stale-connectors --json
 ```
 
 `--fix` fills missing schema metadata for recognized OKF notes and rebuilds safe
 derived indexes plus the global OKF catalog. It does not refresh external
-systems or rewrite managed KB note bodies.
+systems, rescan mounts, or rewrite managed KB note bodies.
+
+Use `--deep` for a local full-maintenance pass. It also rescans mounts, rebuilds
+usage rollups, rebuilds the dashboard snapshot, and rebuilds the global OKF
+catalog again after those derived views are current. Connector refresh remains
+explicit: add `--refresh-stale-connectors` for registered stale sources, or
+`--refresh-all-connectors` only when a full external refresh is intentional.
 
 ## Managed KB
 
@@ -549,7 +558,8 @@ through configured sinks. Telegram sends the Markdown and HTML report files when
 available. Feishu custom bot webhooks send a text message with the summary and
 top links; local report paths are not included in notification text. For
 Feishu/Lark attachments, use the `tcb` sink, which delegates report upload to a
-running `tmux-claude-bot` service through `tcb notify --attach`. The AI step
+running [`tmux-claude-bot`](https://github.com/OctopusGarage/tmux-claude-bot)
+service through `tcb notify --attach`. The AI step
 analyzes the report without changing fetched items or deterministic scores.
 
 ## Export
@@ -573,4 +583,7 @@ alcove kb install research_notes --status --json
 ```
 
 Global-aware MCP tools accept `home`. Managed-KB MCP tools require `workspace`
-or a configured default KB.
+or a configured default KB. Complex workflows that intentionally stay on the
+CLI/Hub surface, such as blog monitoring, radar reports, dashboard serving, and
+publisher syncs, can be discovered through MCP `alcove_command_hints` instead
+of widening the global MCP mutation surface.

@@ -7,6 +7,8 @@ cd "$repo_root"
 output_dir="${ALCOVE_AI_EVAL_DIR:-$repo_root/.tmp/ai-eval}"
 provider="${ALCOVE_AI_EVAL_PROVIDER:-codex}"
 skip_refresh="${ALCOVE_AI_EVAL_SKIP_REFRESH:-0}"
+selected_suites="${ALCOVE_AI_EVAL_SUITES:-all}"
+run_check="${ALCOVE_AI_EVAL_RUN_CHECK:-1}"
 eval "$(uv run python -m alcove.verify_suites --root "$output_dir" --shell)"
 packet="$output_dir/ai-eval-packet.json"
 prompt="$output_dir/ai-eval-prompt.md"
@@ -19,51 +21,64 @@ run() {
   "$@"
 }
 
+suite_selected() {
+  local suite="$1"
+  if [[ -z "$selected_suites" || "$selected_suites" == "all" ]]; then
+    return 0
+  fi
+  local item
+  IFS=',' read -ra items <<< "$selected_suites"
+  for item in "${items[@]}"; do
+    if [[ "$item" == "$suite" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+refresh_suite() {
+  local suite="$1"
+  local dir="$2"
+  shift 2
+  if ! suite_selected "$suite"; then
+    printf 'ai-eval: reusing cached suite %s\n' "$suite" >&2
+    return 0
+  fi
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  run "$@"
+}
+
 mkdir -p "$output_dir"
 
 if [[ "$skip_refresh" != "1" ]]; then
-  rm -rf \
-    "$smoke_root" \
-    "$real_home_dir" \
-    "$real_integrations_dir" \
-    "$agent_clients_dir" \
-    "$mcp_matrix_dir" \
-    "$dashboard_browser_dir" \
-    "$radar_reports_dir" \
-    "$export_restore_dir" \
-    "$messy_inbox_dir"
-  mkdir -p \
-    "$smoke_root" \
-    "$real_home_dir" \
-    "$real_integrations_dir" \
-    "$agent_clients_dir" \
-    "$mcp_matrix_dir" \
-    "$dashboard_browser_dir" \
-    "$radar_reports_dir" \
-    "$export_restore_dir" \
-    "$messy_inbox_dir"
-  run scripts/verify/check.sh > "$output_dir/check.log" 2>&1
-  run env ALCOVE_SMOKE_TMP="$smoke_root" ALCOVE_SMOKE_KEEP=1 \
+  if [[ "$run_check" == "1" ]]; then
+    run scripts/verify/check.sh > "$output_dir/check.log" 2>&1
+  else
+    printf 'ai-eval: skipping embedded check; selected gate will run check separately\n' >&2
+  fi
+  refresh_suite isolated "$smoke_root" env ALCOVE_SMOKE_TMP="$smoke_root" ALCOVE_SMOKE_KEEP=1 \
     scripts/verify/smoke-isolated.sh > "$output_dir/smoke.log" 2>&1
-  run env ALCOVE_REAL_SMOKE_REPORT_DIR="$real_home_dir" \
+  refresh_suite real_home "$real_home_dir" env ALCOVE_REAL_SMOKE_REPORT_DIR="$real_home_dir" \
     scripts/verify/smoke-real-home.sh > "$output_dir/real-home.log" 2>&1
-  run env ALCOVE_REAL_INTEGRATION_DIR="$real_integrations_dir" \
+  refresh_suite real_integrations "$real_integrations_dir" env ALCOVE_REAL_INTEGRATION_DIR="$real_integrations_dir" \
     scripts/verify/smoke-real-integrations.sh > "$output_dir/real-integrations.log" 2>&1
-  run env ALCOVE_AGENT_CLIENT_SMOKE_DIR="$agent_clients_dir" \
+  refresh_suite agent_clients "$agent_clients_dir" env ALCOVE_AGENT_CLIENT_SMOKE_DIR="$agent_clients_dir" \
     scripts/verify/smoke-agent-clients.sh > "$output_dir/agent-clients.log" 2>&1
-  run env ALCOVE_MCP_MATRIX_DIR="$mcp_matrix_dir" \
+  refresh_suite mcp_matrix "$mcp_matrix_dir" env ALCOVE_MCP_MATRIX_DIR="$mcp_matrix_dir" \
     scripts/verify/smoke-mcp-matrix.sh > "$output_dir/mcp-matrix.log" 2>&1
-  run env ALCOVE_DASHBOARD_BROWSER_DIR="$dashboard_browser_dir" \
+  refresh_suite dashboard_browser "$dashboard_browser_dir" env ALCOVE_DASHBOARD_BROWSER_DIR="$dashboard_browser_dir" \
     scripts/verify/smoke-dashboard-browser.sh > "$output_dir/dashboard-browser.log" 2>&1
-  run env ALCOVE_RADAR_REPORTS_DIR="$radar_reports_dir" \
+  refresh_suite radar_reports "$radar_reports_dir" env ALCOVE_RADAR_REPORTS_DIR="$radar_reports_dir" \
     scripts/verify/smoke-radar-reports.sh > "$output_dir/radar-reports.log" 2>&1
-  run env ALCOVE_EXPORT_RESTORE_DIR="$export_restore_dir" \
+  refresh_suite export_restore "$export_restore_dir" env ALCOVE_EXPORT_RESTORE_DIR="$export_restore_dir" \
     scripts/verify/smoke-export-restore.sh > "$output_dir/export-restore.log" 2>&1
-  run env ALCOVE_MESSY_INBOX_DIR="$messy_inbox_dir" \
+  refresh_suite messy_inbox "$messy_inbox_dir" env ALCOVE_MESSY_INBOX_DIR="$messy_inbox_dir" \
     scripts/verify/smoke-messy-inbox.sh > "$output_dir/messy-inbox.log" 2>&1
 fi
 
 run uv run python -m alcove.ai_eval \
+  --selected-suites "$selected_suites" \
   --output-dir "$output_dir" \
   --smoke-root "$smoke_root" \
   --real-home-report "$real_home_dir/real-home-smoke-report.json" \

@@ -554,6 +554,9 @@ def test_dashboard_knowledge_surface_includes_representative_external_items(tmp_
     assert snapshot["knowledge"]["managed"][0]["items"][0]["confidence"] == 0.5
     assert snapshot["mounts"][0]["items"][0]["title"] == "Agent Notes"
     assert snapshot["sources"]["mounts"][0]["items"][0]["title"] == "Agent Notes"
+    assert snapshot["mounts"][0]["items"][0]["source_ref"] == f"mounts/{mount.id}#agent-notes.md"
+    assert snapshot["mounts"][0]["items"][0]["read_ref_available"] is True
+    assert "configured mount root" in snapshot["mounts"][0]["items"][0]["read_hint"]
     connector_item_titles = {
         item["title"] for row in snapshot["connectors"] for item in row["items"]
     }
@@ -570,8 +573,14 @@ def test_dashboard_knowledge_surface_includes_representative_external_items(tmp_
     assert apple_row["items"][0]["fetch_command_pattern"] == (
         "alcove connector fetch <fetch_ref> --json"
     )
-    assert "fetch_ref" not in apple_row["items"][0]
-    assert "fetch_command" not in apple_row["items"][0]
+    assert (
+        apple_row["items"][0]["fetch_ref"]
+        == "connectors/apple-notes#notes/x-coredata%3A%2F%2Fdashboard-note/note.json"
+    )
+    assert apple_row["items"][0]["fetch_command"] == (
+        "alcove connector fetch "
+        "connectors/apple-notes#notes/x-coredata%3A%2F%2Fdashboard-note/note.json --json"
+    )
     assert "debug" not in apple_row["items"][0]
     assert "fetch_id" not in json.dumps(snapshot["connectors"], ensure_ascii=False)
     assert apple_row["items"][0]["source"] == "Apple Notes"

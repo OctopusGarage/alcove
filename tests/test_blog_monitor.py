@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import json
 
-import alcove.blog_monitor as blog_monitor
+import alcove.notifications as notifications
 from alcove.blog_monitor import BlogArticle, BlogMonitorModule
 from alcove.cli import main
 from alcove.home import AlcoveHome
@@ -134,7 +134,7 @@ def test_blog_notify_sends_title_url_and_captured_summary(tmp_path, monkeypatch)
         }
 
     sent_payloads: list[dict] = []
-    original_urlopen = blog_monitor.urlopen
+    original_urlopen = notifications.urlopen
 
     class FakeResponse:
         status = 200
@@ -153,7 +153,7 @@ def test_blog_notify_sends_title_url_and_captured_summary(tmp_path, monkeypatch)
         return FakeResponse()
 
     monkeypatch.setattr(module, "_capture_article", fake_capture)
-    monkeypatch.setattr(blog_monitor, "urlopen", fake_urlopen)
+    monkeypatch.setattr(notifications, "urlopen", fake_urlopen)
     monkeypatch.setenv("ALCOVE_TELEGRAM_BOT_TOKEN", "token")
     monkeypatch.setenv("ALCOVE_TELEGRAM_CHAT_ID", "chat")
 
@@ -161,6 +161,10 @@ def test_blog_notify_sends_title_url_and_captured_summary(tmp_path, monkeypatch)
 
     row = result["sources"][0]
     assert row["notify"]["status"] == "sent"
+    assert row["notify"]["messages"][0]["source_id"] == "example"
+    assert row["notify"]["messages"][0]["source_name"] == "Example Blog"
+    assert row["notify"]["messages"][0]["article_title"] == "Second useful article"
+    assert row["notify"]["messages"][0]["article_url"] == "https://example.com/blog/two"
     assert len(sent_payloads) == 1
     assert sent_payloads[0]["chat_id"] == "chat"
     assert sent_payloads[0]["parse_mode"] == "HTML"
@@ -207,7 +211,7 @@ def test_blog_notify_reads_telegram_credentials_from_alcove_env_file(tmp_path, m
         return {"status": "captured", "inbox_path": str(captured_dir)}
 
     sent_requests: list[str] = []
-    original_urlopen = blog_monitor.urlopen
+    original_urlopen = notifications.urlopen
 
     class FakeResponse:
         status = 200
@@ -225,7 +229,7 @@ def test_blog_notify_reads_telegram_credentials_from_alcove_env_file(tmp_path, m
         return FakeResponse()
 
     monkeypatch.setattr(module, "_capture_article", fake_capture)
-    monkeypatch.setattr(blog_monitor, "urlopen", fake_urlopen)
+    monkeypatch.setattr(notifications, "urlopen", fake_urlopen)
     monkeypatch.delenv("ALCOVE_TELEGRAM_BOT_TOKEN", raising=False)
     monkeypatch.delenv("ALCOVE_TELEGRAM_CHAT_ID", raising=False)
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
@@ -434,7 +438,7 @@ def test_blog_discovery_failure_marks_attention_and_sends_alert(tmp_path, monkey
         "_discover",
         lambda _source: (_ for _ in ()).throw(RuntimeError("blocked by challenge")),
     )
-    monkeypatch.setattr(blog_monitor, "urlopen", fake_urlopen)
+    monkeypatch.setattr(notifications, "urlopen", fake_urlopen)
     monkeypatch.setenv("ALCOVE_TELEGRAM_BOT_TOKEN", "token")
     monkeypatch.setenv("ALCOVE_TELEGRAM_CHAT_ID", "chat")
 

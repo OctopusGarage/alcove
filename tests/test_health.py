@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import yaml
+
 from alcove.cli import main
 from alcove.health import HealthModule
 from alcove.home import AlcoveHome
@@ -189,3 +191,125 @@ def test_cli_health_outputs_json_and_uses_fix(tmp_path, capsys):
     assert payload["home"] == str(home.root)
     assert payload["counts"]["pins"] == 1
     assert any(action["module"] == "okf_catalog" for action in payload["actions"])
+
+
+def test_health_checks_operational_module_data(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    (home.root / "dashboard").mkdir()
+    (home.root / "dashboard" / "snapshot.json").write_text("{}", encoding="utf-8")
+    (home.root / "publishers" / "definitions").mkdir(parents=True)
+    (home.root / "publishers" / "definitions" / "broken.yml").write_text(
+        "targets: [", encoding="utf-8"
+    )
+    (home.root / "radars" / "definitions").mkdir(parents=True)
+    (home.root / "radars" / "definitions" / "broken.yml").write_text("sources: [", encoding="utf-8")
+    (home.root / "watchers" / "sources").mkdir(parents=True)
+    (home.root / "watchers" / "sources" / "broken.yml").write_text("url: [", encoding="utf-8")
+    (home.root / "blog-monitor" / "sources").mkdir(parents=True)
+    (home.root / "blog-monitor" / "sources" / "broken.yml").write_text("url: [", encoding="utf-8")
+    (home.root / "automations" / "jobs").mkdir(parents=True)
+    (home.root / "automations" / "jobs" / "broken.yml").write_text("cmd: [", encoding="utf-8")
+    (home.paths().stats / "summary.json").write_text("{", encoding="utf-8")
+
+    report = HealthModule(home=home).check()
+
+    assert report["status"] == "issues"
+    kinds = {issue["kind"] for issue in report["issues"]}
+    assert "invalid_dashboard_snapshot" in kinds
+    assert "invalid_yaml" in kinds
+    assert "invalid_json" in kinds
+    assert report["counts"]["publisher_definitions"] == 1
+    assert report["counts"]["radar_definitions"] == 1
+    assert report["counts"]["watch_sources"] == 1
+    assert report["counts"]["blog_sources"] == 1
+    assert report["counts"]["automation_jobs"] == 1
+
+
+def test_health_checks_connector_source_registry_status(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    source_path = home.paths().connectors / "github-stars" / "sources" / "kingson.yml"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text(
+        yaml.safe_dump(
+            {
+                "schema": "alcove/connector-source/v1",
+                "connector": "github-stars",
+                "id": "kingson",
+                "source": "https://github.com/Kingson4Wu?tab=stars",
+                "refresh": {
+                    "status": "error",
+                    "last_checked_at": "2026-07-12T00:00:00+00:00",
+                    "ttl_hours": 24,
+                    "item_count": 0,
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = HealthModule(home=home).check()
+
+    assert report["status"] == "warnings"
+    assert report["counts"]["connector_sources"] == 1
+    assert any(issue["kind"] == "connector_source_error" for issue in report["issues"])
+
+
+def test_health_deep_rebuilds_mounts_dashboard_usage_and_catalog(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    source = tmp_path / "source-docs"
+    source.mkdir()
+    (source / "note.md").write_text("# Deep Note\n\nDeep health needle.", encoding="utf-8")
+    MountsModule(home=home).add(AddMountRequest(path=str(source), name="Source Docs"))
+
+    report = HealthModule(home=home).check(fix=True, deep=True)
+
+    assert report["status"] == "ok"
+    action_modules = {action["module"] for action in report["actions"]}
+    assert {"mounts", "dashboard", "usage", "okf_catalog"} <= action_modules
+    assert (home.paths().mounts / "indexes" / "source-docs.json").is_file()
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+    assert (home.paths().stats / "summary.json").is_file()
+
+
+def test_cli_health_deep_accepts_refresh_stale_connector_flag(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / "home")
+    sources_root = home.paths().connectors / "chrome-bookmarks" / "sources"
+    sources_root.mkdir(parents=True)
+    (sources_root / "default.yml").write_text(
+        yaml.safe_dump(
+            {
+                "schema": "alcove/connector-source/v1",
+                "id": "default",
+                "connector": "chrome-bookmarks",
+                "source": "Chrome Bookmarks: Default",
+                "source_file": str(tmp_path / "missing-bookmarks.json"),
+                "refresh": {
+                    "status": "stale",
+                    "last_checked_at": "2020-01-01T00:00:00+00:00",
+                    "ttl_hours": 1,
+                    "item_count": 0,
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    code = main(
+        [
+            "health",
+            "--home",
+            str(home.root),
+            "--fix",
+            "--deep",
+            "--refresh-stale-connectors",
+            "--json",
+        ]
+    )
+    output = capsys.readouterr()
+
+    payload = json.loads(output.out)
+    assert code == 0
+    assert any(action["module"] == "connectors" for action in payload["actions"])
+    assert payload["counts"]["connector_sources"] == 1

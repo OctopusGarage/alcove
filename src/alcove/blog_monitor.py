@@ -2,24 +2,22 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
-from html import escape, unescape
-from html.parser import HTMLParser
 import json
 import os
 from pathlib import Path
-import re
 import shutil
 import subprocess
 import tempfile
-import time
 from typing import Any
-from urllib.parse import urlencode, urljoin, urlparse
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-from xml.etree import ElementTree
 
 import yaml
 
+from alcove.blog_capture import BlogCaptureModule
+from alcove.blog_discovery import BlogDiscoveryModule
+from alcove.blog_notifications import BlogNotifier
+from alcove.blog_run import BLOG_ATTENTION_STATUS, BlogRunModule
 from alcove.home import AlcoveHome
 from alcove.markdown import normalize_slug
 from alcove.paths import compact_user_path
@@ -28,7 +26,7 @@ from alcove.paths import compact_user_path
 DEFAULT_TTL_HOURS = 24
 SOURCE_SCHEMA = "alcove/blog-source/v1"
 SEEN_SCHEMA = "alcove/blog-seen/v1"
-ATTENTION_STATUS = "needs_attention"
+ATTENTION_STATUS = BLOG_ATTENTION_STATUS
 
 
 def now_iso() -> str:
@@ -219,250 +217,18 @@ class BlogMonitorModule:
         now: str | None = None,
     ) -> dict[str, Any]:
         timestamp = now or now_iso()
-        rows = []
-        new_count = 0
-        captured_count = 0
-        errors = 0
-        for source in self._load_sources():
-            if source.status not in {"active", ATTENTION_STATUS}:
-                continue
-            if source_id and source.id != source_id:
-                continue
-            if stale_only and not self._is_stale(source, timestamp):
-                rows.append({"id": source.id, "status": "skipped"})
-                continue
-            result = self._check_one(
-                source,
-                timestamp=timestamp,
-                seed_only=seed_only,
-                capture_override=capture_override,
-                summary_override=summary_override,
-                notify_override=notify_override,
-            )
-            rows.append(result)
-            new_count += int(result.get("new_count") or 0)
-            captured_count += int(result.get("captured_count") or 0)
-            if result.get("status") in {"error", ATTENTION_STATUS}:
-                errors += 1
-        return {
-            "status": "checked",
-            "checked": len(rows),
-            "new": new_count,
-            "captured": captured_count,
-            "errors": errors,
-            "sources": rows,
-        }
-
-    def _check_one(
-        self,
-        source: BlogSource,
-        *,
-        timestamp: str,
-        seed_only: bool,
-        capture_override: bool | None,
-        summary_override: bool | None,
-        notify_override: bool | None,
-    ) -> dict[str, Any]:
-        try:
-            articles = self._discover(source)
-        except Exception as exc:  # pragma: no cover - exercised in integration use
-            return self._handle_failure(
-                source,
-                stage="discovery",
-                error=str(exc),
-                timestamp=timestamp,
-                notify_override=notify_override,
-            )
-
-        seen = self._load_seen(source.id)
-        discovered_urls = {article.url for article in articles}
-        new_articles = [article for article in articles if article.url not in seen]
-
-        if seed_only:
-            self._write_seen(source.id, seen | discovered_urls, timestamp=timestamp)
-            updated = self._replace_source(
-                source,
-                status="active",
-                checked_at=timestamp,
-                updated_at=timestamp,
-                last_error="",
-            )
-            self._write_source(updated)
-            return {
-                "id": source.id,
-                "status": "seeded",
-                "discovered_count": len(articles),
-                "new_count": len(new_articles),
-            }
-
-        capture_enabled = source.capture.enabled if capture_override is None else capture_override
-        summary_enabled = source.summary.enabled if summary_override is None else summary_override
-        notify_enabled = source.notify.enabled if notify_override is None else notify_override
-
-        captures = [
-            self._capture_article(source, article) if capture_enabled else self._skipped_capture()
-            for article in new_articles
-        ]
-        failed_capture = next(
-            (
-                capture
-                for capture in captures
-                if str(capture.get("status") or "") in {"failed", "pending"}
-            ),
-            None,
-        )
-        if failed_capture is not None:
-            error = str(
-                failed_capture.get("error") or failed_capture.get("reason") or "capture failed"
-            )
-            return self._handle_failure(
-                source,
-                stage="capture",
-                error=error,
-                timestamp=timestamp,
-                notify_override=notify_override,
-                articles=new_articles,
-                captures=captures,
-            )
-        self._write_seen(source.id, seen | discovered_urls, timestamp=timestamp)
-        captured_count = sum(1 for capture in captures if capture.get("status") == "captured")
-        summary = self._summarize(source, new_articles, captures) if summary_enabled else ""
-        notify_payload = (
-            self._notify(source, new_articles, captures, summary)
-            if notify_enabled and new_articles
-            else {"status": "skipped"}
-        )
-        for article, capture in zip(new_articles, captures, strict=True):
-            self._record_event(source, article, capture, timestamp=timestamp)
-        run_path = self._write_run(
-            source,
-            articles=new_articles,
-            captures=captures,
-            summary=summary,
-            notify=notify_payload,
+        return BlogRunModule(self).check(
+            source_id=source_id,
+            stale_only=stale_only,
+            seed_only=seed_only,
+            capture_override=capture_override,
+            summary_override=summary_override,
+            notify_override=notify_override,
             timestamp=timestamp,
         )
-        updated = self._replace_source(
-            source,
-            status="active",
-            checked_at=timestamp,
-            changed_at=timestamp if new_articles else source.changed_at,
-            updated_at=timestamp,
-            last_error="",
-        )
-        self._write_source(updated)
-        return {
-            "id": source.id,
-            "status": "changed" if new_articles else "fresh",
-            "discovered_count": len(articles),
-            "new_count": len(new_articles),
-            "captured_count": captured_count,
-            "run": compact_user_path(run_path),
-            "notify": notify_payload,
-            "articles": [article.as_dict() for article in new_articles],
-            "captures": captures,
-        }
-
-    def _handle_failure(
-        self,
-        source: BlogSource,
-        *,
-        stage: str,
-        error: str,
-        timestamp: str,
-        notify_override: bool | None,
-        articles: list[BlogArticle] | None = None,
-        captures: list[dict[str, Any]] | None = None,
-    ) -> dict[str, Any]:
-        notify_enabled = source.notify.enabled if notify_override is None else notify_override
-        notify_payload = (
-            self._notify_failure(source, stage=stage, error=error)
-            if notify_enabled
-            else {"status": "skipped"}
-        )
-        run_path = self._write_run(
-            source,
-            articles=articles or [],
-            captures=captures or [],
-            summary="",
-            notify=notify_payload,
-            timestamp=timestamp,
-            stage=stage,
-            error=error,
-        )
-        self._record_failure_event(source, stage=stage, error=error, timestamp=timestamp)
-        updated = self._replace_source(
-            source,
-            status=ATTENTION_STATUS,
-            checked_at=timestamp,
-            updated_at=timestamp,
-            last_error=error,
-        )
-        self._write_source(updated)
-        return {
-            "id": source.id,
-            "status": ATTENTION_STATUS,
-            "stage": stage,
-            "error": error,
-            "run": compact_user_path(run_path),
-            "notify": notify_payload,
-        }
 
     def _discover(self, source: BlogSource) -> list[BlogArticle]:
-        method = source.discover.method
-        if method == "requests":
-            return self._discover_html(source)
-        if method == "playwright":
-            return self._discover_playwright(source)
-        if method in {"rss", "atom"}:
-            return self._discover_feed(source)
-        if method == "sitemap":
-            return self._discover_sitemap(source)
-        if method == "hn-search":
-            return self._discover_hn(source)
-        raise ValueError(f"Unsupported blog discover method: {method}")
-
-    def _discover_html(self, source: BlogSource) -> list[BlogArticle]:
-        html = self._fetch_text(source.url)
-        parser = _AnchorParser(source.url)
-        parser.feed(html)
-        articles = []
-        seen: set[str] = set()
-        for href, text in parser.links:
-            if not _matches_link_pattern(href, source.discover.link_pattern):
-                continue
-            if href in seen or href.rstrip("/") == source.url.rstrip("/"):
-                continue
-            title, date = _extract_article_card_date(_clean_title(text))
-            if len(title) < 6:
-                continue
-            seen.add(href)
-            articles.append(self._article(source, title=title, url=href, date=date))
-        return articles
-
-    def _discover_playwright(self, source: BlogSource) -> list[BlogArticle]:
-        raw_items = self._extract_articles_with_playwright(source)
-        articles = []
-        seen: set[str] = set()
-        for item in raw_items:
-            href = str(item.get("url") or "")
-            if not href or href in seen:
-                continue
-            if not _matches_link_pattern(href, source.discover.link_pattern):
-                continue
-            title = _clean_title(str(item.get("title") or ""))
-            date = _clean_title(str(item.get("date") or ""))
-            if not title:
-                title = _title_from_url(href)
-            title, extracted_date = _extract_article_card_date(title)
-            date = date or extracted_date
-            if len(title) < 6:
-                continue
-            seen.add(href)
-            articles.append(self._article(source, title=title, url=href, date=date))
-        if not articles:
-            raise RuntimeError(f"Playwright found no article links for {source.url}")
-        return articles
+        return BlogDiscoveryModule(self).discover(source)
 
     def _extract_articles_with_playwright(self, source: BlogSource) -> list[dict[str, str]]:
         node = shutil.which("node")
@@ -520,99 +286,6 @@ class BlogMonitorModule:
             if isinstance(item, dict)
         ]
 
-    def _discover_feed(self, source: BlogSource) -> list[BlogArticle]:
-        raw = self._fetch_text(source.url)
-        root = ElementTree.fromstring(raw)  # noqa: S314
-        articles: list[BlogArticle] = []
-        if source.discover.method == "atom":
-            for entry in root.findall(".//{*}entry"):
-                title = _element_text(entry, "{*}title")
-                href = ""
-                for link in entry.findall("{*}link"):
-                    href = str(link.attrib.get("href") or "")
-                    if href:
-                        break
-                date = _element_text(entry, "{*}updated") or _element_text(entry, "{*}published")
-                if title and href:
-                    articles.append(self._article(source, title=title, url=href, date=date))
-            return articles
-        for item in root.findall(".//item"):
-            title = _element_text(item, "title")
-            href = _element_text(item, "link")
-            date = _element_text(item, "pubDate")
-            if title and href:
-                articles.append(self._article(source, title=title, url=href, date=date))
-        return articles
-
-    def _discover_sitemap(self, source: BlogSource) -> list[BlogArticle]:
-        raw = self._fetch_text(source.url)
-        root = ElementTree.fromstring(raw)  # noqa: S314
-        source_domain = urlparse(source.url).netloc
-        rows: list[tuple[datetime | None, BlogArticle]] = []
-        seen: set[str] = set()
-        for url_node in root.findall(".//{*}url"):
-            href = _element_text(url_node, "{*}loc")
-            if not href or href in seen:
-                continue
-            parsed = urlparse(href)
-            if parsed.netloc and parsed.netloc != source_domain:
-                continue
-            if not _matches_link_pattern(href, source.discover.link_pattern):
-                continue
-            seen.add(href)
-            lastmod = _element_text(url_node, "{*}lastmod")
-            rows.append(
-                (
-                    _parse_time(lastmod),
-                    self._article(
-                        source,
-                        title=_title_from_url(href),
-                        url=href,
-                        date=lastmod,
-                    ),
-                )
-            )
-        rows.sort(key=lambda row: row[0] or datetime.min.replace(tzinfo=UTC), reverse=True)
-        return [article for _, article in rows]
-
-    def _discover_hn(self, source: BlogSource) -> list[BlogArticle]:
-        domain = urlparse(source.url).netloc
-        timestamp = int(datetime.now(UTC).timestamp()) - source.discover.days_back * 86400
-        query = urlencode(
-            {
-                "query": domain,
-                "tags": "story",
-                "numericFilters": f"created_at_i>{timestamp}",
-            }
-        )
-        data = json.loads(self._fetch_text(f"https://hn.algolia.com/api/v1/search?{query}"))
-        hits = data.get("hits") if isinstance(data, dict) else []
-        articles = []
-        seen: set[str] = set()
-        for hit in hits if isinstance(hits, list) else []:
-            if not isinstance(hit, dict):
-                continue
-            url = str(hit.get("url") or "")
-            story_text = str(hit.get("story_text") or "")
-            if domain not in url and domain not in story_text:
-                continue
-            if domain not in url and story_text:
-                match = re.search(
-                    rf'href=["\']([^"\']*{re.escape(domain)}[^"\']*)["\']',
-                    unescape(story_text),
-                )
-                url = match.group(1) if match else url
-            if not url or url in seen:
-                continue
-            if not _matches_link_pattern(url, source.discover.link_pattern):
-                continue
-            title = _clean_title(str(hit.get("title") or ""))
-            if not title:
-                continue
-            seen.add(url)
-            articles.append(self._article(source, title=title, url=url))
-        return articles
-
     def _article(self, source: BlogSource, *, title: str, url: str, date: str = "") -> BlogArticle:
         return BlogArticle(
             title=title,
@@ -623,82 +296,7 @@ class BlogMonitorModule:
         )
 
     def _capture_article(self, source: BlogSource, article: BlogArticle) -> dict[str, Any]:
-        if not source.capture.kb:
-            return {"status": "failed", "error": "capture.kb is required when capture is enabled"}
-        if source.capture.adapter != "clipsmith":
-            return {
-                "status": "pending",
-                "adapter": source.capture.adapter,
-                "reason": "capture adapter is not implemented",
-            }
-        record = self.home.get_knowledge_base(source.capture.kb)
-        target_dir = record.path / source.capture.inbox_path
-        skill_dir = self._clipsmith_web_skill_dir()
-        if skill_dir is None or shutil.which("npx") is None or shutil.which("clipsmith") is None:
-            return {
-                "status": "pending",
-                "adapter": "clipsmith",
-                "reason": "clipsmith-web skill, npx, or clipsmith command is unavailable",
-                "capture_command": f"Use clipsmith-capture to capture {article.url} and sink it to {target_dir}",
-            }
-        output_dir = self.captures_root / source.id
-        output_dir.mkdir(parents=True, exist_ok=True)
-        capture_result = self._run_command(
-            [
-                "npx",
-                "tsx",
-                "scripts/run.ts",
-                "--url",
-                article.url,
-                "--output_dir",
-                str(output_dir),
-            ],
-            cwd=skill_dir,
-            timeout=180,
-        )
-        if capture_result.returncode != 0:
-            return {
-                "status": "failed",
-                "adapter": "clipsmith",
-                "error": capture_result.stderr.strip() or capture_result.stdout.strip(),
-            }
-        bundle_dir = _json_field(capture_result.stdout, "bundle_dir")
-        if not bundle_dir:
-            return {
-                "status": "failed",
-                "adapter": "clipsmith",
-                "error": "clipsmith-web did not return bundle_dir",
-            }
-        validate = self._run_command(
-            ["clipsmith", "validate-bundle", bundle_dir, "--json"],
-            cwd=None,
-            timeout=60,
-        )
-        if validate.returncode != 0:
-            return {
-                "status": "failed",
-                "adapter": "clipsmith",
-                "bundle_dir": compact_user_path(bundle_dir),
-                "error": validate.stderr.strip() or validate.stdout.strip(),
-            }
-        sink = self._run_command(
-            ["clipsmith", "sink", "directory", bundle_dir, str(target_dir), "--json"],
-            cwd=None,
-            timeout=60,
-        )
-        if sink.returncode != 0:
-            return {
-                "status": "failed",
-                "adapter": "clipsmith",
-                "bundle_dir": compact_user_path(bundle_dir),
-                "error": sink.stderr.strip() or sink.stdout.strip(),
-            }
-        return {
-            "status": "captured",
-            "adapter": "clipsmith",
-            "bundle_dir": compact_user_path(bundle_dir),
-            "inbox_path": compact_user_path(_json_field(sink.stdout, "path") or target_dir),
-        }
+        return BlogCaptureModule(self).capture(source, article)
 
     def _run_command(
         self,
@@ -871,193 +469,16 @@ function hasManualActionText(text) {
         captures: list[dict[str, Any]],
         summary: str,
     ) -> dict[str, Any]:
-        if source.notify.channel != "telegram":
-            return {"status": "skipped", "reason": "unsupported notification channel"}
-        token = self._telegram_credential("ALCOVE_TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_TOKEN")
-        chat_id = self._telegram_credential("ALCOVE_TELEGRAM_CHAT_ID", "TELEGRAM_CHAT_ID")
-        if not token or not chat_id:
-            return {"status": "skipped", "reason": "telegram token or chat id missing"}
-        statuses = []
-        for article, capture in zip(articles, captures, strict=True):
-            message = self._telegram_article_message(
-                source,
-                article,
-                capture,
-                summary=summary,
-            )
-            status = self._send_telegram_message(token=token, chat_id=chat_id, text=message)
-            statuses.append(status)
-            if status.get("status") == "failed":
-                return {
-                    "status": "failed",
-                    "sent_count": sum(1 for item in statuses if item.get("status") == "sent"),
-                    "messages": statuses,
-                }
-        return {
-            "status": "sent",
-            "sent_count": len(statuses),
-            "messages": statuses,
-        }
+        return BlogNotifier(self.home).notify(source, articles, captures, summary)
 
     def _notify_failure(self, source: BlogSource, *, stage: str, error: str) -> dict[str, Any]:
-        retry_command = self._failure_retry_command(source)
-        if source.notify.channel != "telegram":
-            return {
-                "status": "skipped",
-                "reason": "unsupported notification channel",
-                "source_id": source.id,
-                "stage": stage,
-                "error": error,
-                "retry_command": retry_command,
-            }
-        token = self._telegram_credential("ALCOVE_TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_TOKEN")
-        chat_id = self._telegram_credential("ALCOVE_TELEGRAM_CHAT_ID", "TELEGRAM_CHAT_ID")
-        if not token or not chat_id:
-            return {
-                "status": "skipped",
-                "reason": "telegram token or chat id missing",
-                "source_id": source.id,
-                "stage": stage,
-                "error": error,
-                "retry_command": retry_command,
-            }
-        message = self._telegram_failure_message(source, stage=stage, error=error)
-        result = self._send_telegram_message(token=token, chat_id=chat_id, text=message)
-        return {
-            **result,
-            "source_id": source.id,
-            "stage": stage,
-            "error": error,
-            "retry_command": retry_command,
-        }
-
-    def _telegram_article_message(
-        self,
-        source: BlogSource,
-        article: BlogArticle,
-        capture: dict[str, Any],
-        *,
-        summary: str,
-    ) -> str:
-        message_lines = [
-            f"<b>Blog Monitor: {escape(source.name)}</b>",
-            "",
-            f'<a href="{escape(article.url)}">{escape(article.title)}</a>',
-        ]
-        article_summary = self._captured_article_summary(capture)
-        if article_summary:
-            message_lines.extend(["", f"<b>Summary</b>\n{escape(article_summary)}"])
-        elif summary:
-            message_lines.extend(["", f"<b>Run Summary</b>\n{escape(summary)}"])
-        else:
-            status = str(capture.get("status") or "skipped")
-            message_lines.extend(["", f"Capture: {escape(status)}"])
-        return "\n".join(message_lines)
-
-    def _telegram_failure_message(self, source: BlogSource, *, stage: str, error: str) -> str:
-        action = f"检查 {source.name} 博客监控失败原因，并修复或补采集"
-        lines = [
-            f"<b>Blog Monitor Failed: {escape(source.name)}</b>",
-            "",
-            f"Error: {escape(error[:1200])}",
-            f"Source ID: {escape(source.id)}",
-            f"Stage: {escape(stage)}",
-            f"Retry: <code>{escape(self._failure_retry_command(source))}</code>",
-            f"URL: {escape(source.url)}",
-            "",
-            "Suggested action:",
-            escape(action),
-        ]
-        return "\n".join(lines)
+        return BlogNotifier(self.home).notify_failure(source, stage=stage, error=error)
 
     def _failure_retry_command(self, source: BlogSource) -> str:
-        return f"alcove blog check {source.id} --json"
-
-    def _captured_article_summary(self, capture: dict[str, Any], max_chars: int = 1200) -> str:
-        inbox_path = str(capture.get("inbox_path") or "")
-        if not inbox_path:
-            return ""
-        summary_path = Path(inbox_path).expanduser() / "summary.md"
-        if not summary_path.is_file():
-            return ""
-        text = summary_path.read_text(encoding="utf-8", errors="replace").strip()
-        text = re.sub(r"^#\s*Summary\s*", "", text, flags=re.I).strip()
-        text = re.sub(r"\n{3,}", "\n\n", text)
-        if len(text) <= max_chars:
-            return text
-        return text[: max_chars - 1].rstrip() + "…"
-
-    def _send_telegram_message(self, *, token: str, chat_id: str, text: str) -> dict[str, Any]:
-        body = json.dumps(
-            {
-                "chat_id": chat_id,
-                "text": text,
-                "parse_mode": "HTML",
-            }
-        ).encode("utf-8")
-        request = Request(  # noqa: S310
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            data=body,
-            headers={"Content-Type": "application/json"},
-        )
-        last_error = ""
-        for attempt in range(1, 4):
-            try:
-                with urlopen(request, timeout=15) as response:  # noqa: S310
-                    status = response.status
-                return {
-                    "status": "sent" if status < 400 else "failed",
-                    "http_status": status,
-                    "attempts": attempt,
-                }
-            except Exception as exc:  # pragma: no cover - network failure depends on environment
-                last_error = str(exc)
-                if attempt < 3:
-                    time.sleep(1.5 * attempt)
-        return {"status": "failed", "error": last_error, "attempts": 3}
-
-    def _env_value(self, *names: str) -> str:
-        for name in names:
-            value = os.environ.get(name)
-            if value:
-                return value
-        env_values = self._local_env_values()
-        for name in names:
-            value = env_values.get(name)
-            if value:
-                return value
-        return ""
+        return BlogNotifier(self.home).failure_retry_command(source)
 
     def _telegram_credential(self, alcove_name: str, generic_name: str) -> str:
-        value = os.environ.get(alcove_name)
-        if value:
-            return value
-        env_values = self._local_env_values()
-        value = env_values.get(alcove_name) or env_values.get(generic_name)
-        if value:
-            return value
-        return os.environ.get(generic_name) or ""
-
-    def _local_env_values(self) -> dict[str, str]:
-        env_path = self.home.root / ".env"
-        if not env_path.is_file():
-            return {}
-        values: dict[str, str] = {}
-        for raw_line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key = key.strip()
-            if not key or not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", key):
-                continue
-            values[key] = self._parse_env_value(value.strip())
-        return values
-
-    def _parse_env_value(self, value: str) -> str:
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
-            value = value[1:-1]
-        return value.strip()
+        return BlogNotifier(self.home).telegram_credential(alcove_name, generic_name)
 
     def _write_run(
         self,
@@ -1308,87 +729,6 @@ function hasManualActionText(text) {
             "seen": compact_user_path(self.seen_root),
             "events": compact_user_path(self.events_path),
         }
-
-
-class _AnchorParser(HTMLParser):
-    def __init__(self, base_url: str) -> None:
-        super().__init__()
-        self.base_url = base_url
-        self.links: list[tuple[str, str]] = []
-        self._href = ""
-        self._text: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag.lower() != "a":
-            return
-        href = dict(attrs).get("href") or ""
-        if not href or href.startswith("#") or href.startswith("mailto:"):
-            return
-        self._href = urljoin(self.base_url, href)
-        self._text = []
-
-    def handle_data(self, data: str) -> None:
-        if self._href:
-            self._text.append(data)
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag.lower() != "a" or not self._href:
-            return
-        self.links.append((self._href, " ".join(self._text)))
-        self._href = ""
-        self._text = []
-
-
-def _element_text(parent: ElementTree.Element, selector: str) -> str:
-    found = parent.find(selector)
-    return _clean_title(found.text or "") if found is not None else ""
-
-
-def _clean_title(value: str) -> str:
-    return re.sub(r"\s+", " ", value).strip()
-
-
-def _matches_link_pattern(url: str, pattern: str) -> bool:
-    if not pattern:
-        return True
-    if pattern.startswith("/"):
-        return urlparse(url).path.startswith(pattern)
-    return pattern in url
-
-
-def _extract_article_card_date(value: str) -> tuple[str, str]:
-    match = re.search(
-        r"\b(?:Engineering|Research|Product|Company|Safety|Security|Business)?\s*"
-        r"((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4})\b",
-        value,
-    )
-    if match is None:
-        return value, ""
-    date = match.group(1)
-    title = value[: match.start()].strip()
-    title = re.sub(
-        r"\b(?:Engineering|Research|Product|Company|Safety|Security|Business)\s*$",
-        "",
-        title,
-    ).strip()
-    return title or value, date
-
-
-def _title_from_url(url: str) -> str:
-    path = urlparse(url).path.rstrip("/")
-    slug = path.rsplit("/", 1)[-1]
-    title = slug.replace("-", " ").strip()
-    return title.title() if title else url
-
-
-def _json_field(text: str, field: str) -> str:
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        return ""
-    if not isinstance(data, dict):
-        return ""
-    return str(data.get(field) or "")
 
 
 def _parse_time(value: str) -> datetime | None:

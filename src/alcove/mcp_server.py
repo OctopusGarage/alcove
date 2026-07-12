@@ -32,6 +32,7 @@ from alcove.tasks import AddIdeaRequest, AddRoutineRequest, AddTaskRequest
 
 
 from alcove.mcp_direct_tools import (
+    command_hints_tool,
     gardener_tool,
     get_topic_tool,
     idea_archive_tool,
@@ -69,6 +70,7 @@ from alcove.mcp_direct_tools import (
 )
 
 __all__ = [
+    "command_hints_tool",
     "create_mcp_server",
     "gardener_tool",
     "get_topic_tool",
@@ -194,6 +196,15 @@ def create_mcp_server(
             "waiting ideas, and routines that need adjustment. Preserve task ids in the "
             "output so follow-up commands are easy."
         )
+
+    @tool
+    def alcove_command_hints(
+        workspace: str = "",
+        home: str = "",
+        workflow: str = "",
+    ) -> dict[str, Any]:
+        """Discover CLI commands for complex Alcove workflows kept outside MCP."""
+        return command_hints_tool(workspace=workspace, home=home, workflow=workflow)
 
     @tool
     def alcove_search(
@@ -1001,9 +1012,15 @@ def create_mcp_server(
         return context.scoped_app(workspace, home).global_home.prompt_rebuild_index_payload()
 
     @tool
-    def alcove_okf_catalog_build(workspace: str = "", home: str = "") -> dict[str, Any]:
+    def alcove_okf_catalog_build(
+        workspace: str = "",
+        home: str = "",
+        include_all_status: bool = False,
+    ) -> dict[str, Any]:
         """Build the derived global OKF catalog used as a Markdown entry for AI-led reads."""
-        return context.scoped_app(workspace, home).system.okf_catalog_build_payload()
+        return context.scoped_app(workspace, home).system.okf_catalog_build_payload(
+            include_all_status=include_all_status
+        )
 
     @tool
     def alcove_idea_add(

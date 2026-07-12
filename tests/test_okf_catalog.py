@@ -70,6 +70,45 @@ def test_cli_okf_catalog_build_exposes_catalog_payload(tmp_path, capsys):
     assert (home.root / "okf" / "index.md").is_file()
 
 
+def test_okf_catalog_can_include_all_status_records(tmp_path):
+    home = _home_with_global_memory(tmp_path)
+    pin = PinsModule(home=home).list(status="active")[0]
+    PinsModule(home=home).archive(pin.id, confirm=True)
+
+    result = OkfCatalogModule(home).build(include_all_status=True)
+
+    pins_catalog = (home.root / "okf" / "modules" / "pins.md").read_text(encoding="utf-8")
+    assert result["counts"]["pins"] == 1
+    assert "Reference Pin" in pins_catalog
+    assert "status: archived" in pins_catalog
+
+
+def test_cli_okf_catalog_build_accepts_include_all_status(tmp_path, capsys):
+    home = _home_with_global_memory(tmp_path)
+    pin = PinsModule(home=home).list(status="active")[0]
+    PinsModule(home=home).archive(pin.id, confirm=True)
+
+    code = main(
+        [
+            "okf",
+            "--home",
+            str(home.root),
+            "catalog",
+            "build",
+            "--include-all-status",
+            "--json",
+        ]
+    )
+    output = capsys.readouterr()
+
+    payload = json.loads(output.out)
+    assert code == 0
+    assert payload["counts"]["pins"] == 1
+    assert "Reference Pin" in (home.root / "okf" / "modules" / "pins.md").read_text(
+        encoding="utf-8"
+    )
+
+
 def _home_with_global_memory(tmp_path):
     home = AlcoveHome.init(tmp_path / "home")
     kb_root = tmp_path / "research_notes"

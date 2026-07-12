@@ -75,7 +75,8 @@ notify:
 
 Telegram credentials can be provided through environment variables or
 `~/.alcove/.env`. Feishu custom webhooks send text notifications. The `tcb`
-sink delegates richer delivery to a running `tmux-claude-bot` service.
+sink delegates richer delivery to a running
+[`tmux-claude-bot`](https://github.com/OctopusGarage/tmux-claude-bot) service.
 
 ## Service Behavior
 

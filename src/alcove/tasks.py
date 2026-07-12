@@ -439,7 +439,7 @@ class TasksModule:
             f"📋 Alcove {normalize_slug(period) or 'weekly'} planner digest · {current.isoformat()}"
         )
         body = self._digest_body(ideas=ideas, tasks=tasks, routines=routines)
-        text = self._digest_text(title=title, body=body)
+        text = body
         notify_payload = {"status": "skipped", "reason": "notify disabled"}
         if notify:
             if self.home is None:
@@ -1144,9 +1144,24 @@ class TasksModule:
             [
                 routine.title,
                 f"Next: {routine.next_due}",
-                f"Frequency: {routine.schedule['frequency']}",
+                f"Frequency: {self._routine_frequency_label(routine.schedule)}",
             ]
         )
+
+    def _routine_frequency_label(self, schedule: dict[str, Any]) -> str:
+        frequency = str(schedule.get("frequency") or "daily")
+        interval = max(int(schedule.get("interval") or 1), 1)
+        if frequency == "daily":
+            return "daily" if interval == 1 else f"every {interval} days"
+        if frequency == "weekly":
+            weekdays = [str(day) for day in self._list(schedule.get("weekdays"))]
+            day_text = f" on {', '.join(weekdays)}" if weekdays else ""
+            return f"weekly{day_text}" if interval == 1 else f"every {interval} weeks{day_text}"
+        if frequency == "monthly":
+            day = int(schedule.get("day_of_month") or 0)
+            day_text = f" on day {day}" if day else ""
+            return f"monthly{day_text}" if interval == 1 else f"every {interval} months{day_text}"
+        return frequency
 
     def _combine_notes(self, base: str, extra: str) -> str:
         values = [value.strip() for value in (base, extra) if value.strip()]

@@ -39,11 +39,11 @@ class OkfCatalogModule:
         self.home = home
         self.root = home.paths().okf
 
-    def build(self) -> dict[str, Any]:
+    def build(self, *, include_all_status: bool = False) -> dict[str, Any]:
         self.root.mkdir(parents=True, exist_ok=True)
         (self.root / "modules").mkdir(parents=True, exist_ok=True)
 
-        context = self._context()
+        context = self._context(include_all_status=include_all_status)
         self._write("index.md", self._index_body(context))
         self._write("managed-kbs.md", self._managed_kbs_body(context["managed_kbs"]))
         self._write("global-memory.md", self._global_memory_body(context))
@@ -73,20 +73,24 @@ class OkfCatalogModule:
                 "mounts": len(context["mounts"]),
                 "connectors": len(context["connectors"]),
             },
+            "include_all_status": include_all_status,
         }
 
-    def _context(self) -> dict[str, Any]:
+    def _context(self, *, include_all_status: bool = False) -> dict[str, Any]:
         tasks = TasksModule(home=self.home)
+        status = "" if include_all_status else "active"
+        task_status = "" if include_all_status else "pending"
         return {
             "managed_kbs": self.home.list_knowledge_bases(),
-            "pins": PinsModule(home=self.home).list(status="active"),
-            "prompts": PromptsModule(home=self.home).list(status="active"),
-            "tasks": tasks.task_list(status="pending"),
-            "ideas": tasks.idea_list(status="active"),
-            "routines": tasks.routine_list(status="active"),
+            "pins": PinsModule(home=self.home).list(status=status),
+            "prompts": PromptsModule(home=self.home).list(status=status),
+            "tasks": tasks.task_list(status=task_status),
+            "ideas": tasks.idea_list(status=status),
+            "routines": tasks.routine_list(status=status),
             "projects": ProjectsModule(home=self.home).list(),
-            "mounts": MountsModule(home=self.home).list(status="active"),
+            "mounts": MountsModule(home=self.home).list(status=status),
             "connectors": self._connectors(),
+            "include_all_status": include_all_status,
         }
 
     def _connectors(self) -> list[dict[str, Any]]:
@@ -126,6 +130,11 @@ class OkfCatalogModule:
                 "",
                 "This is a derived progressive-disclosure entry for AI-led reads.",
                 "It is not the source of truth. Regenerate it with `alcove okf catalog build`.",
+                (
+                    "This catalog includes all lifecycle statuses."
+                    if context.get("include_all_status")
+                    else "This catalog lists active working records by default."
+                ),
                 "",
                 "## Sections",
                 "",
@@ -319,6 +328,9 @@ class OkfCatalogModule:
             record_id = str(data.get("id") or data.get("alias") or "")
             tags = data.get("tags") if isinstance(data.get("tags"), list) else []
             suffix = f" tags: {', '.join(tags)}" if tags else ""
+            status = str(data.get("status") or "")
+            if status and status not in {"active", "pending"}:
+                suffix = f"{suffix} status: {status}" if suffix else f" status: {status}"
             if link_template and record_id:
                 rows.append(f"- [{title}]({link_template.format(id=record_id)}){suffix}")
             else:

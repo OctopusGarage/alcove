@@ -48,6 +48,7 @@ def build_eval_packet(
     radar_reports_report: Path | None = None,
     export_restore_report: Path | None = None,
     messy_inbox_report: Path | None = None,
+    selected_suites: Sequence[str] = (),
 ) -> dict[str, Any]:
     return EvalPacketBuilder(
         smoke_root=smoke_root,
@@ -59,6 +60,7 @@ def build_eval_packet(
         radar_reports_report=radar_reports_report,
         export_restore_report=export_restore_report,
         messy_inbox_report=messy_inbox_report,
+        selected_suites=tuple(selected_suites),
     ).build()
 
 
@@ -73,6 +75,7 @@ class EvalPacketBuilder:
     radar_reports_report: Path | None = None
     export_restore_report: Path | None = None
     messy_inbox_report: Path | None = None
+    selected_suites: tuple[str, ...] = ()
 
     def build(self) -> dict[str, Any]:
         return _build_eval_packet(
@@ -85,6 +88,7 @@ class EvalPacketBuilder:
             radar_reports_report=self.radar_reports_report,
             export_restore_report=self.export_restore_report,
             messy_inbox_report=self.messy_inbox_report,
+            selected_suites=self.selected_suites,
         )
 
 
@@ -99,6 +103,7 @@ def _build_eval_packet(
     radar_reports_report: Path | None = None,
     export_restore_report: Path | None = None,
     messy_inbox_report: Path | None = None,
+    selected_suites: Sequence[str] = (),
 ) -> dict[str, Any]:
     warnings: list[str] = []
     smoke_fixtures = smoke_root / "fixtures"
@@ -125,6 +130,12 @@ def _build_eval_packet(
         "publisher_run": _read_json(smoke_fixtures / "publisher-run.json", warnings),
         "publisher_run_unchanged": _read_json(
             smoke_fixtures / "publisher-run-unchanged.json", warnings
+        ),
+        "publisher_run_ambiguous": _read_json(
+            smoke_fixtures / "publisher-run-ambiguous.json", warnings
+        ),
+        "publisher_service_tick": _read_json(
+            smoke_fixtures / "publisher-service-tick.json", warnings
         ),
         "publisher_render_quality": _read_json(
             smoke_fixtures / "publisher-render-quality.json", warnings
@@ -228,6 +239,7 @@ def _build_eval_packet(
 
     packet = {
         "schema": PACKET_SCHEMA,
+        "evaluation_scope": _evaluation_scope(selected_suites),
         "purpose": (
             "AI quality evaluation packet for Alcove flows. Deterministic smoke "
             "already checked command success; this packet asks an AI reviewer to "
@@ -312,6 +324,42 @@ def _operating_model() -> dict[str, Any]:
                 "validation, refresh, scan, or index rebuild commands."
             ),
         },
+    }
+
+
+def _evaluation_scope(selected_suites: Sequence[str]) -> dict[str, Any]:
+    normalized = tuple(suite for suite in selected_suites if suite and suite != "all")
+    all_suites = (
+        "isolated",
+        "real_home",
+        "real_integrations",
+        "agent_clients",
+        "mcp_matrix",
+        "dashboard_browser",
+        "radar_reports",
+        "export_restore",
+        "messy_inbox",
+    )
+    if not normalized:
+        return {
+            "mode": "full",
+            "refreshed_suites": list(all_suites),
+            "review_focus": (
+                "Full regression: all deterministic evidence was refreshed before "
+                "the AI reviewer was called."
+            ),
+        }
+    skipped = [suite for suite in all_suites if suite not in normalized]
+    return {
+        "mode": "focused",
+        "refreshed_suites": list(normalized),
+        "cached_or_skipped_suites": skipped,
+        "review_focus": (
+            "Focused regression: prioritize the refreshed suites and directly related "
+            "product quality. Cached or skipped suites provide context only and should "
+            "not be treated as blocking coverage gaps unless they contradict refreshed "
+            "evidence."
+        ),
     }
 
 
@@ -538,6 +586,7 @@ def build_eval_bundle(
     radar_reports_report: Path | None = None,
     export_restore_report: Path | None = None,
     messy_inbox_report: Path | None = None,
+    selected_suites: Sequence[str] = (),
 ) -> EvalBundle:
     output_dir.mkdir(parents=True, exist_ok=True)
     packet = build_eval_packet(
@@ -550,6 +599,7 @@ def build_eval_bundle(
         radar_reports_report=radar_reports_report,
         export_restore_report=export_restore_report,
         messy_inbox_report=messy_inbox_report,
+        selected_suites=selected_suites,
     )
     packet_path = output_dir / "ai-eval-packet.json"
     packet_path.write_text(
@@ -694,12 +744,18 @@ def _modules() -> list[dict[str, Any]]:
 
 def _reviewer_prompt(packet_path: Path, packet: dict[str, Any]) -> str:
     module_ids = ", ".join(module["id"] for module in packet["modules"])
+    scope = packet.get("evaluation_scope", {})
+    scope_mode = str(scope.get("mode", "full"))
+    refreshed = ", ".join(str(item) for item in scope.get("refreshed_suites", []))
     return f"""# Alcove AI Eval Reviewer
 
 Read `{packet_path}` and evaluate Alcove's end-to-end product quality. The
 deterministic smoke suites already passed or produced the artifacts in the
 packet; your job is to judge whether the system behavior is useful, coherent,
 and agent-friendly.
+
+Evaluation scope: {scope_mode}
+Refreshed suites: {refreshed or "all"}
 
 Modules to review: {module_ids}
 
@@ -735,6 +791,10 @@ Scoring guidance:
 - 75-89: usable but has clear should-fix gaps.
 - 60-74: important flows work but quality or routing is shaky.
 - below 60: users or agents are likely to make wrong decisions.
+
+If the evaluation scope is focused, prioritize refreshed suites and directly
+related modules. Do not fail the review only because unrelated suites were
+cached or skipped.
 
 Return JSON only. Do not edit files.
 """
@@ -853,8 +913,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--radar-reports-report")
     parser.add_argument("--export-restore-report")
     parser.add_argument("--messy-inbox-report")
+    parser.add_argument("--selected-suites", default="all")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
+    selected_suites = _parse_selected_suites(args.selected_suites)
     bundle = build_eval_bundle(
         output_dir=Path(args.output_dir),
         smoke_root=Path(args.smoke_root),
@@ -870,6 +932,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.export_restore_report
         else None,
         messy_inbox_report=Path(args.messy_inbox_report) if args.messy_inbox_report else None,
+        selected_suites=selected_suites,
     )
     payload = {
         "packet": str(bundle.packet_path),
@@ -881,6 +944,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"packet: {bundle.packet_path}")
         print(f"prompt: {bundle.prompt_path}")
     return 0
+
+
+def _parse_selected_suites(value: str) -> tuple[str, ...]:
+    if not value or value == "all":
+        return ()
+    return tuple(item.strip() for item in value.split(",") if item.strip())
 
 
 if __name__ == "__main__":

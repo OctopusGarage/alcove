@@ -18,6 +18,16 @@ cd "$repo"
 scripts/eval-ai.sh
 ```
 
+Focused eval can refresh only selected suites:
+
+```bash
+ALCOVE_AI_EVAL_SUITES=isolated,mcp_matrix ALCOVE_AI_EVAL_PROVIDER=none ALCOVE_AI_EVAL_RUN_CHECK=0 scripts/eval-ai.sh
+ALCOVE_AI_EVAL_SUITES=isolated,mcp_matrix ALCOVE_AI_EVAL_SKIP_REFRESH=1 scripts/eval-ai.sh
+```
+
+Use `scripts/agent-quality-gate.sh --mode coach --json` when unsure which suite
+list matches the current change.
+
 Options:
 
 ```bash

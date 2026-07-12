@@ -162,6 +162,34 @@ radars.upsert_definition(
     )
 )
 PY
+mkdir -p "$root/mounted-dashboard"
+cat > "$root/mounted-dashboard/readme.md" <<'EOF'
+# Dashboard Mounted Source
+
+Dashboard browser mount fixture for source coverage.
+EOF
+cat > "$fixtures/dashboard-stars.json" <<'EOF'
+[
+  {
+    "full_name": "OctopusGarage/dashboard-fixture",
+    "html_url": "https://github.com/OctopusGarage/dashboard-fixture",
+    "description": "Dashboard browser connector fixture.",
+    "language": "TypeScript",
+    "stargazers_count": 42,
+    "topics": ["dashboard", "fixture"],
+    "updated_at": "2026-07-10T00:00:00Z"
+  }
+]
+EOF
+alcove mount --home "$home" add "$root/mounted-dashboard" \
+  --name dashboard-mounted \
+  --type local-folder \
+  --tag dashboard \
+  --json > "$fixtures/mount-add.json"
+alcove mount --home "$home" scan dashboard-mounted --json > "$fixtures/mount-scan.json"
+alcove connector --home "$home" github-stars index "$fixtures/dashboard-stars.json" \
+  --tag dashboard \
+  --json > "$fixtures/github-stars-index.json"
 alcove dashboard --home "$home" build --json > "$fixtures/dashboard-build.json"
 
 run python3 - "$home/dashboard" "$root/screenshots" "$report" <<'PY'
@@ -291,6 +319,10 @@ large_dataset = {
     "prompts": snapshot["summary"]["counts"]["prompts"],
     "projects": snapshot["summary"]["counts"]["projects"],
     "knowledge_items": snapshot["summary"]["counts"]["knowledge_items"],
+    "mounts": snapshot["summary"]["counts"]["mounts"],
+    "mount_items": snapshot["summary"]["counts"]["mount_items"],
+    "connectors": snapshot["summary"]["counts"]["connectors"],
+    "connector_items": snapshot["summary"]["counts"]["connector_items"],
     "search_index_items": len(snapshot["search_index"]),
 }
 
@@ -608,24 +640,26 @@ with serve(dashboard_root) as base_url:
             page.goto(base_url, wait_until="networkidle")
             home_body = page.locator("body").inner_text()
             home_body_lower = home_body.lower()
+            home_main = page.locator("main").inner_text()
+            home_main_lower = home_main.lower()
             add_check(
                 checks,
                 f"{label}_home_clear_planner_label",
-                "Themes to Practice" not in home_body
-                and ("TODO Pins" in home_body or "Planner Queue" in home_body),
-                home_body[:400],
+                "Themes to Practice" not in home_main
+                and ("TODO Pins" in home_main or "Planner Queue" in home_main),
+                home_main[:400],
             )
             add_check(
                 checks,
                 f"{label}_home_precise_index_labels",
-                "searchable" in home_body_lower
-                and "indexed records" in home_body_lower
-                and "source coverage" in home_body_lower
-                and "managed kb" in home_body_lower
-                and "mount" in home_body_lower
-                and "connector" in home_body_lower
-                and "Indexed" not in home_body,
-                home_body[:400],
+                "searchable" in home_main_lower
+                and "indexed records" in home_main_lower
+                and "source coverage" in home_main_lower
+                and "managed kbs: 1" in home_main_lower
+                and "mounts: 1" in home_main_lower
+                and "connectors: 1" in home_main_lower
+                and "0 current / 1 configured / 0 stale" in home_main_lower,
+                home_main[:400],
             )
             search = page.locator("#global-search")
             add_check(checks, f"{label}_search_input", search.count() == 1)
@@ -657,6 +691,8 @@ add_check(
     large_dataset["pins"] >= 19
     and large_dataset["tasks_total"] >= 51
     and large_dataset["knowledge_items"] >= 161
+    and large_dataset["mounts"] >= 1
+    and large_dataset["connectors"] >= 1
     and large_dataset["search_index_items"] >= 250,
     json.dumps(large_dataset, ensure_ascii=False),
 )

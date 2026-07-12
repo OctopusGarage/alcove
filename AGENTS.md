@@ -38,10 +38,17 @@ Agent quality gate:
   checks automatically.
 - See `docs/evals/agent-quality-gates.md` before changing hook, prompt, skill,
   AI eval, MCP routing, search, inbox, dashboard, or verification behavior.
+- Keep implementation and docs aligned in the same change. When code changes
+  user-visible behavior, storage, CLI/MCP contracts, agent entries, dashboard,
+  radars, connectors, mounts, OKF, smoke, eval, or install flows, update the
+  related docs or state why no docs change is needed. Use `$alcove-doc-sync`
+  for the checklist.
 
 Selection rule:
 
 - Use `scripts/smoke.sh` by default for normal code changes.
+- Use `scripts/check-docs-drift.sh` or `$alcove-doc-sync` when changed source
+  behavior may need docs updates.
 - Add `scripts/smoke-real-home.sh` for global home, dashboard, search, pins,
   tasks, prompts, projects, mounts, or connector changes.
 - Use `scripts/smoke-real-integrations.sh` for capture, Clipsmith handoff,

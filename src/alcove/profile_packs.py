@@ -287,7 +287,7 @@ def _hub_skill(default_kb: str, home_part: str) -> str:
         f'alcove connector{home_part} fetch "connectors/<id>#<path>" --json\n'
         f"alcove blog{home_part} list --status '' --json\n"
         f"alcove blog{home_part} check --json\n"
-        f"alcove blog{home_part} check openai --json\n"
+        f"alcove blog{home_part} check <source-id> --json\n"
         f"alcove radar{home_part} list --json\n"
         f"alcove radar{home_part} status <radar-id> --json\n"
         f"alcove radar{home_part} run <radar-id> --json\n"

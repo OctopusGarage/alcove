@@ -27,6 +27,10 @@ Top-level `scripts/*.sh` files are stable wrappers. Implementations live under
 - Export restore smoke: `scripts/smoke-export-restore.sh`
 - Messy inbox smoke: `scripts/smoke-messy-inbox.sh`
 - AI quality eval: `scripts/eval-ai.sh`
+- Focused AI quality eval:
+  `ALCOVE_AI_EVAL_SUITES=isolated,mcp_matrix ALCOVE_AI_EVAL_PROVIDER=none ALCOVE_AI_EVAL_RUN_CHECK=0 scripts/eval-ai.sh`
+  then
+  `ALCOVE_AI_EVAL_SUITES=isolated,mcp_matrix ALCOVE_AI_EVAL_SKIP_REFRESH=1 scripts/eval-ai.sh`
 - Agent quality gate: `scripts/agent-quality-gate.sh --mode coach`
 - Full project gate: `scripts/check.sh`
 - Data/OKF health: `alcove health --home "${ALCOVE_HOME:-$HOME/.alcove}" --json`
@@ -56,6 +60,9 @@ default. If the clone layout is different, set `ALCOVE_CLIPSMITH_ROOT`.
 - Run `scripts/eval-ai.sh` when the user asks for AI eval or when the change
   affects summarization quality, inbox review, classification, dashboard
   usefulness, agent entry prompts, or intent-routing quality.
+- Prefer the suite list from `scripts/agent-quality-gate.sh --mode coach --json`
+  for normal regression work. Full `scripts/eval-ai.sh` is for release
+  hardening or broad cross-module changes.
 - Run `scripts/agent-quality-gate.sh --mode coach` when the changed files span
   multiple risk areas or you need the repository-selected verification plan.
 - Run `scripts/check.sh` before reporting code changes as complete.

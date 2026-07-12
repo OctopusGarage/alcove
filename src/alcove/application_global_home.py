@@ -21,11 +21,17 @@ class _GlobalHomeCapabilities(_Capability):
             metadata={"id": result.pin.id, "kind": result.pin.kind},
         )
         return self.runtime.scope_payload(
-            {
-                "status": "pinned",
-                "path": str(result.path),
-                "pin": _pin_dict(result.pin),
-            }
+            self._governed_write(
+                {
+                    "status": "pinned",
+                    "path": str(result.path),
+                    "pin": _pin_dict(result.pin),
+                },
+                area="pin",
+                action="pin.add",
+                target=result.pin.id,
+                source_of_truth="pins",
+            )
         )
 
     def pin_list_payload(self, tag: str | None = None, status: str = "active") -> dict[str, Any]:
@@ -63,12 +69,18 @@ class _GlobalHomeCapabilities(_Capability):
             metadata={"id": result.pin.id, "kind": result.pin.kind},
         )
         return self.runtime.scope_payload(
-            {
-                "status": "updated",
-                "path": str(result.path),
-                "index_path": str(result.index_path),
-                "pin": _pin_dict(result.pin),
-            }
+            self._governed_write(
+                {
+                    "status": "updated",
+                    "path": str(result.path),
+                    "index_path": str(result.index_path),
+                    "pin": _pin_dict(result.pin),
+                },
+                area="pin",
+                action="pin.update",
+                target=result.pin.id,
+                source_of_truth="pins",
+            )
         )
 
     def pin_rebuild_index_payload(self) -> dict[str, Any]:
@@ -95,7 +107,16 @@ class _GlobalHomeCapabilities(_Capability):
             summary=f"Archived pin: {pin_id}",
             metadata={"id": pin_id},
         )
-        return self.runtime.scope_payload(payload)
+        return self.runtime.scope_payload(
+            self._governed_write(
+                payload,
+                area="pin",
+                action="pin.archive",
+                target=pin_id,
+                source_of_truth="pins",
+                confirmation_required=not confirm,
+            )
+        )
 
     def project_add_payload(self, request: AddProjectRequest) -> dict[str, Any]:
         project = ProjectsModule(self.runtime.workspace, home=self.runtime.home).add(request)
@@ -105,7 +126,15 @@ class _GlobalHomeCapabilities(_Capability):
             summary=f"Added project: {project.alias}",
             metadata={"alias": project.alias},
         )
-        return self.runtime.scope_payload({"status": "added", "project": _project_dict(project)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "added", "project": _project_dict(project)},
+                area="project",
+                action="project.add",
+                target=project.alias,
+                source_of_truth="projects",
+            )
+        )
 
     def project_get_payload(self, alias: str) -> dict[str, Any]:
         project = ProjectsModule(self.runtime.workspace, home=self.runtime.home).get(alias)
@@ -135,13 +164,29 @@ class _GlobalHomeCapabilities(_Capability):
             summary=f"Removed project: {alias}",
             metadata={"alias": alias},
         )
-        return self.runtime.scope_payload(payload)
+        return self.runtime.scope_payload(
+            self._governed_write(
+                payload,
+                area="project",
+                action="project.remove",
+                target=alias,
+                source_of_truth="projects",
+            )
+        )
 
     def project_roots_set_payload(self, roots: list[str]) -> dict[str, Any]:
         payload = ProjectsModule(self.runtime.workspace, home=self.runtime.home).configure_roots(
             roots
         )
-        return self.runtime.scope_payload(payload)
+        return self.runtime.scope_payload(
+            self._governed_write(
+                payload,
+                area="project",
+                action="project.roots_set",
+                target="roots",
+                source_of_truth="projects",
+            )
+        )
 
     def prompt_save_payload(self, request: AddPromptRequest) -> dict[str, Any]:
         result = PromptsModule(self.runtime.workspace, home=self.runtime.home).save(request)
@@ -152,12 +197,18 @@ class _GlobalHomeCapabilities(_Capability):
             metadata={"id": result.prompt.id},
         )
         return self.runtime.scope_payload(
-            {
-                "status": "saved",
-                "path": compact_user_path(result.path),
-                "index_path": compact_user_path(result.index_path),
-                "prompt": _prompt_dict(result.prompt),
-            }
+            self._governed_write(
+                {
+                    "status": "saved",
+                    "path": compact_user_path(result.path),
+                    "index_path": compact_user_path(result.index_path),
+                    "prompt": _prompt_dict(result.prompt),
+                },
+                area="prompt",
+                action="prompt.save",
+                target=result.prompt.id,
+                source_of_truth="prompts",
+            )
         )
 
     def prompt_search_payload(
@@ -191,7 +242,16 @@ class _GlobalHomeCapabilities(_Capability):
             summary=f"Archived prompt: {prompt_id}",
             metadata={"id": prompt_id},
         )
-        return self.runtime.scope_payload(payload)
+        return self.runtime.scope_payload(
+            self._governed_write(
+                payload,
+                area="prompt",
+                action="prompt.archive",
+                target=prompt_id,
+                source_of_truth="prompts",
+                confirmation_required=not confirm,
+            )
+        )
 
     def prompt_tags_payload(self) -> dict[str, Any]:
         tags = PromptsModule(self.runtime.workspace, home=self.runtime.home).tags()
@@ -216,7 +276,15 @@ class _GlobalHomeCapabilities(_Capability):
             summary=f"Added task: {task.title}",
             metadata={"id": task.id, "priority": task.priority},
         )
-        return self.runtime.scope_payload({"status": "added", "task": asdict(task)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "added", "task": asdict(task)},
+                area="task",
+                action="task.add",
+                target=task.id,
+                source_of_truth="tasks",
+            )
+        )
 
     def idea_add_payload(self, request: AddIdeaRequest) -> dict[str, Any]:
         idea = TasksModule(self.runtime.workspace, home=self.runtime.home).idea_add(request)
@@ -226,7 +294,15 @@ class _GlobalHomeCapabilities(_Capability):
             summary=f"Added idea: {idea.title}",
             metadata={"id": idea.id},
         )
-        return self.runtime.scope_payload({"status": "added", "idea": asdict(idea)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "added", "idea": asdict(idea)},
+                area="task",
+                action="idea.add",
+                target=idea.id,
+                source_of_truth="tasks",
+            )
+        )
 
     def idea_list_payload(self, status: str = "active") -> dict[str, Any]:
         ideas = [
@@ -270,7 +346,15 @@ class _GlobalHomeCapabilities(_Capability):
             summary=f"Edited task: {task.title}",
             metadata={"id": task.id},
         )
-        return self.runtime.scope_payload({"status": "updated", "task": asdict(task)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "updated", "task": asdict(task)},
+                area="task",
+                action="task.edit",
+                target=task.id,
+                source_of_truth="tasks",
+            )
+        )
 
     def task_complete_payload(self, task_id: str) -> dict[str, Any]:
         task = TasksModule(self.runtime.workspace, home=self.runtime.home).task_complete(task_id)
@@ -280,7 +364,15 @@ class _GlobalHomeCapabilities(_Capability):
             summary=f"Completed task: {task.title}",
             metadata={"id": task.id},
         )
-        return self.runtime.scope_payload({"status": "completed", "task": asdict(task)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "completed", "task": asdict(task)},
+                area="task",
+                action="task.complete",
+                target=task.id,
+                source_of_truth="tasks",
+            )
+        )
 
     def task_cancel_payload(self, task_id: str) -> dict[str, Any]:
         task = TasksModule(self.runtime.workspace, home=self.runtime.home).task_cancel(task_id)
@@ -290,7 +382,15 @@ class _GlobalHomeCapabilities(_Capability):
             summary=f"Cancelled task: {task.title}",
             metadata={"id": task.id},
         )
-        return self.runtime.scope_payload({"status": "cancelled", "task": asdict(task)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "cancelled", "task": asdict(task)},
+                area="task",
+                action="task.cancel",
+                target=task.id,
+                source_of_truth="tasks",
+            )
+        )
 
     def idea_edit_payload(
         self,
@@ -312,7 +412,15 @@ class _GlobalHomeCapabilities(_Capability):
             summary=f"Edited idea: {idea.title}",
             metadata={"id": idea.id},
         )
-        return self.runtime.scope_payload({"status": "updated", "idea": asdict(idea)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "updated", "idea": asdict(idea)},
+                area="task",
+                action="idea.edit",
+                target=idea.id,
+                source_of_truth="tasks",
+            )
+        )
 
     def idea_archive_payload(self, idea_id: str) -> dict[str, Any]:
         idea = TasksModule(self.runtime.workspace, home=self.runtime.home).idea_archive(idea_id)
@@ -322,7 +430,15 @@ class _GlobalHomeCapabilities(_Capability):
             summary=f"Archived idea: {idea.title}",
             metadata={"id": idea.id},
         )
-        return self.runtime.scope_payload({"status": "archived", "idea": asdict(idea)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "archived", "idea": asdict(idea)},
+                area="task",
+                action="idea.archive",
+                target=idea.id,
+                source_of_truth="tasks",
+            )
+        )
 
     def idea_promote_payload(
         self,
@@ -342,11 +458,17 @@ class _GlobalHomeCapabilities(_Capability):
             item for item in tasks.idea_list(status="promoted") if item.promoted_task_id == task.id
         )
         return self.runtime.scope_payload(
-            {
-                "status": "promoted",
-                "idea": asdict(idea),
-                "task": asdict(task),
-            }
+            self._governed_write(
+                {
+                    "status": "promoted",
+                    "idea": asdict(idea),
+                    "task": asdict(task),
+                },
+                area="task",
+                action="idea.promote",
+                target=idea.id,
+                source_of_truth="tasks",
+            )
         )
 
     def idea_promote_routine_payload(
@@ -378,7 +500,13 @@ class _GlobalHomeCapabilities(_Capability):
             metadata={"idea_id": idea.id, "routine_id": routine.id},
         )
         return self.runtime.scope_payload(
-            {"status": "promoted", "idea": asdict(idea), "routine": asdict(routine)}
+            self._governed_write(
+                {"status": "promoted", "idea": asdict(idea), "routine": asdict(routine)},
+                area="task",
+                action="idea.promote_routine",
+                target=idea.id,
+                source_of_truth="tasks",
+            )
         )
 
     def routine_add_payload(self, request: AddRoutineRequest) -> dict[str, Any]:
@@ -389,7 +517,15 @@ class _GlobalHomeCapabilities(_Capability):
             summary=f"Added routine: {routine.title}",
             metadata={"id": routine.id},
         )
-        return self.runtime.scope_payload({"status": "added", "routine": asdict(routine)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "added", "routine": asdict(routine)},
+                area="task",
+                action="routine.add",
+                target=routine.id,
+                source_of_truth="tasks",
+            )
+        )
 
     def routine_list_payload(self, status: str = "active") -> dict[str, Any]:
         routines = [
@@ -413,7 +549,13 @@ class _GlobalHomeCapabilities(_Capability):
             metadata={"today": today},
         )
         return self.runtime.scope_payload(
-            {"status": "materialized", "created": [asdict(task) for task in created]}
+            self._governed_write(
+                {"status": "materialized", "created": [asdict(task) for task in created]},
+                area="task",
+                action="routine.materialize_due",
+                target=today or "due",
+                source_of_truth="tasks",
+            )
         )
 
     def routine_edit_payload(
@@ -442,7 +584,15 @@ class _GlobalHomeCapabilities(_Capability):
             summary=f"Edited routine: {routine.title}",
             metadata={"id": routine.id},
         )
-        return self.runtime.scope_payload({"status": "updated", "routine": asdict(routine)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "updated", "routine": asdict(routine)},
+                area="task",
+                action="routine.edit",
+                target=routine.id,
+                source_of_truth="tasks",
+            )
+        )
 
     def routine_pause_payload(self, routine_id: str) -> dict[str, Any]:
         routine = TasksModule(self.runtime.workspace, home=self.runtime.home).routine_pause(
@@ -454,7 +604,15 @@ class _GlobalHomeCapabilities(_Capability):
             summary=f"Paused routine: {routine.title}",
             metadata={"id": routine.id},
         )
-        return self.runtime.scope_payload({"status": "paused", "routine": asdict(routine)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "paused", "routine": asdict(routine)},
+                area="task",
+                action="routine.pause",
+                target=routine.id,
+                source_of_truth="tasks",
+            )
+        )
 
     def routine_resume_payload(self, routine_id: str, today: str = "") -> dict[str, Any]:
         routine = TasksModule(self.runtime.workspace, home=self.runtime.home).routine_resume(
@@ -467,7 +625,15 @@ class _GlobalHomeCapabilities(_Capability):
             summary=f"Resumed routine: {routine.title}",
             metadata={"id": routine.id},
         )
-        return self.runtime.scope_payload({"status": "active", "routine": asdict(routine)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "active", "routine": asdict(routine)},
+                area="task",
+                action="routine.resume",
+                target=routine.id,
+                source_of_truth="tasks",
+            )
+        )
 
     def routine_archive_payload(self, routine_id: str) -> dict[str, Any]:
         routine = TasksModule(self.runtime.workspace, home=self.runtime.home).routine_archive(
@@ -479,7 +645,15 @@ class _GlobalHomeCapabilities(_Capability):
             summary=f"Archived routine: {routine.title}",
             metadata={"id": routine.id},
         )
-        return self.runtime.scope_payload({"status": "archived", "routine": asdict(routine)})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "archived", "routine": asdict(routine)},
+                area="task",
+                action="routine.archive",
+                target=routine.id,
+                source_of_truth="tasks",
+            )
+        )
 
     def task_digest_payload(
         self,
@@ -507,7 +681,15 @@ class _GlobalHomeCapabilities(_Capability):
             self.runtime.workspace,
             home=self.runtime.home,
         ).import_social_radar(source)
-        return self.runtime.scope_payload({"status": "imported", **result})
+        return self.runtime.scope_payload(
+            self._governed_write(
+                {"status": "imported", **result},
+                area="task",
+                action="task.import_social_radar",
+                target=source,
+                source_of_truth="tasks",
+            )
+        )
 
 
 def _pin_dict(pin: Pin) -> dict[str, Any]:

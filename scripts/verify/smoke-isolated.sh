@@ -199,6 +199,72 @@ ALCOVE_FAKE_APPLE_NOTES_DIR="$fake_notes" \
   alcove publish --home "$home" run apple-notes --json > "$fixtures/publisher-run-unchanged.json"
 assert_json "publisher run unchanged" "$fixtures/publisher-run-unchanged.json" \
   "payload['status'] == 'success' and payload['skipped'] == 5"
+alcove pin --home "$home" add "Service Tick Publisher Pin" \
+  --summary "Publisher service tick smoke." \
+  --content "Service tick should refresh due publisher mirrors." \
+  --kind regular \
+  --tag publisher \
+  --json > "$fixtures/publisher-service-pin.json"
+run uv run python - "$home" <<'PY'
+import sys
+from pathlib import Path
+
+import yaml
+
+state_path = Path(sys.argv[1]) / "publishers" / "state" / "apple-notes.yml"
+payload = yaml.safe_load(state_path.read_text(encoding="utf-8")) or {}
+for target in payload.get("targets", {}).values():
+    if isinstance(target, dict):
+        target["last_synced_at"] = "2000-01-01T00:00:00+00:00"
+state_path.write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8")
+PY
+ALCOVE_FAKE_APPLE_NOTES_DIR="$fake_notes" \
+  alcove service tick --home "$home" \
+    --skip-connectors \
+    --skip-watchers \
+    --skip-blogs \
+    --skip-radars \
+    --skip-automations \
+    --skip-health-fix \
+    --json > "$fixtures/publisher-service-tick.json"
+assert_json "publisher service tick" "$fixtures/publisher-service-tick.json" \
+  "payload['status'] == 'ok' and payload['publishers']['ran'] == 1 and payload['publishers']['updated'] >= 1 and payload['publishers']['errors'] == 0"
+publisher_failure_home="$tmp_root/publisher-failure-home"
+publisher_failure_notes="$fixtures/publisher-failure-notes"
+ALCOVE_HOME="$publisher_failure_home" alcove home init --json > "$fixtures/publisher-failure-home.json"
+alcove pin --home "$publisher_failure_home" add "Ambiguous Publisher Pin" \
+  --summary "Ambiguous target smoke." \
+  --kind regular \
+  --json > "$fixtures/publisher-failure-pin.json"
+ALCOVE_FAKE_APPLE_NOTES_DIR="$publisher_failure_notes" \
+  alcove publish --home "$publisher_failure_home" init apple-notes --root-folder "iCloud/Alcove" --json > "$fixtures/publisher-failure-init.json"
+run uv run python - "$publisher_failure_notes" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+notes_root = Path(sys.argv[1]) / "notes"
+notes_root.mkdir(parents=True, exist_ok=True)
+for note_id in ["dup-a", "dup-b"]:
+    (notes_root / f"{note_id}.json").write_text(
+        json.dumps(
+            {
+                "note_id": note_id,
+                "folder_path": "iCloud/Alcove/pins",
+                "title": "Regular Pins",
+                "body": "",
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+PY
+ALCOVE_FAKE_APPLE_NOTES_DIR="$publisher_failure_notes" \
+  alcove publish --home "$publisher_failure_home" run apple-notes --target pins_regular --json > "$fixtures/publisher-run-ambiguous.json"
+assert_json "publisher ambiguous target" "$fixtures/publisher-run-ambiguous.json" \
+  "payload['status'] == 'partial' and payload['errors'] == 1 and payload['targets'][0]['status'] == 'failed' and payload['targets'][0]['error_code'] == 'TARGET_AMBIGUOUS' and 'Multiple notes match' in payload['targets'][0]['error'] and payload['targets'][0]['remediation_hint'] and len(payload['targets'][0]['details']['candidates']) == 2 and payload['targets'][0]['details']['candidates'][0]['note_id']"
 test -f "$home/publishers/renders/pins_regular.md"
 test -f "$home/publishers/renders/pins_todo.md"
 test -f "$home/publishers/renders/planner_digest.md"
@@ -334,7 +400,7 @@ alcove task --home "$home" materialize-due --today 2026-07-10 --json > "$fixture
 assert_json "materialize due" "$fixtures/materialize-due.json" "payload['status'] == 'materialized' and len(payload['created']) >= 1"
 alcove task --home "$home" digest --today 2026-07-12 --json > "$fixtures/task-digest.json"
 assert_json "task digest readable" "$fixtures/task-digest.json" \
-  "payload['counts']['tasks'] >= 2 and payload['counts']['ideas'] >= 1 and payload['counts']['routines'] >= 1 and payload['text'].count(payload['title']) == 1 and '[task:' not in payload['text'] and '[idea:' not in payload['text'] and '[routine:' not in payload['text'] and '✅ Pending tasks' in payload['text'] and '💡 Ideas' in payload['text'] and '🔁 Active routines' in payload['text']"
+  "payload['counts']['tasks'] >= 2 and payload['counts']['ideas'] >= 1 and payload['counts']['routines'] >= 1 and payload['title'] not in payload['text'] and '[task:' not in payload['text'] and '[idea:' not in payload['text'] and '[routine:' not in payload['text'] and '✅ Pending tasks' in payload['text'] and '💡 Ideas' in payload['text'] and '🔁 Active routines' in payload['text']"
 
 mount_dir="$tmp_root/mounted-repo"
 mkdir -p "$mount_dir/docs"
@@ -528,7 +594,26 @@ def fake_capture(self, source, article):
     }
 
 
-def fake_send(self, *, token, chat_id, text):
+def fake_article_notify(self, source, articles, captures, summary):
+    messages = []
+    for article in articles:
+        messages.append(
+            {
+                "status": "sent",
+                "http_status": 200,
+                "attempts": 1,
+                "source_id": source.id,
+                "source_name": source.name,
+                "article_title": article.title,
+                "article_url": article.url,
+            }
+        )
+    return {"status": "sent", "sent_count": len(messages), "messages": messages}
+
+
+def fake_failure_notify(self, source, *, stage, error):
+    text = f"Error: {error}\nSource ID: {source.id}\nStage: {stage}\nRetry: <code>alcove blog check {source.id} --json</code>"
+
     def code_value(label):
         match = re.search(rf"{label}: <code>([^<]+)</code>", text)
         return match.group(1) if match else ""
@@ -550,7 +635,8 @@ def fake_send(self, *, token, chat_id, text):
 
 
 module._capture_article = MethodType(fake_capture, module)
-module._send_telegram_message = MethodType(fake_send, module)
+module._notify = MethodType(fake_article_notify, module)
+module._notify_failure = MethodType(fake_failure_notify, module)
 (home.root / ".env").write_text(
     "ALCOVE_TELEGRAM_BOT_TOKEN=smoke-token\nALCOVE_TELEGRAM_CHAT_ID=smoke-chat\n",
     encoding="utf-8",

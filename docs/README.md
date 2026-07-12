@@ -1,29 +1,41 @@
 # Alcove Documentation
 
-Start with the user-facing guides, then use architecture and ADRs when changing
-the system design.
+Use this index as the source map for Alcove's user workflows, operating model,
+and implementation constraints. Keep the README short; put durable details here.
 
-## User Guides
+## Start Here
 
-- [Usage Guide](usage.md): common CLI/MCP workflows.
-- [Entry Modes](entry-modes.md): hub, global MCP, managed KB, and MCP toolsets.
-- [Modules](modules.md): feature modules and storage contracts.
-- [Configurable Radars](radars.md): generic information radar definitions,
-  source adapters, scheduled runs, and Social Radar migration.
-- [Automations](automations.md): repeatable user jobs, Social Radar task import,
-  service scheduling, and notification behavior.
-- [Data and Backup](data-and-backup.md): data locations, export, sync, encryption.
-- [Local Smoke / Agent Eval](evals/local-smoke.md): verification and repair workflows.
-- [Agent Quality Gates](evals/agent-quality-gates.md): Codex/Claude hook
-  automation, AI eval trigger rules, coach mode, and strict mode.
+- [Usage Guide](usage.md): daily CLI/MCP workflows and common commands.
+- [Entry Modes](entry-modes.md): hub workspace, global MCP, managed KB, and
+  local service entry profiles.
+- [Modules](modules.md): feature groups, ownership boundaries, and storage
+  contracts.
+- [Data and Backup](data-and-backup.md): data locations, export, Git sync, and
+  encryption recommendations.
 
-## Design
+## Intelligence Workflows
 
-- [Architecture](architecture.md): relationship model and implementation overview.
+- [Configurable Radars](radars.md): generic radar definitions, presets, source
+  adapters, scheduled runs, AI summaries, and notification sinks.
+- [Automations](automations.md): repeatable user jobs, service scheduling, and
+  task notification behavior.
+
+## Architecture
+
+- [Architecture](architecture.md): system relationship map, feature groups,
+  storage boundaries, and implementation overview.
 - [Alcove OKF Profile](okf-profile.md): official OKF compatibility plus
   Alcove's stricter document, index, and refresh profile.
 - [Read/Write Operating Model](read-write-model.md): broad AI-led reads and
   narrow CLI/MCP-governed writes.
+
+## Quality
+
+- [Coverage](coverage.md): pytest-cov, CI upload, and Codecov badge setup.
+- [Local Smoke / Agent Eval](evals/local-smoke.md): deterministic smoke checks
+  and AI eval workflows.
+- [Agent Quality Gates](evals/agent-quality-gates.md): Codex/Claude hook
+  automation, trigger rules, coach mode, and strict mode.
 
 ## ADRs
 
