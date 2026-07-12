@@ -34,6 +34,7 @@ from alcove.paths import compact_user_path
 from alcove.pins import AddPinRequest, UpdatePinRequest
 from alcove.projects import AddProjectRequest
 from alcove.prompts import AddPromptRequest
+from alcove.publishers import PublisherModule
 from alcove.profile_installer import ProfileInstaller
 from alcove.runtime import AlcoveRuntime
 from alcove.search import SearchRequest
@@ -184,9 +185,29 @@ def build_parser() -> argparse.ArgumentParser:
     service_tick.add_argument("--skip-blogs", action="store_true")
     service_tick.add_argument("--skip-radars", action="store_true")
     service_tick.add_argument("--skip-automations", action="store_true")
+    service_tick.add_argument("--skip-publishers", action="store_true")
     service_tick.add_argument("--skip-health-fix", action="store_true")
     service_tick.add_argument("--today", default="")
     service_tick.add_argument("--json", action="store_true")
+
+    publish = sub.add_parser("publish", help="Publish Alcove module views to external targets")
+    publish.add_argument("--home")
+    publish_sub = publish.add_subparsers(dest="publish_command", required=True)
+    publish_init = publish_sub.add_parser("init", help="Initialize a publisher definition")
+    publish_init.add_argument("--home", default=argparse.SUPPRESS)
+    publish_init.add_argument("publisher")
+    publish_init.add_argument("--root-folder", default="iCloud/Alcove")
+    publish_init.add_argument("--json", action="store_true")
+    publish_list = publish_sub.add_parser("list", help="List publisher definitions")
+    publish_list.add_argument("--home", default=argparse.SUPPRESS)
+    publish_list.add_argument("--status", default="active")
+    publish_list.add_argument("--json", action="store_true")
+    publish_run = publish_sub.add_parser("run", help="Run a publisher")
+    publish_run.add_argument("--home", default=argparse.SUPPRESS)
+    publish_run.add_argument("publisher")
+    publish_run.add_argument("--target", default="")
+    publish_run.add_argument("--force", action="store_true")
+    publish_run.add_argument("--json", action="store_true")
 
     automation = sub.add_parser("automation", help="Manage local user automation jobs")
     automation.add_argument("--home")
@@ -1343,6 +1364,7 @@ def main(argv: list[str] | None = None) -> int:
                     check_blogs=not args.skip_blogs,
                     check_radars=not args.skip_radars,
                     run_automations=not args.skip_automations,
+                    run_publishers=not args.skip_publishers,
                     fix_health=not args.skip_health_fix,
                     today=args.today,
                 )
@@ -1387,6 +1409,30 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 return _argument_error(
                     parser, "the following arguments are required: automation_command"
+                )
+            if args.json:
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+            else:
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "publish":
+            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
+            publishers = PublisherModule(home)
+            if args.publish_command == "init":
+                if args.publisher != "apple-notes":
+                    return _argument_error(parser, "supported publisher: apple-notes")
+                payload = publishers.init_apple_notes(root_folder=args.root_folder)
+            elif args.publish_command == "list":
+                payload = publishers.list(status=args.status)
+            elif args.publish_command == "run":
+                payload = publishers.run(
+                    args.publisher,
+                    target_id=args.target,
+                    force=args.force,
+                )
+            else:
+                return _argument_error(
+                    parser, "the following arguments are required: publish_command"
                 )
             if args.json:
                 print(json.dumps(payload, ensure_ascii=False, indent=2))

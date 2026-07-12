@@ -119,6 +119,30 @@ def test_pin_get_update_search_and_rebuild_index(tmp_path):
     assert "Future MCP Drill" in index_doc.body
 
 
+def test_pin_write_normalizes_messy_content_without_changing_meaning(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    module = PinsModule(workspace)
+
+    created = module.add(
+        AddPinRequest(
+            title="Messy Pin",
+            summary="Keep useful but tidy.",
+            content="Line one   \n\n\n===\n\n—\n\nLine two",
+            content_format="markdown",
+        )
+    )
+    updated = module.update(
+        UpdatePinRequest(
+            pin_id="messy-pin",
+            content="Updated line   \n\n\n\nNext line",
+            content_format="text",
+        )
+    )
+
+    assert created.pin.content.rstrip() == "Line one\n\n---\n\n---\n\nLine two"
+    assert updated.pin.content == "Updated line\n\nNext line"
+
+
 def test_pin_render_html_groups_regular_and_todo_pins(tmp_path):
     workspace = Workspace.init(tmp_path)
     module = PinsModule(workspace)

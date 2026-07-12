@@ -64,6 +64,19 @@ Markdown files are the source of truth; `index.json`, `index.md`, and
 `board.html` are derived outputs. Pins participate in global search when
 `--home` is provided.
 
+Write pins as small, structured records when possible:
+
+- Put the stable one-line meaning in `summary`.
+- Put repeated lookup details, commands, links, or markdown notes in `content`.
+- Use `resources` for important URLs that should stay visible.
+- Avoid using one very large pin for unrelated topics; split unrelated durable
+  references into separate pins. Bulk Markdown imports are preserved, but write
+  flows normalize line endings, trim trailing whitespace, collapse excessive
+  blank lines, and normalize common divider lines to keep later search, board,
+  and Apple Notes mirrors readable. Apple Notes mirrors preserve large pins in
+  full, adding an outline and section spacing so mobile reading does not turn
+  into an undifferentiated raw Markdown dump.
+
 ```sh
 alcove pin --home ~/.alcove add "Japanese Edge Launcher" \
   --kind regular \

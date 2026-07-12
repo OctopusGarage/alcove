@@ -199,6 +199,66 @@ weekly sinks. Without `sinks`, planner notifications default to Telegram. The
 local service honors `time` and records sent periods to avoid duplicate weekly
 messages.
 
+## Publishers
+
+Publishers render Alcove-owned module data into external readable mirrors. The
+first publisher target is Apple Notes, useful when the dashboard is unavailable
+outside the local network.
+
+Initialize the default Apple Notes publisher:
+
+```sh
+alcove publish init apple-notes --home ~/.alcove --root-folder "iCloud/Alcove" --json
+```
+
+This creates five generated notes:
+
+```text
+iCloud/Alcove/
+├── pins/
+│   ├── Regular Pins
+│   └── TODO Pins
+├── planner/
+│   └── Planner Digest
+├── prompts/
+│   └── Prompt Library
+└── projects/
+    └── Project Registry
+```
+
+Run it manually:
+
+```sh
+alcove publish run apple-notes --home ~/.alcove --json
+alcove publish run apple-notes --home ~/.alcove --target pins_regular --force --json
+alcove publish list --home ~/.alcove --json
+```
+
+The generated Apple Notes are readable mirrors. Alcove-owned data remains the
+source of truth under `~/.alcove`, such as `~/.alcove/pins`, `~/.alcove/tasks`,
+`~/.alcove/prompts`, and `~/.alcove/projects`. Manual edits inside generated
+Apple Notes can be overwritten by the next publish run.
+
+Publisher output is presentation-optimized for phone reading. It uses one
+module icon, quiet section dividers, compact item spacing, and short metadata
+labels. Long pin content is preserved in full; the publisher adds an outline,
+extra spacing around sections, and cleaner table rows so Apple Notes remains
+readable without hiding details.
+
+Pin source data should still be written as structured records: concise
+`summary`, focused `content`, explicit tags, and URL-like references in
+`resources` when they are important. Pin writes normalize excessive blank lines
+and common divider variants before indexing and publishing.
+
+Apple Notes publishing is intentionally selective. It mirrors small, human
+readable module views for offline access. Large knowledge bases, mounts,
+connectors, radar archives, automations, logs, and usage records should stay in
+Alcove and be accessed through dashboard, search, CLI, or MCP.
+
+The local scheduler also runs due publishers during `alcove service tick`.
+Use `alcove service tick --skip-publishers --json` to skip this part of a manual
+maintenance run.
+
 ## External Indexes
 
 Mounts index local folders without copying them:
@@ -257,6 +317,49 @@ rebuilds managed-KB indexes. Use `--status deleted` for audit.
 alcove dashboard --home ~/.alcove build
 alcove serve --dashboard --home ~/.alcove --port 8765
 ```
+
+For a LAN-facing dashboard, keep Alcove bound to localhost and expose it through
+a local reverse proxy. This keeps the Alcove process private while letting nginx
+own the LAN port and hostname:
+
+```nginx
+server {
+    listen 80;
+    server_name my-mac.local alcove.local alcove.lan 192.168.1.10;
+
+    location = / {
+        return 302 /alcove/dashboard/;
+    }
+
+    location = /alcove/dashboard {
+        return 301 /alcove/dashboard/;
+    }
+
+    location /alcove/dashboard/ {
+        proxy_pass http://127.0.0.1:8765/;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_buffering off;
+    }
+}
+```
+
+Reload and verify:
+
+```sh
+nginx -t && nginx -s reload
+curl -I http://my-mac.local/alcove/dashboard/
+curl -I http://192.168.1.10/alcove/dashboard/
+```
+
+`my-mac.local` is the macOS Bonjour hostname and usually works from phones on
+the same Wi-Fi. Custom names such as `alcove.local` or `alcove.lan` also need a
+router/local-DNS record pointing at the Mac. If the phone cannot connect, check
+that nginx is listening on `*:80` and that the macOS firewall allows incoming
+connections.
 
 The dashboard includes a Usage page for local aggregate statistics:
 

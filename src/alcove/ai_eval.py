@@ -121,12 +121,21 @@ def _build_eval_packet(
             smoke_fixtures / "cleanup-search-deleted.json", warnings
         ),
         "pin_search": _read_json(smoke_fixtures / "pin-search.json", warnings),
+        "publisher_init": _read_json(smoke_fixtures / "publisher-init.json", warnings),
+        "publisher_run": _read_json(smoke_fixtures / "publisher-run.json", warnings),
+        "publisher_run_unchanged": _read_json(
+            smoke_fixtures / "publisher-run-unchanged.json", warnings
+        ),
+        "publisher_render_quality": _read_json(
+            smoke_fixtures / "publisher-render-quality.json", warnings
+        ),
         "prompt_search": _read_json(smoke_fixtures / "prompt-search.json", warnings),
         "project_add": _read_json(smoke_fixtures / "project-add.json", warnings),
         "project_find": _read_json(smoke_fixtures / "project-find.json", warnings),
         "task_add": _read_json(smoke_fixtures / "task-add.json", warnings),
         "idea_add": _read_json(smoke_fixtures / "idea-add.json", warnings),
         "routine_add": _read_json(smoke_fixtures / "routine-add.json", warnings),
+        "task_digest": _read_json(smoke_fixtures / "task-digest.json", warnings),
         "mount_scan": _read_json(smoke_fixtures / "mount-scan.json", warnings),
         "okf_catalog": _read_json(smoke_fixtures / "okf-catalog.json", warnings),
         "apple_notes_search": _read_json(smoke_fixtures / "apple-notes-search.json", warnings),
@@ -585,6 +594,7 @@ def _modules() -> list[dict[str, Any]]:
                 "Are project aliases and prompt search results specific enough to route user intent?",
                 "Do multilingual save/search examples route Chinese user wording to the expected governed pin/task/search flows?",
                 "Do pin, prompt, task, and project writes use governed tools while preserving full records for follow-up inspection?",
+                "Is the planner digest readable as a notification: no repeated title, no raw internal ids in the message body, clear section spacing, and enough detail for the user to act?",
             ],
         },
         {
@@ -619,6 +629,19 @@ def _modules() -> list[dict[str, Any]]:
                 "Does Social Radar migration preserve historical cache/report evidence while avoiding secrets and old environment data?",
                 "Are scheduled radar runs deterministic by default, with optional AI summary and Telegram notification enabled only by explicit definition config or manual flags?",
                 "Do radar AI prompts stay radar-specific, and does notification fall back to the deterministic report when AI summary fails?",
+            ],
+        },
+        {
+            "id": "publishers",
+            "scope": "Generic publisher definitions, pins digest rendering, Apple Notes target identity, unchanged-content skipping, and service scheduling.",
+            "ai_quality_questions": [
+                "Does the publisher treat Apple Notes as a readable mirror rather than the source of truth?",
+                "Are regular and todo pins rendered into distinct, mobile-readable outputs with enough original content preserved?",
+                "Are planner, prompt library, and project registry mirrors useful outside the LAN without opening the dashboard?",
+                "Does Apple Notes render quality evidence show scannable headings, item/detail blocks, emphasis, spacing, and no plain text dump?",
+                "Does state track Apple Notes note ids and content hashes so repeated runs avoid ambiguous title lookup and unnecessary writes?",
+                "Are missing, ambiguous, permission, and unavailable Apple Notes failures explicit enough for a user or agent to repair?",
+                "Can service tick run due publishers without requiring an open Codex or Claude session?",
             ],
         },
         {

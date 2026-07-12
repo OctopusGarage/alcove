@@ -263,7 +263,7 @@ def test_task_digest_builds_report_and_can_notify(tmp_path, monkeypatch):
     assert "Sunday planning" in sent[0]["text"]
 
 
-def test_task_digest_lines_include_sequence_and_stable_ids(tmp_path):
+def test_task_digest_text_is_readable_and_keeps_ids_in_payload(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     module = TasksModule(home=home)
     task = module.task_add(AddTaskRequest(title="Review task references"))
@@ -272,9 +272,15 @@ def test_task_digest_lines_include_sequence_and_stable_ids(tmp_path):
 
     digest = module.task_digest(period="weekly", today="2026-07-12")
 
-    assert f"1. [task:{task.id}] Review task references" in digest["text"]
-    assert f"1. [idea:{idea.id}] Review idea references" in digest["text"]
-    assert f"1. [routine:{routine.id}] Review routine references" in digest["text"]
+    assert "1. Review task references" in digest["text"]
+    assert "1. Review idea references" in digest["text"]
+    assert "1. Review routine references" in digest["text"]
+    assert f"[task:{task.id}]" not in digest["text"]
+    assert f"[idea:{idea.id}]" not in digest["text"]
+    assert f"[routine:{routine.id}]" not in digest["text"]
+    assert digest["items"]["tasks"][0]["id"] == task.id
+    assert digest["items"]["ideas"][0]["id"] == idea.id
+    assert digest["items"]["routines"][0]["id"] == routine.id
 
 
 def test_task_digest_can_notify_multiple_sinks(tmp_path, monkeypatch):

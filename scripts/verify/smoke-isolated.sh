@@ -186,6 +186,116 @@ assert_json "pin add" "$fixtures/pin-add.json" "payload['pin']['title'] == 'Smok
 alcove pin --home "$home" search "smoke needle" --json > "$fixtures/pin-search.json"
 assert_json "pin search" "$fixtures/pin-search.json" "payload[0]['title'] == 'Smoke Pin'"
 
+fake_notes="$fixtures/fake-apple-notes"
+ALCOVE_FAKE_APPLE_NOTES_DIR="$fake_notes" \
+  alcove publish --home "$home" init apple-notes --root-folder "iCloud/Alcove" --json > "$fixtures/publisher-init.json"
+assert_json "publisher init" "$fixtures/publisher-init.json" \
+  "payload['status'] == 'initialized' and set(payload['targets']) == {'pins_regular', 'pins_todo', 'planner_digest', 'prompt_library', 'project_registry'}"
+ALCOVE_FAKE_APPLE_NOTES_DIR="$fake_notes" \
+  alcove publish --home "$home" run apple-notes --json > "$fixtures/publisher-run.json"
+assert_json "publisher run" "$fixtures/publisher-run.json" \
+  "payload['status'] == 'success' and payload['updated'] == 5 and payload['errors'] == 0"
+ALCOVE_FAKE_APPLE_NOTES_DIR="$fake_notes" \
+  alcove publish --home "$home" run apple-notes --json > "$fixtures/publisher-run-unchanged.json"
+assert_json "publisher run unchanged" "$fixtures/publisher-run-unchanged.json" \
+  "payload['status'] == 'success' and payload['skipped'] == 5"
+test -f "$home/publishers/renders/pins_regular.md"
+test -f "$home/publishers/renders/pins_todo.md"
+test -f "$home/publishers/renders/planner_digest.md"
+test -f "$home/publishers/renders/prompt_library.md"
+test -f "$home/publishers/renders/project_registry.md"
+assert_file_contains "$home/publishers/renders/pins_regular.md" "Smoke Pin"
+assert_file_contains "$home/publishers/renders/planner_digest.md" "Planner Digest"
+assert_file_contains "$home/publishers/renders/prompt_library.md" "Prompt Library"
+assert_file_contains "$home/publishers/renders/project_registry.md" "Project Registry"
+test -f "$home/publishers/state/apple-notes.yml"
+test "$(find "$fake_notes/notes" -type f -name '*.json' | wc -l | tr -d ' ')" -eq 5
+run uv run python - "$home" "$fixtures/publisher-render-quality.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+from alcove.publishers import _markdown_as_html
+
+home = Path(sys.argv[1])
+output = Path(sys.argv[2])
+targets = [
+    "pins_regular",
+    "pins_todo",
+    "planner_digest",
+    "prompt_library",
+    "project_registry",
+]
+emoji_headers = {
+    "pins_regular": "# 📌 Regular Pins",
+    "pins_todo": "# ✅ TODO Pins",
+    "planner_digest": "# 🧭 Planner Digest",
+    "prompt_library": "# 🧰 Prompt Library",
+    "project_registry": "# 🗂 Project Registry",
+}
+checks = []
+for target in targets:
+    markdown = (home / "publishers" / "renders" / f"{target}.md").read_text(encoding="utf-8")
+    html = _markdown_as_html(markdown)
+    legacy_noise = [
+        "Summary: 📝",
+        "Content: 📄",
+        "Description: 📝",
+        "Use cases: 🎯",
+        "Tags: 🏷️",
+        "Path: 📍",
+        "Exists: ✅",
+        "Note: 📝",
+    ]
+    checks.append(
+        {
+            "target": target,
+            "markdown_has_sections": "## " in markdown or "No active" in markdown or "No registered" in markdown,
+            "html_has_heading_style": "font-size: 24px" in html,
+            "html_has_section_style": "font-size: 18px" in html or "No active" in markdown or "No registered" in markdown,
+            "html_has_item_blocks": "margin: 8px 0 4px 0" in html or "No active" in markdown or "No registered" in markdown,
+            "html_has_indented_details": "margin-left: 22px" in html or "No active" in markdown or "No registered" in markdown,
+            "html_has_emphasis": "<b>" in html,
+            "raw_markdown_heading_absent": "# " not in html and "## " not in html,
+            "has_emoji_header": emoji_headers[target] in markdown,
+            "has_divider_blocks": "\n---\n" in markdown and "────────────" in html,
+            "pins_avoid_detail_dump": not target.startswith("pins_") or "Detail:" not in markdown,
+            "pins_content_block": target != "pins_regular" or "Notes" in markdown,
+            "pins_no_table_spam": not target.startswith("pins_") or "Table:" not in markdown,
+            "pins_preserve_long_details": not target.startswith("pins_")
+            or "Outline  " not in markdown
+            or "Full notes" in markdown,
+            "no_legacy_field_noise": not any(token in markdown for token in legacy_noise),
+            "line_count": len(markdown.splitlines()),
+        }
+    )
+payload = {
+    "status": "passed"
+    if all(
+        item["markdown_has_sections"]
+        and item["html_has_heading_style"]
+        and item["html_has_section_style"]
+        and item["html_has_item_blocks"]
+        and item["html_has_indented_details"]
+        and item["html_has_emphasis"]
+        and item["raw_markdown_heading_absent"]
+        and item["has_emoji_header"]
+        and item["has_divider_blocks"]
+        and item["pins_avoid_detail_dump"]
+        and item["pins_content_block"]
+        and item["pins_no_table_spam"]
+        and item["pins_preserve_long_details"]
+        and item["no_legacy_field_noise"]
+        for item in checks
+    )
+    else "failed",
+    "checks": checks,
+}
+output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+if payload["status"] != "passed":
+    raise SystemExit(json.dumps(payload, ensure_ascii=False, indent=2))
+PY
+
 alcove pin --home "$home" add "常用收藏：OKF 知识库采集" \
   --summary "中英混合常用收藏，用于本地个人知识库 OKF 查询和复用。" \
   --content "查一下本地个人知识库 OKF 相关的知识数据。Use Alcove search as candidate discovery, then inspect OKF source refs and connector refs." \
@@ -222,6 +332,9 @@ alcove idea --home "$home" add "Smoke Idea" --notes "Idea smoke needle." --tag s
 alcove task --home "$home" routine-add "Smoke Routine" --notes "Routine smoke needle." --tag smoke --every-days 7 --next-due 2026-07-10 --json > "$fixtures/routine-add.json"
 alcove task --home "$home" materialize-due --today 2026-07-10 --json > "$fixtures/materialize-due.json"
 assert_json "materialize due" "$fixtures/materialize-due.json" "payload['status'] == 'materialized' and len(payload['created']) >= 1"
+alcove task --home "$home" digest --today 2026-07-12 --json > "$fixtures/task-digest.json"
+assert_json "task digest readable" "$fixtures/task-digest.json" \
+  "payload['counts']['tasks'] >= 2 and payload['counts']['ideas'] >= 1 and payload['counts']['routines'] >= 1 and payload['text'].count(payload['title']) == 1 and '[task:' not in payload['text'] and '[idea:' not in payload['text'] and '[routine:' not in payload['text'] and '✅ Pending tasks' in payload['text'] and '💡 Ideas' in payload['text'] and '🔁 Active routines' in payload['text']"
 
 mount_dir="$tmp_root/mounted-repo"
 mkdir -p "$mount_dir/docs"

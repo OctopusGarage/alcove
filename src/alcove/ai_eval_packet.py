@@ -100,6 +100,9 @@ def dashboard_browser_for_eval(payload: Any) -> Any:
         return public
     public["check_rollup_by_viewport"] = _dashboard_check_rollup_by_viewport(checks)
     public["checks"] = _balanced_dashboard_checks(checks)
+    layout_summaries = public.get("layout_summaries")
+    if isinstance(layout_summaries, list):
+        public["layout_summaries"] = _balanced_dashboard_layouts(layout_summaries)
     return public
 
 
@@ -161,6 +164,20 @@ def _balanced_dashboard_checks(checks: list[Any], *, per_viewport: int = 24) -> 
             *global_checks[:8],
         ]
     )
+
+
+def _balanced_dashboard_layouts(layouts: list[Any], *, per_viewport: int = 8) -> list[Any]:
+    desktop = [
+        row
+        for row in layouts
+        if isinstance(row, dict) and str(row.get("viewport") or "") == "desktop"
+    ][:per_viewport]
+    mobile = [
+        row
+        for row in layouts
+        if isinstance(row, dict) and str(row.get("viewport") or "") == "mobile"
+    ][:per_viewport]
+    return [*desktop, *mobile]
 
 
 def _dedupe_checks(checks: list[Any]) -> list[Any]:

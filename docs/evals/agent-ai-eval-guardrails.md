@@ -70,7 +70,8 @@ smoke scripts and validated by tests:
 - `scripts/verify/smoke-messy-inbox.sh` freezes difficult capture-review
   examples: long content, warnings, OCR, truncation, and missing summaries.
 - `scripts/verify/smoke-dashboard-browser.sh` freezes browser-facing examples
-  across desktop and mobile routes.
+  across desktop and mobile routes, including per-module screenshots,
+  horizontal overflow checks, and mobile navigation compactness.
 - `scripts/verify/smoke-radar-reports.sh` freezes four radar report examples
   across technology, world news, stocks, and sports, including Markdown
   structure and desktop/mobile browser presentation.
@@ -79,6 +80,11 @@ smoke scripts and validated by tests:
 - `docs/evals/ai-review.schema.json` constrains reviewer output.
 - `tests/test_ai_eval.py` and `tests/test_agent_quality_gate.py` pin the packet
   contract and trigger matrix.
+
+Planner digest text is also frozen in isolated smoke and included in the AI
+packet. The reviewer should treat repeated notification titles, raw internal
+ids in the message body, cramped section spacing, or missing actionable detail
+as product-quality regressions.
 
 When a new feature creates a new user-facing or agent-facing behavior, add a
 deterministic fixture first, then expose that fixture in the AI eval packet.
@@ -116,6 +122,7 @@ AI eval is required for changes to:
 - MCP and CLI routing
 - connectors, mounts, external indexes, lazy fetch
 - dashboard snapshot/rendering/usage projection
+- planner digest notification wording or task/idea/routine presentation
 - verification scripts that change smoke/eval evidence
 
 Pure write-storage changes, such as planner or pin persistence internals, may be

@@ -118,6 +118,8 @@ alcove pin add "Useful Pattern" --description "Short reusable note" --tag refere
 alcove prompt save "Code Review Lens" --content "Review for correctness." --tag review
 alcove task add "Wire MCP search" --priority high --tag mcp
 alcove project add alcove /path/to/alcove --note "Personal information core"
+alcove publish init apple-notes --root-folder "iCloud/Alcove" --json
+alcove publish run apple-notes --json
 ```
 
 External indexes:
@@ -184,7 +186,7 @@ alcove blog check --stale --json
 
 The service layer keeps deterministic work outside AI-agent sessions: dashboard
 serving, stale connector refreshes, due routine materialization, OKF catalog
-rebuilds, usage rollups, health checks, scheduled radar runs, user automation
+rebuilds, usage rollups, health checks, scheduled radar runs, publisher syncs, user automation
 jobs, watched-source change detection, and blog article discovery. Blog sources
 can optionally capture new articles into a managed KB inbox through the configured
 capture adapter. AI summarization and

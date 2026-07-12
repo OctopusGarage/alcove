@@ -14,6 +14,7 @@ from alcove.blog_monitor import BlogMonitorModule
 from alcove.dashboard import DashboardModule
 from alcove.home import AlcoveHome
 from alcove.paths import compact_user_path
+from alcove.publishers import PublisherModule
 from alcove.radars import RadarModule
 from alcove.runtime import AlcoveRuntime
 from alcove.tasks import TasksModule
@@ -72,7 +73,13 @@ class ServiceModule:
             action = "removed" if target.plist_path.exists() else "not_found"
             if target.plist_path.exists():
                 target.plist_path.unlink()
-            files.append({"name": target.name, "path": str(target.plist_path), "action": action})
+            files.append(
+                {
+                    "name": target.name,
+                    "path": compact_user_path(target.plist_path),
+                    "action": action,
+                }
+            )
         return self._payload("uninstalled", targets, files)
 
     def status(self, *, dashboard: bool, scheduler: bool) -> dict[str, Any]:
@@ -83,7 +90,7 @@ class ServiceModule:
                 {
                     "name": target.name,
                     "label": target.label,
-                    "path": str(target.plist_path),
+                    "path": compact_user_path(target.plist_path),
                     "installed": target.plist_path.is_file(),
                     "loaded": self._is_loaded(target),
                 }
@@ -116,6 +123,7 @@ class ServiceModule:
         check_blogs: bool = True,
         check_radars: bool = True,
         run_automations: bool = True,
+        run_publishers: bool = True,
         fix_health: bool = True,
         today: str = "",
     ) -> dict[str, Any]:
@@ -150,6 +158,11 @@ class ServiceModule:
             if run_automations
             else {"status": "skipped", "ran": 0, "skipped": 0, "failed": 0}
         )
+        publishers_payload = (
+            PublisherModule(self.home).run_due()
+            if run_publishers
+            else {"status": "skipped", "ran": 0, "skipped": 0, "updated": 0, "errors": 0}
+        )
         okf_payload = app.system.okf_catalog_build_payload()
         health_payload = app.system.health_payload(fix=fix_health, strict=False)
         usage_payload = usage.write_rollups()
@@ -169,6 +182,8 @@ class ServiceModule:
                 "radar_ran": _int_value(radars_payload.get("ran")),
                 "automation_ran": _int_value(automations_payload.get("ran")),
                 "automation_failed": _int_value(automations_payload.get("failed")),
+                "publisher_ran": _int_value(publishers_payload.get("ran")),
+                "publisher_updated": _int_value(publishers_payload.get("updated")),
             },
             visible=False,
         )
@@ -182,6 +197,7 @@ class ServiceModule:
             "blogs": blogs_payload,
             "radars": radars_payload,
             "automations": automations_payload,
+            "publishers": publishers_payload,
             "okf": okf_payload,
             "health": {
                 "status": health_payload.get("status"),
@@ -290,7 +306,7 @@ class ServiceModule:
         action = "created" if not before else "unchanged" if before == content else "updated"
         if before != content:
             path.write_bytes(content)
-        return {"path": str(path), "action": action, "label": payload["Label"]}
+        return {"path": compact_user_path(path), "action": action, "label": payload["Label"]}
 
     def _launchctl(
         self, action: str, target: ServiceTarget, *, allow_failure: bool = False

@@ -277,6 +277,7 @@ def visual_summary(page: Any, *, viewport: str, route: str) -> dict[str, Any]:
 checks: list[dict[str, Any]] = []
 console_errors: list[str] = []
 visual_summaries: list[dict[str, Any]] = []
+layout_summaries: list[dict[str, Any]] = []
 viewports = [
     ("desktop", 1440, 1000),
     ("mobile", 390, 844),
@@ -323,6 +324,15 @@ with serve(dashboard_root) as base_url:
                 page.goto(f"{base_url}#{route}", wait_until="networkidle")
                 body = page.locator("body").inner_text()
                 add_check(checks, f"{label}_route_{route or 'home'}", len(body.strip()) > 100, route)
+                route_name = route.strip("/") or "home"
+                screenshot = screenshots / f"{label}-{route_name}.png"
+                page.screenshot(path=str(screenshot), full_page=True)
+                add_check(
+                    checks,
+                    f"{label}_screenshot_{route_name}",
+                    screenshot.stat().st_size > 0,
+                    str(screenshot),
+                )
                 no_horizontal_overflow = page.evaluate(
                     "() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1"
                 )
@@ -332,6 +342,58 @@ with serve(dashboard_root) as base_url:
                     bool(no_horizontal_overflow),
                     route,
                 )
+                layout_summary = page.evaluate(
+                    """({ viewport, route }) => {
+                        const topbar = document.querySelector('.topbar');
+                        const nav = document.querySelector('.topbar nav');
+                        const meta = document.querySelector('.snapshot-meta');
+                        const topbarStyle = topbar ? getComputedStyle(topbar) : null;
+                        const metaStyle = meta ? getComputedStyle(meta) : null;
+                        const topbarRect = topbar ? topbar.getBoundingClientRect() : null;
+                        const navRect = nav ? nav.getBoundingClientRect() : null;
+                        return {
+                            viewport,
+                            route,
+                            topbar_position: topbarStyle ? topbarStyle.position : "",
+                            topbar_height: topbarRect ? Math.round(topbarRect.height) : 0,
+                            nav_height: navRect ? Math.round(navRect.height) : 0,
+                            nav_scroll_width: nav ? nav.scrollWidth : 0,
+                            nav_client_width: nav ? nav.clientWidth : 0,
+                            snapshot_meta_display: metaStyle ? metaStyle.display : "",
+                            document_width: document.documentElement.scrollWidth,
+                            viewport_width: document.documentElement.clientWidth
+                        };
+                    }""",
+                    {"viewport": label, "route": route},
+                )
+                layout_summaries.append(layout_summary)
+                if label == "mobile":
+                    add_check(
+                        checks,
+                        f"{label}_topbar_not_sticky_{route_name}",
+                        layout_summary["topbar_position"] == "static",
+                        json.dumps(layout_summary, ensure_ascii=False),
+                    )
+                    add_check(
+                        checks,
+                        f"{label}_topbar_compact_{route_name}",
+                        layout_summary["topbar_height"] <= 132 and layout_summary["nav_height"] <= 70,
+                        json.dumps(layout_summary, ensure_ascii=False),
+                    )
+                    add_check(
+                        checks,
+                        f"{label}_nav_wraps_without_scroll_{route_name}",
+                        layout_summary["nav_height"] > 36
+                        and layout_summary["nav_scroll_width"]
+                        <= layout_summary["nav_client_width"] + 1,
+                        json.dumps(layout_summary, ensure_ascii=False),
+                    )
+                    add_check(
+                        checks,
+                        f"{label}_snapshot_meta_hidden_{route_name}",
+                        layout_summary["snapshot_meta_display"] == "none",
+                        json.dumps(layout_summary, ensure_ascii=False),
+                    )
                 if route == "/usage":
                     body_lower = body.lower()
                     add_check(
@@ -518,6 +580,34 @@ with serve(dashboard_root) as base_url:
             visual_summaries.append(visual_summary(page, viewport=label, route="/"))
             home_body = page.locator("body").inner_text()
             home_body_lower = home_body.lower()
+            refresh_button = page.locator("[data-refresh-dashboard]")
+            add_check(
+                checks,
+                f"{label}_refresh_button_present",
+                refresh_button.count() == 1,
+                home_body[:240],
+            )
+            refresh_button.click()
+            page.wait_for_timeout(300)
+            add_check(
+                checks,
+                f"{label}_refresh_keeps_dashboard_usable",
+                "Daily Workbench" in page.locator("main").inner_text(),
+                page.locator("main").inner_text()[:300],
+            )
+            page.locator(".topbar nav a[href='#/radars']").click()
+            page.wait_for_timeout(300)
+            radars_body_after_click = page.locator("main").inner_text()
+            add_check(
+                checks,
+                f"{label}_nav_click_radars",
+                page.evaluate("() => window.location.hash") == "#/radars"
+                and "Information Radars" in radars_body_after_click,
+                radars_body_after_click[:300],
+            )
+            page.goto(base_url, wait_until="networkidle")
+            home_body = page.locator("body").inner_text()
+            home_body_lower = home_body.lower()
             add_check(
                 checks,
                 f"{label}_home_clear_planner_label",
@@ -578,6 +668,7 @@ payload = {
     "large_dataset": large_dataset,
     "checks": checks,
     "visual_summaries": visual_summaries,
+    "layout_summaries": layout_summaries,
     "screenshots": str(screenshots),
     "console_errors": console_errors[-10:],
 }

@@ -203,8 +203,12 @@ def test_cli_service_install_status_and_tick(tmp_path, monkeypatch, capsys):
         == "com.octopusgarage.alcove.dashboard"
     )
     assert '"targets": [\n    "dashboard"\n  ]' in install_output.out
+    assert str(user_home) not in install_output.out
+    assert "~/Library/LaunchAgents/com.octopusgarage.alcove.dashboard.plist" in install_output.out
     assert status_code == 0
     assert '"installed": true' in status_output.out
+    assert str(user_home) not in status_output.out
+    assert "~/Library/LaunchAgents/com.octopusgarage.alcove.dashboard.plist" in status_output.out
     assert tick_code == 0
     assert '"status": "ok"' in tick_output.out
     assert '"radars": {\n    "status": "skipped"' in tick_output.out

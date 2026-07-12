@@ -54,6 +54,7 @@ function render(): void {
   bindModuleFilters();
   bindPageJumps();
   bindCommandCopy();
+  bindRefreshButton();
 }
 
 function bindSearch(current: DashboardSnapshot): void {
@@ -207,6 +208,35 @@ function bindCommandCopy(): void {
           button.textContent = command;
         });
     });
+  });
+}
+
+function bindRefreshButton(): void {
+  const button = document.querySelector<HTMLButtonElement>("[data-refresh-dashboard]");
+  if (!button) {
+    return;
+  }
+  button.addEventListener("click", () => {
+    const original = button.textContent ?? "Refresh";
+    button.disabled = true;
+    button.textContent = "Refreshing";
+    loadSnapshot({ bustCache: true })
+      .then((next) => {
+        snapshot = next;
+        snapshotFingerprint = fingerprint(next);
+        render();
+        recordDashboardEvent("dashboard.refresh", "Dashboard snapshot refreshed", {
+          generated_at: next.generated_at,
+          route: currentRoute(),
+        });
+      })
+      .catch(() => {
+        button.disabled = false;
+        button.textContent = "Retry";
+        window.setTimeout(() => {
+          button.textContent = original.trim() || "Refresh";
+        }, 1400);
+      });
   });
 }
 

@@ -139,8 +139,9 @@ export function validateSnapshot(value: unknown): DashboardSnapshot {
   return value as unknown as DashboardSnapshot;
 }
 
-export async function loadSnapshot(): Promise<DashboardSnapshot> {
-  const response = await fetch("./snapshot.json", { cache: "no-store" });
+export async function loadSnapshot(options: { bustCache?: boolean } = {}): Promise<DashboardSnapshot> {
+  const path = options.bustCache ? `./snapshot.json?ts=${Date.now()}` : "./snapshot.json";
+  const response = await fetch(path, { cache: "no-store" });
   if (!response.ok) {
     throw new Error("Missing snapshot.json. Run `alcove dashboard build` first.");
   }

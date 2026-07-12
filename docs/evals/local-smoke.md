@@ -222,7 +222,9 @@ Codex or Claude model clients unless the opt-in environment variables are set.
   knowledge, global memory, planner, external indexes, search, and health/export.
 - `scripts/smoke-dashboard-browser.sh`: builds an isolated dashboard and checks
   desktop/mobile routes including Usage/data health, search results,
-  screenshots, and console errors with Playwright when available.
+  per-module screenshots, horizontal overflow, mobile topbar compactness,
+  mobile snapshot-meta hiding, and console errors with Playwright when
+  available.
 - `scripts/smoke-radar-reports.sh`: builds deterministic technology, world
   news, stocks, and sports radar reports, then checks Markdown structure,
   report HTML, desktop/mobile screenshots, and horizontal overflow.
@@ -241,6 +243,12 @@ Codex or Claude model clients unless the opt-in environment variables are set.
   capture/inbox, OKF knowledge, pins/prompts/projects/tasks, connectors/mounts,
   the global OKF catalog, dashboard, MCP, export/health, messy inbox fixtures,
   restore rehearsal, and agent entries.
+- Includes planner digest notification text so the AI reviewer can catch
+  repeated titles, leaked internal record ids, confusing section spacing, or
+  missing actionable detail.
+- Includes dashboard browser layout summaries for desktop/mobile routes so the
+  AI reviewer can see whether the navigation and module pages remain readable,
+  not just whether the build succeeded.
 - Builds `.tmp/ai-eval/ai-eval-prompt.md`.
 - Calls an AI reviewer through `codex exec` by default, or `claude -p` when
   `ALCOVE_AI_EVAL_PROVIDER=claude`.

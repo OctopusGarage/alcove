@@ -119,7 +119,10 @@ class PinsModule:
         path = self.repo.unique_path(self.pin_root, request.title)
         timestamp = now_iso()
         summary = request.summary or request.description
-        content = request.content or request.description or summary
+        content = self._normalize_content(
+            request.content or request.description or summary,
+            content_format=request.content_format,
+        )
         doc = MarkdownDoc(
             frontmatter={
                 "type": "Pin",
@@ -155,7 +158,13 @@ class PinsModule:
         timestamp = now_iso()
         title = request.title if request.title is not None else old.title
         summary = self._choose_updated_summary(request, old)
-        content = request.content if request.content is not None else old.content
+        content = (
+            self._normalize_content(
+                request.content, content_format=request.content_format or old.content_format
+            )
+            if request.content is not None
+            else old.content
+        )
         frontmatter = {
             **doc.frontmatter,
             "type": "Pin",
@@ -382,6 +391,25 @@ class PinsModule:
         if content:
             parts.extend(["", "## Content", "", content])
         return "\n".join(parts).rstrip() + "\n"
+
+    def _normalize_content(self, content: str, *, content_format: str) -> str:
+        value = str(content or "").replace("\r\n", "\n").replace("\r", "\n")
+        lines = [line.rstrip() for line in value.split("\n")]
+        normalized: list[str] = []
+        blank_count = 0
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                blank_count += 1
+                if blank_count <= 1:
+                    normalized.append("")
+                continue
+            blank_count = 0
+            if self._content_format(content_format) == "markdown" and stripped in {"===", "—"}:
+                normalized.append("---")
+                continue
+            normalized.append(line)
+        return "\n".join(normalized).strip()
 
     def _section_from_body(self, body: str, heading: str) -> str:
         marker = f"## {heading}"

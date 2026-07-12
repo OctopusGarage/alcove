@@ -97,10 +97,90 @@ def _write_minimal_packet_artifacts(
     _write_json(fixtures / "cleanup-search-after-delete.json", [])
     _write_json(fixtures / "cleanup-search-deleted.json", [])
     _write_json(fixtures / "pin-search.json", [])
+    _write_json(
+        fixtures / "publisher-init.json",
+        {
+            "status": "initialized",
+            "targets": [
+                "pins_regular",
+                "pins_todo",
+                "planner_digest",
+                "prompt_library",
+                "project_registry",
+            ],
+        },
+    )
+    _write_json(
+        fixtures / "publisher-run.json",
+        {
+            "status": "success",
+            "updated": 5,
+            "skipped": 0,
+            "errors": 0,
+            "targets": [
+                {"id": "pins_regular", "status": "updated"},
+                {"id": "pins_todo", "status": "updated"},
+                {"id": "planner_digest", "status": "updated"},
+                {"id": "prompt_library", "status": "updated"},
+                {"id": "project_registry", "status": "updated"},
+            ],
+        },
+    )
+    _write_json(
+        fixtures / "publisher-run-unchanged.json",
+        {
+            "status": "success",
+            "updated": 0,
+            "skipped": 5,
+            "errors": 0,
+            "targets": [
+                {"id": "pins_regular", "status": "skipped"},
+                {"id": "pins_todo", "status": "skipped"},
+                {"id": "planner_digest", "status": "skipped"},
+                {"id": "prompt_library", "status": "skipped"},
+                {"id": "project_registry", "status": "skipped"},
+            ],
+        },
+    )
+    _write_json(
+        fixtures / "publisher-render-quality.json",
+        {
+            "status": "passed",
+            "checks": [
+                {
+                    "target": "planner_digest",
+                    "html_has_heading_style": True,
+                    "html_has_section_style": True,
+                    "html_has_item_blocks": True,
+                    "html_has_indented_details": True,
+                    "html_has_emphasis": True,
+                    "raw_markdown_heading_absent": True,
+                    "has_emoji_header": True,
+                    "has_divider_blocks": True,
+                    "pins_avoid_detail_dump": True,
+                    "pins_content_block": True,
+                }
+            ],
+        },
+    )
     _write_json(fixtures / "prompt-search.json", [])
     _write_json(fixtures / "task-add.json", {})
     _write_json(fixtures / "idea-add.json", {})
     _write_json(fixtures / "routine-add.json", {})
+    _write_json(
+        fixtures / "task-digest.json",
+        {
+            "title": "📋 Alcove weekly planner digest · 2026-07-12",
+            "text": (
+                "📋 Alcove weekly planner digest · 2026-07-12\n\n"
+                "✅ Pending tasks (1)\n\n"
+                "1. Smoke Task\n"
+                "   Priority: high"
+            ),
+            "counts": {"tasks": 1, "ideas": 0, "routines": 0},
+            "items": {"tasks": [{"id": "smoke-task"}], "ideas": [], "routines": []},
+        },
+    )
     _write_json(fixtures / "mount-scan.json", {})
     _write_json(fixtures / "okf-catalog.json", {"status": "built", "files": []})
     _write_json(fixtures / "apple-notes-search.json", [])
@@ -328,6 +408,20 @@ def _write_extended_smoke_reports(tmp_path: Path) -> dict[str, Path]:
                 *[{"name": f"mobile_route_{index:02d}", "status": "passed"} for index in range(45)],
                 {"name": "mobile_search_results", "status": "passed"},
             ],
+            "layout_summaries": [
+                {
+                    "viewport": "mobile",
+                    "route": "/pins",
+                    "topbar_position": "static",
+                    "topbar_height": 116,
+                    "nav_height": 55,
+                    "nav_scroll_width": 370,
+                    "nav_client_width": 370,
+                    "snapshot_meta_display": "none",
+                    "document_width": 390,
+                    "viewport_width": 390,
+                }
+            ],
             "console_errors": [],
         },
     )
@@ -441,6 +535,72 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
         },
     )
     _write_json(fixtures / "pin-search.json", [{"title": "Smoke Pin"}])
+    _write_json(
+        fixtures / "publisher-init.json",
+        {
+            "status": "initialized",
+            "targets": [
+                "pins_regular",
+                "pins_todo",
+                "planner_digest",
+                "prompt_library",
+                "project_registry",
+            ],
+        },
+    )
+    _write_json(
+        fixtures / "publisher-run.json",
+        {
+            "status": "success",
+            "updated": 5,
+            "skipped": 0,
+            "errors": 0,
+            "targets": [
+                {"id": "pins_regular", "status": "updated"},
+                {"id": "pins_todo", "status": "updated"},
+                {"id": "planner_digest", "status": "updated"},
+                {"id": "prompt_library", "status": "updated"},
+                {"id": "project_registry", "status": "updated"},
+            ],
+        },
+    )
+    _write_json(
+        fixtures / "publisher-run-unchanged.json",
+        {
+            "status": "success",
+            "updated": 0,
+            "skipped": 5,
+            "errors": 0,
+            "targets": [
+                {"id": "pins_regular", "status": "skipped"},
+                {"id": "pins_todo", "status": "skipped"},
+                {"id": "planner_digest", "status": "skipped"},
+                {"id": "prompt_library", "status": "skipped"},
+                {"id": "project_registry", "status": "skipped"},
+            ],
+        },
+    )
+    _write_json(
+        fixtures / "publisher-render-quality.json",
+        {
+            "status": "passed",
+            "checks": [
+                {
+                    "target": "planner_digest",
+                    "html_has_heading_style": True,
+                    "html_has_section_style": True,
+                    "html_has_item_blocks": True,
+                    "html_has_indented_details": True,
+                    "html_has_emphasis": True,
+                    "raw_markdown_heading_absent": True,
+                    "has_emoji_header": True,
+                    "has_divider_blocks": True,
+                    "pins_avoid_detail_dump": True,
+                    "pins_content_block": True,
+                }
+            ],
+        },
+    )
     _write_json(fixtures / "prompt-search.json", [{"title": "Smoke Prompt"}])
     _write_json(fixtures / "project-add.json", {"project": {"alias": "project-alpha"}})
     _write_json(
@@ -768,6 +928,14 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
         for question in module["ai_quality_questions"]
     )
     assert packet["evidence"]["smoke"]["blog_monitor"]["status"] == "passed"
+    assert packet["evidence"]["smoke"]["publisher_run"]["updated"] == 5
+    assert packet["evidence"]["smoke"]["publisher_run_unchanged"]["skipped"] == 5
+    assert packet["evidence"]["smoke"]["publisher_render_quality"]["status"] == "passed"
+    assert any(
+        "render quality" in question.lower()
+        for module in packet["modules"]
+        for question in module["ai_quality_questions"]
+    )
     assert any(
         "alcove radar list" in question
         for module in packet["modules"]
@@ -1169,6 +1337,13 @@ def test_eval_packet_includes_extended_smoke_evidence(tmp_path):
         "desktop": {"total": 45, "passed": 45, "failed": 0},
         "mobile": {"total": 46, "passed": 46, "failed": 0},
     }
+    assert packet["evidence"]["dashboard_browser"]["layout_summaries"][0]["route"] == "/pins"
+    assert (
+        packet["evidence"]["smoke"]["task_digest"]["text"].count(
+            packet["evidence"]["smoke"]["task_digest"]["title"]
+        )
+        == 1
+    )
     assert packet["evidence"]["dashboard_browser"]["checks_truncated_count"] > 0
     assert packet["evidence"]["radar_reports"]["status"] == "passed"
     assert packet["evidence"]["radar_reports"]["visual_summaries"][0]["radar_id"] == "sports-news"
@@ -1186,6 +1361,7 @@ def test_eval_packet_includes_extended_smoke_evidence(tmp_path):
     assert "export-restore" in module_questions["export_health"]
     assert "messy inbox" in module_questions["capture_inbox"]
     assert "social radar migration" in module_questions["radars"]
+    assert "planner digest" in module_questions["global_memory"]
 
 
 def test_build_eval_packet_marks_compacted_content_as_truncated(tmp_path):

@@ -1,9 +1,28 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Alcove">
-  <rect width="64" height="64" rx="15" fill="#10231f"/>
-  <path d="M17 51V29c0-9.4 6.9-17 15-17s15 7.6 15 17v22H17Z" fill="#f4f0e4"/>
-  <path d="M23 47V30c0-6.5 4.2-12 9-12s9 5.5 9 12v17H23Z" fill="#10231f"/>
-  <path d="M25 41h14" stroke="#f4f0e4" stroke-width="4" stroke-linecap="round"/>
-  <circle cx="28" cy="31" r="4.5" fill="#37b6a0"/>
-  <circle cx="37" cy="36" r="4.5" fill="#f6b44b"/>
-  <path d="M29.5 32.5 35.5 35" stroke="#f4f0e4" stroke-width="2.5" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Alcove">
+  <defs>
+    <linearGradient id="bg" x1="92" y1="48" x2="420" y2="464" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#193b34"/>
+      <stop offset="0.58" stop-color="#10231f"/>
+      <stop offset="1" stop-color="#081411"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="132" y1="132" x2="380" y2="384" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff7dc"/>
+      <stop offset="1" stop-color="#ead9a8"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="174" y1="134" x2="354" y2="366" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f4c86c"/>
+      <stop offset="1" stop-color="#b9852d"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <path d="M106 122c64-28 199-36 303 5" fill="none" stroke="#2f5b50" stroke-width="10" stroke-linecap="round" opacity=".35"/>
+  <path d="M111 403c74 31 218 32 291-8" fill="none" stroke="#d7b15a" stroke-width="8" stroke-linecap="round" opacity=".26"/>
+  <rect x="130" y="142" width="252" height="248" rx="32" fill="#0b1a17" stroke="url(#gold)" stroke-width="12"/>
+  <rect x="158" y="178" width="196" height="54" rx="16" fill="url(#paper)"/>
+  <rect x="158" y="250" width="196" height="54" rx="16" fill="url(#paper)" opacity=".96"/>
+  <rect x="158" y="322" width="196" height="36" rx="14" fill="url(#paper)" opacity=".88"/>
+  <path d="M193 205h72M193 277h102M193 340h78" stroke="#16342d" stroke-width="13" stroke-linecap="round"/>
+  <path d="M330 101l20 52 52 20-52 20-20 52-20-52-52-20 52-20 20-52Z" fill="url(#gold)" stroke="#fff3cf" stroke-width="8" stroke-linejoin="round"/>
+  <circle cx="330" cy="173" r="13" fill="#123029"/>
+  <path d="M132 118 94 156M411 382l-37 37" stroke="#f0c66c" stroke-width="9" stroke-linecap="round" opacity=".8"/>
 </svg>

@@ -436,7 +436,7 @@ class TasksModule:
         tasks = self._task_list(status="pending", today=current)
         routines = self.routine_list(status="active")
         title = (
-            f"Alcove {normalize_slug(period) or 'weekly'} planner digest - {current.isoformat()}"
+            f"📋 Alcove {normalize_slug(period) or 'weekly'} planner digest · {current.isoformat()}"
         )
         body = self._digest_body(ideas=ideas, tasks=tasks, routines=routines)
         text = self._digest_text(title=title, body=body)
@@ -453,6 +453,11 @@ class TasksModule:
             "date": current.isoformat(),
             "title": title,
             "text": text,
+            "items": {
+                "ideas": [asdict(idea) for idea in ideas],
+                "tasks": [asdict(task) for task in tasks],
+                "routines": [asdict(routine) for routine in routines],
+            },
             "counts": {
                 "ideas": len(ideas),
                 "tasks": len(tasks),
@@ -1113,25 +1118,34 @@ class TasksModule:
         if not rows:
             return f"{title}: none"
         return "\n".join(
-            [f"{title}: {len(rows)}", *[f"{index}. {row}" for index, row in enumerate(rows, 1)]]
+            [
+                f"{title} ({len(rows)})",
+                "",
+                *[f"{index}. {row}" for index, row in enumerate(rows, 1)],
+            ]
         )
 
     def _task_line(self, task: Task) -> str:
-        details = [task.priority]
+        details = [f"Priority: {task.priority}"]
         if task.due:
-            details.append(f"due {task.due}")
+            details.append(f"Due: {task.due}")
+        line = task.title
         if task.notes:
-            details.append(task.notes)
-        return f"[task:{task.id}] {task.title} ({'; '.join(details)})"
+            details.append(f"Note: {task.notes}")
+        return "\n   ".join([line, *details])
 
     def _idea_line(self, idea: Idea) -> str:
-        body = f"{idea.title}: {idea.notes}" if idea.notes else idea.title
-        return f"[idea:{idea.id}] {body}"
+        if not idea.notes:
+            return idea.title
+        return f"{idea.title}\n   Note: {idea.notes}"
 
     def _routine_line(self, routine: Routine) -> str:
-        return (
-            f"[routine:{routine.id}] {routine.title} "
-            f"(next {routine.next_due}; {routine.schedule['frequency']})"
+        return "\n   ".join(
+            [
+                routine.title,
+                f"Next: {routine.next_due}",
+                f"Frequency: {routine.schedule['frequency']}",
+            ]
         )
 
     def _combine_notes(self, base: str, extra: str) -> str:

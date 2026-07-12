@@ -4,7 +4,8 @@ import { asText, escapeHtml } from "../components/text";
 import type { DashboardSnapshot } from "../snapshot";
 
 export function renderRadars(snapshot: DashboardSnapshot): string {
-  const rows = snapshot.radars.map(radarRow).join("");
+  const radars = Array.isArray(snapshot.radars) ? snapshot.radars : [];
+  const rows = radars.map(radarRow).join("");
   return `
     <header class="page-head">
       <p class="eyebrow">Radars</p>

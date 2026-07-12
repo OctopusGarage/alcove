@@ -21,10 +21,15 @@ export function layout(snapshot: DashboardSnapshot, content: string): string {
         <span><b>Alcove</b><small>local index cabinet</small></span>
       </a>
       <nav>${nav}</nav>
-      <div class="snapshot-meta">
-        <span>Snapshot · Singapore time</span>
-        <b data-snapshot-generated-at>${escapeHtml(formatSingaporeDateTime(snapshot.generated_at, { seconds: true }))}</b>
-        <code data-snapshot-home>${escapeHtml(snapshot.home)}</code>
+      <div class="topbar-actions">
+        <button class="refresh-button" type="button" data-refresh-dashboard>
+          Refresh
+        </button>
+        <div class="snapshot-meta" aria-live="polite">
+          <span>Snapshot · Singapore time</span>
+          <b data-snapshot-generated-at>${escapeHtml(formatSingaporeDateTime(snapshot.generated_at, { seconds: true }))}</b>
+          <code data-snapshot-home>${escapeHtml(snapshot.home)}</code>
+        </div>
       </div>
     </header>
     <main class="main">${content}</main>

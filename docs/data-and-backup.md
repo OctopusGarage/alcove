@@ -21,6 +21,7 @@ Default global home:
 ├── blog-monitor/             monitored blog sources and seen state
 ├── radars/                   radar definitions, run cache, reports, and OKF indexes
 ├── automations/              repeatable user job configs, runs, and events
+├── publishers/               rendered mirrors and external publish state
 ├── dashboard/                derived dashboard snapshot/build output
 ├── stats/
 │   ├── summary.json          derived usage summary
@@ -86,6 +87,27 @@ Automation state is Alcove-owned operational data:
 The source of truth for each automation is the YAML job file. Run records and
 events are append/derived operational evidence and can be pruned or archived
 separately from user knowledge.
+
+Publisher state is Alcove-owned operational data:
+
+```text
+~/.alcove/publishers/
+├── definitions/*.yml          publisher definitions
+├── state/*.yml                external target identity and content hashes
+├── renders/*.md               latest rendered outbound documents
+├── runs/*.json                per-run audit records
+└── events.jsonl               publisher run events
+```
+
+For Apple Notes publishing, Alcove stores the target `note_id` after the first
+successful sync and updates by note id on later runs. Generated Apple Notes are
+readable mirrors. The source data remains in Alcove, such as `~/.alcove/pins`,
+`~/.alcove/tasks`, `~/.alcove/prompts`, and `~/.alcove/projects`.
+
+The default Apple Notes publisher mirrors only compact, user-facing views:
+regular pins, todo pins, planner digest, prompt library, and project registry.
+High-volume indexes and operational data remain in Alcove rather than being
+copied into Notes.
 
 Usage logs are local operational data. Search events store query length, result
 count, filters, surface, outcome, and a local salted query hash. Raw query text
