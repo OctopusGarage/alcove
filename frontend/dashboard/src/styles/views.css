@@ -414,14 +414,16 @@
   background: rgba(255, 255, 251, 0.9);
 }
 
-.pin-jumps {
+.pin-jumps,
+.page-jumps {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 16px;
 }
 
-.pin-jumps button {
+.pin-jumps button,
+.page-jumps button {
   min-height: 34px;
   padding: 6px 12px;
   border: 1px solid var(--line-strong);
@@ -436,10 +438,17 @@
 }
 
 .pin-jumps button:hover,
-.pin-jumps button:focus-visible {
+.pin-jumps button:focus-visible,
+.page-jumps button:hover,
+.page-jumps button:focus-visible {
   border-color: var(--blue);
   outline: 0;
   box-shadow: 0 0 0 3px rgba(46, 100, 137, 0.18);
+}
+
+.jump-panel:focus {
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(46, 100, 137, 0.14);
 }
 
 .pin-list {

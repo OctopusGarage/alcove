@@ -9,6 +9,7 @@ import sys
 from typing import Any
 
 from alcove.application import AlcoveApplication
+from alcove.automations import AutomationsModule
 from alcove.blog_monitor import BlogMonitorModule
 from alcove.dashboard import DashboardModule
 from alcove.home import AlcoveHome
@@ -114,12 +115,16 @@ class ServiceModule:
         check_watchers: bool = True,
         check_blogs: bool = True,
         check_radars: bool = True,
+        run_automations: bool = True,
         fix_health: bool = True,
+        today: str = "",
     ) -> dict[str, Any]:
         runtime = AlcoveRuntime.from_modules(home=self.home)
         app = AlcoveApplication(runtime)
         usage = UsageRecorder(self.home)
-        tasks = TasksModule(home=self.home).routine_materialize_due()
+        task_module = TasksModule(home=self.home)
+        tasks = task_module.routine_materialize_due(today=today or None)
+        task_notifications = task_module.run_due_notifications(today=today or None)
         connector_payload = (
             app.external.connector_refresh_payload(stale_only=True)
             if refresh_connectors
@@ -140,6 +145,11 @@ class ServiceModule:
             if check_radars
             else {"status": "skipped", "ran": 0, "skipped": 0, "errors": 0}
         )
+        automations_payload = (
+            AutomationsModule(self.home).run_due()
+            if run_automations
+            else {"status": "skipped", "ran": 0, "skipped": 0, "failed": 0}
+        )
         okf_payload = app.system.okf_catalog_build_payload()
         health_payload = app.system.health_payload(fix=fix_health, strict=False)
         usage_payload = usage.write_rollups()
@@ -152,10 +162,13 @@ class ServiceModule:
             summary="Ran Alcove service tick",
             metrics={
                 "routine_tasks": len(tasks),
+                "task_notifications": _int_value(task_notifications.get("sent")),
                 "connector_refreshed": int(connector_payload.get("refreshed") or 0),
                 "watcher_changed": _int_value(watchers_payload.get("changed")),
                 "blog_new": _int_value(blogs_payload.get("new")),
                 "radar_ran": _int_value(radars_payload.get("ran")),
+                "automation_ran": _int_value(automations_payload.get("ran")),
+                "automation_failed": _int_value(automations_payload.get("failed")),
             },
             visible=False,
         )
@@ -163,10 +176,12 @@ class ServiceModule:
             "status": "ok",
             "home": compact_user_path(self.home.root),
             "tasks": {"materialized": len(tasks), "items": [task.id for task in tasks]},
+            "task_notifications": task_notifications,
             "connectors": connector_payload,
             "watchers": watchers_payload,
             "blogs": blogs_payload,
             "radars": radars_payload,
+            "automations": automations_payload,
             "okf": okf_payload,
             "health": {
                 "status": health_payload.get("status"),

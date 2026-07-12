@@ -52,7 +52,7 @@ function render(): void {
   root.innerHTML = `<div class="shell">${layout(snapshot, renderRoute(snapshot, currentRoute()))}</div>`;
   bindSearch(snapshot);
   bindModuleFilters();
-  bindPinJumps();
+  bindPageJumps();
   bindCommandCopy();
 }
 
@@ -168,11 +168,12 @@ function bindModuleFilters(): void {
   });
 }
 
-function bindPinJumps(): void {
-  document.querySelectorAll<HTMLButtonElement>("[data-pin-jump]").forEach((button) => {
+function bindPageJumps(): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-pin-jump], [data-page-jump]").forEach((button) => {
     button.addEventListener("click", () => {
+      const targetId = button.dataset.pinJump ?? button.dataset.pageJump ?? "";
       const target = document.querySelector<HTMLElement>(
-        `#pin-${button.dataset.pinJump ?? ""}`,
+        button.dataset.pinJump ? `#pin-${targetId}` : `#${targetId}`,
       );
       if (!target) {
         return;

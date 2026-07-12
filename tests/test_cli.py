@@ -1201,6 +1201,158 @@ def test_cli_idea_promote_and_routine_materialize(tmp_path, capsys):
     assert json.loads(materialize_output.out)["created"][0]["due"] == "2026-07-08"
 
 
+def test_cli_task_full_lifecycle_and_digest(tmp_path, capsys, monkeypatch):
+    home = tmp_path / ".alcove"
+    sent: list[str] = []
+
+    def fake_send(*, home, text):
+        sent.append(text)
+        return {"status": "sent"}
+
+    monkeypatch.setattr("alcove.tasks.send_telegram_message", fake_send)
+
+    task_code = main(
+        [
+            "task",
+            "--home",
+            str(home),
+            "add",
+            "Review planner",
+            "--due",
+            "2026-07-01",
+            "--json",
+        ]
+    )
+    capsys.readouterr()
+    edit_code = main(
+        [
+            "task",
+            "--home",
+            str(home),
+            "edit",
+            "review-planner",
+            "--title",
+            "Review planner module",
+            "--priority",
+            "high",
+            "--json",
+        ]
+    )
+    edit_output = capsys.readouterr()
+    routine_code = main(
+        [
+            "task",
+            "--home",
+            str(home),
+            "routine-add",
+            "Weekly planner review",
+            "--frequency",
+            "weekly",
+            "--weekday",
+            "sun",
+            "--next-due",
+            "2026-07-12",
+            "--json",
+        ]
+    )
+    capsys.readouterr()
+    pause_code = main(
+        ["task", "--home", str(home), "routine-pause", "weekly-planner-review", "--json"]
+    )
+    pause_output = capsys.readouterr()
+    resume_code = main(
+        [
+            "task",
+            "--home",
+            str(home),
+            "routine-resume",
+            "weekly-planner-review",
+            "--today",
+            "2026-07-12",
+            "--json",
+        ]
+    )
+    resume_output = capsys.readouterr()
+    digest_code = main(
+        [
+            "task",
+            "--home",
+            str(home),
+            "digest",
+            "--period",
+            "weekly",
+            "--today",
+            "2026-07-12",
+            "--notify",
+            "--json",
+        ]
+    )
+    digest_output = capsys.readouterr()
+
+    assert task_code == 0
+    assert edit_code == 0
+    assert json.loads(edit_output.out)["task"]["title"] == "Review planner module"
+    assert routine_code == 0
+    assert pause_code == 0
+    assert json.loads(pause_output.out)["routine"]["status"] == "paused"
+    assert resume_code == 0
+    assert json.loads(resume_output.out)["routine"]["status"] == "active"
+    assert digest_code == 0
+    digest = json.loads(digest_output.out)
+    assert digest["status"] == "sent"
+    assert "Review planner module" in digest["text"]
+    assert "Weekly planner review" in sent[0]
+
+
+def test_cli_idea_edit_archive_and_promote_to_routine(tmp_path, capsys):
+    home = tmp_path / ".alcove"
+    main(["idea", "--home", str(home), "add", "Planner thought", "--json"])
+    capsys.readouterr()
+    edit_code = main(
+        [
+            "idea",
+            "--home",
+            str(home),
+            "edit",
+            "planner-thought",
+            "--title",
+            "Planner weekly thought",
+            "--tag",
+            "planner",
+            "--json",
+        ]
+    )
+    edit_output = capsys.readouterr()
+    promote_code = main(
+        [
+            "idea",
+            "--home",
+            str(home),
+            "promote-routine",
+            "planner-weekly-thought",
+            "--frequency",
+            "weekly",
+            "--weekday",
+            "mon",
+            "--next-due",
+            "2026-07-13",
+            "--json",
+        ]
+    )
+    promote_output = capsys.readouterr()
+    main(["idea", "--home", str(home), "add", "Archive this", "--json"])
+    capsys.readouterr()
+    archive_code = main(["idea", "--home", str(home), "archive", "archive-this", "--json"])
+    archive_output = capsys.readouterr()
+
+    assert edit_code == 0
+    assert json.loads(edit_output.out)["idea"]["title"] == "Planner weekly thought"
+    assert promote_code == 0
+    assert json.loads(promote_output.out)["routine"]["schedule"]["weekdays"] == ["mon"]
+    assert archive_code == 0
+    assert json.loads(archive_output.out)["idea"]["status"] == "archived"
+
+
 def test_cli_mount_add_list_scan_and_search(tmp_path, capsys):
     main(["init", str(tmp_path)])
     capsys.readouterr()

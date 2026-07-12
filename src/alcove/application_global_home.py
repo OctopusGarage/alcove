@@ -246,6 +246,32 @@ class _GlobalHomeCapabilities(_Capability):
         ]
         return self.runtime.scope_payload({"count": len(tasks), "tasks": tasks})
 
+    def task_edit_payload(
+        self,
+        task_id: str,
+        *,
+        title: str | None = None,
+        notes: str | None = None,
+        tags: list[str] | None = None,
+        priority: str | None = None,
+        due: str | None = None,
+    ) -> dict[str, Any]:
+        task = TasksModule(self.runtime.workspace, home=self.runtime.home).task_edit(
+            task_id,
+            title=title,
+            notes=notes,
+            tags=tags,
+            priority=priority,
+            due=due,
+        )
+        self._record_action(
+            area="task",
+            action="task.edit",
+            summary=f"Edited task: {task.title}",
+            metadata={"id": task.id},
+        )
+        return self.runtime.scope_payload({"status": "updated", "task": asdict(task)})
+
     def task_complete_payload(self, task_id: str) -> dict[str, Any]:
         task = TasksModule(self.runtime.workspace, home=self.runtime.home).task_complete(task_id)
         self._record_action(
@@ -265,6 +291,38 @@ class _GlobalHomeCapabilities(_Capability):
             metadata={"id": task.id},
         )
         return self.runtime.scope_payload({"status": "cancelled", "task": asdict(task)})
+
+    def idea_edit_payload(
+        self,
+        idea_id: str,
+        *,
+        title: str | None = None,
+        notes: str | None = None,
+        tags: list[str] | None = None,
+    ) -> dict[str, Any]:
+        idea = TasksModule(self.runtime.workspace, home=self.runtime.home).idea_edit(
+            idea_id,
+            title=title,
+            notes=notes,
+            tags=tags,
+        )
+        self._record_action(
+            area="task",
+            action="idea.edit",
+            summary=f"Edited idea: {idea.title}",
+            metadata={"id": idea.id},
+        )
+        return self.runtime.scope_payload({"status": "updated", "idea": asdict(idea)})
+
+    def idea_archive_payload(self, idea_id: str) -> dict[str, Any]:
+        idea = TasksModule(self.runtime.workspace, home=self.runtime.home).idea_archive(idea_id)
+        self._record_action(
+            area="task",
+            action="idea.archive",
+            summary=f"Archived idea: {idea.title}",
+            metadata={"id": idea.id},
+        )
+        return self.runtime.scope_payload({"status": "archived", "idea": asdict(idea)})
 
     def idea_promote_payload(
         self,
@@ -289,6 +347,38 @@ class _GlobalHomeCapabilities(_Capability):
                 "idea": asdict(idea),
                 "task": asdict(task),
             }
+        )
+
+    def idea_promote_routine_payload(
+        self,
+        idea_id: str,
+        *,
+        priority: str = "medium",
+        next_due: str = "",
+        notes: str = "",
+        schedule: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        tasks = TasksModule(self.runtime.workspace, home=self.runtime.home)
+        routine = tasks.idea_promote_to_routine(
+            idea_id,
+            priority=priority,
+            next_due=next_due,
+            notes=notes,
+            schedule=schedule or {},
+        )
+        idea = next(
+            item
+            for item in tasks.idea_list(status="promoted")
+            if item.promoted_routine_id == routine.id
+        )
+        self._record_action(
+            area="task",
+            action="idea.promote_routine",
+            summary=f"Promoted idea to routine: {routine.title}",
+            metadata={"idea_id": idea.id, "routine_id": routine.id},
+        )
+        return self.runtime.scope_payload(
+            {"status": "promoted", "idea": asdict(idea), "routine": asdict(routine)}
         )
 
     def routine_add_payload(self, request: AddRoutineRequest) -> dict[str, Any]:
@@ -325,6 +415,92 @@ class _GlobalHomeCapabilities(_Capability):
         return self.runtime.scope_payload(
             {"status": "materialized", "created": [asdict(task) for task in created]}
         )
+
+    def routine_edit_payload(
+        self,
+        routine_id: str,
+        *,
+        title: str | None = None,
+        notes: str | None = None,
+        tags: list[str] | None = None,
+        priority: str | None = None,
+        schedule: dict[str, Any] | None = None,
+        next_due: str | None = None,
+    ) -> dict[str, Any]:
+        routine = TasksModule(self.runtime.workspace, home=self.runtime.home).routine_edit(
+            routine_id,
+            title=title,
+            notes=notes,
+            tags=tags,
+            priority=priority,
+            schedule=schedule,
+            next_due=next_due,
+        )
+        self._record_action(
+            area="task",
+            action="routine.edit",
+            summary=f"Edited routine: {routine.title}",
+            metadata={"id": routine.id},
+        )
+        return self.runtime.scope_payload({"status": "updated", "routine": asdict(routine)})
+
+    def routine_pause_payload(self, routine_id: str) -> dict[str, Any]:
+        routine = TasksModule(self.runtime.workspace, home=self.runtime.home).routine_pause(
+            routine_id
+        )
+        self._record_action(
+            area="task",
+            action="routine.pause",
+            summary=f"Paused routine: {routine.title}",
+            metadata={"id": routine.id},
+        )
+        return self.runtime.scope_payload({"status": "paused", "routine": asdict(routine)})
+
+    def routine_resume_payload(self, routine_id: str, today: str = "") -> dict[str, Any]:
+        routine = TasksModule(self.runtime.workspace, home=self.runtime.home).routine_resume(
+            routine_id,
+            today=today or None,
+        )
+        self._record_action(
+            area="task",
+            action="routine.resume",
+            summary=f"Resumed routine: {routine.title}",
+            metadata={"id": routine.id},
+        )
+        return self.runtime.scope_payload({"status": "active", "routine": asdict(routine)})
+
+    def routine_archive_payload(self, routine_id: str) -> dict[str, Any]:
+        routine = TasksModule(self.runtime.workspace, home=self.runtime.home).routine_archive(
+            routine_id
+        )
+        self._record_action(
+            area="task",
+            action="routine.archive",
+            summary=f"Archived routine: {routine.title}",
+            metadata={"id": routine.id},
+        )
+        return self.runtime.scope_payload({"status": "archived", "routine": asdict(routine)})
+
+    def task_digest_payload(
+        self,
+        *,
+        period: str = "weekly",
+        today: str = "",
+        notify: bool = False,
+    ) -> dict[str, Any]:
+        payload = TasksModule(self.runtime.workspace, home=self.runtime.home).task_digest(
+            period=period,
+            today=today or None,
+            notify=notify,
+        )
+        self._record_action(
+            area="task",
+            action="task.digest",
+            summary=f"Built task digest: {period}",
+            metadata={"period": period, "notified": bool(notify)},
+            visible=False,
+        )
+        return self.runtime.scope_payload(payload)
 
     def task_import_social_radar_payload(self, source: str) -> dict[str, Any]:
         result = TasksModule(

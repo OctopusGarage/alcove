@@ -235,6 +235,8 @@ import json
 import sys
 from pathlib import Path
 
+from alcove.paths import compact_user_paths_in_text
+
 root = Path(sys.argv[1])
 report = Path(sys.argv[2])
 codex_status, codex_detail, claude_status, claude_detail = sys.argv[3:7]
@@ -278,9 +280,9 @@ payload = {
         "ALCOVE_AGENT_CLIENT_SMOKE_CLAUDE=1 "
         "scripts/smoke-agent-clients.sh"
     ),
-    "home": str(root / "home"),
-    "hub": str(root / "hub"),
-    "workspace": str(root / "research_notes"),
+    "home": compact_user_paths_in_text(str(root / "home")),
+    "hub": compact_user_paths_in_text(str(root / "hub")),
+    "workspace": compact_user_paths_in_text(str(root / "research_notes")),
     "summary": {
         "mcp_tool_count": mcp.get("tool_count", 0),
         "mcp_search_count": mcp.get("search", {}).get("count", 0),
@@ -288,7 +290,7 @@ payload = {
         "claude_cli": claude_status,
     },
     "checks": checks,
-    "artifacts": str(root),
+    "artifacts": compact_user_paths_in_text(str(root)),
 }
 report.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(payload, ensure_ascii=False, indent=2))

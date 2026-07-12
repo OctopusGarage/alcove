@@ -4,9 +4,11 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from alcove import __version__
 from alcove.application import AlcoveApplication
+from alcove.automations import AutomationsModule
 from alcove.blog_monitor import BlogMonitorModule
 from alcove.connectors.apple_notes import AppleNotesImportRequest, AppleNotesLocalImportRequest
 from alcove.connectors.chrome_bookmarks import (
@@ -181,8 +183,51 @@ def build_parser() -> argparse.ArgumentParser:
     service_tick.add_argument("--skip-watchers", action="store_true")
     service_tick.add_argument("--skip-blogs", action="store_true")
     service_tick.add_argument("--skip-radars", action="store_true")
+    service_tick.add_argument("--skip-automations", action="store_true")
     service_tick.add_argument("--skip-health-fix", action="store_true")
+    service_tick.add_argument("--today", default="")
     service_tick.add_argument("--json", action="store_true")
+
+    automation = sub.add_parser("automation", help="Manage local user automation jobs")
+    automation.add_argument("--home")
+    automation_sub = automation.add_subparsers(dest="automation_command", required=True)
+    automation_list = automation_sub.add_parser("list", help="List automation jobs")
+    automation_list.add_argument("--home", default=argparse.SUPPRESS)
+    automation_list.add_argument("--status", default="active")
+    automation_list.add_argument("--json", action="store_true")
+    automation_run = automation_sub.add_parser("run", help="Run one automation job")
+    automation_run.add_argument("--home", default=argparse.SUPPRESS)
+    automation_run.add_argument("job_id")
+    automation_run.add_argument("--allow-agent", action="store_true")
+    automation_run.add_argument("--json", action="store_true")
+    automation_due = automation_sub.add_parser("run-due", help="Run due automation jobs")
+    automation_due.add_argument("--home", default=argparse.SUPPRESS)
+    automation_due.add_argument("--allow-agent", action="store_true")
+    automation_due.add_argument("--json", action="store_true")
+    automation_shell = automation_sub.add_parser("add-shell", help="Add a shell automation job")
+    automation_shell.add_argument("--home", default=argparse.SUPPRESS)
+    automation_shell.add_argument("name")
+    automation_shell.add_argument("--cmd", required=True)
+    automation_shell.add_argument("--cwd", default="")
+    automation_shell.add_argument("--ttl-hours", type=int, default=24)
+    automation_shell.add_argument("--timeout-seconds", type=int, default=600)
+    automation_shell.add_argument("--notify", action="store_true")
+    automation_shell.add_argument("--json", action="store_true")
+    automation_git = automation_sub.add_parser("add-git-sync", help="Add a git commit/push job")
+    automation_git.add_argument("--home", default=argparse.SUPPRESS)
+    automation_git.add_argument("name")
+    automation_git.add_argument("repo_path")
+    automation_git.add_argument("--commit-message", default="chore: sync local data")
+    automation_git.add_argument("--ttl-hours", type=int, default=24)
+    automation_git.add_argument("--timeout-seconds", type=int, default=60)
+    automation_git.add_argument("--notify", action="store_true")
+    automation_git.add_argument("--json", action="store_true")
+    automation_import = automation_sub.add_parser(
+        "import-social-radar", help="Import legacy Social Radar automation jobs"
+    )
+    automation_import.add_argument("--home", default=argparse.SUPPRESS)
+    automation_import.add_argument("source_home", nargs="?", default="~/.social_radar")
+    automation_import.add_argument("--json", action="store_true")
 
     watch = sub.add_parser("watch", help="Manage watched external update sources")
     watch.add_argument("--home")
@@ -572,6 +617,29 @@ def build_parser() -> argparse.ArgumentParser:
     idea_promote.add_argument("--priority", default="medium")
     idea_promote.add_argument("--due", default="")
     idea_promote.add_argument("--json", action="store_true")
+    idea_edit = idea_sub.add_parser("edit", help="Edit an idea")
+    idea_edit.add_argument("idea_id")
+    idea_edit.add_argument("--title")
+    idea_edit.add_argument("--notes")
+    idea_edit.add_argument("--tag", action="append", default=[])
+    idea_edit.add_argument("--tags", default="")
+    idea_edit.add_argument("--json", action="store_true")
+    idea_archive = idea_sub.add_parser("archive", help="Archive an idea")
+    idea_archive.add_argument("idea_id")
+    idea_archive.add_argument("--json", action="store_true")
+    idea_promote_routine = idea_sub.add_parser(
+        "promote-routine",
+        help="Promote an idea to a recurring task template",
+    )
+    idea_promote_routine.add_argument("idea_id")
+    idea_promote_routine.add_argument("--notes", default="")
+    idea_promote_routine.add_argument("--priority", default="medium")
+    idea_promote_routine.add_argument("--next-due", required=True)
+    idea_promote_routine.add_argument("--frequency", default="daily")
+    idea_promote_routine.add_argument("--interval", type=int, default=1)
+    idea_promote_routine.add_argument("--weekday", action="append", default=[])
+    idea_promote_routine.add_argument("--day-of-month", type=int, default=0)
+    idea_promote_routine.add_argument("--json", action="store_true")
 
     task = sub.add_parser("task", help="Work with personal tasks")
     task.add_argument("--workspace")
@@ -588,6 +656,15 @@ def build_parser() -> argparse.ArgumentParser:
     task_list = task_sub.add_parser("list", help="List tasks")
     task_list.add_argument("--status", default="pending")
     task_list.add_argument("--json", action="store_true")
+    task_edit = task_sub.add_parser("edit", help="Edit a task")
+    task_edit.add_argument("task_id")
+    task_edit.add_argument("--title")
+    task_edit.add_argument("--notes")
+    task_edit.add_argument("--tag", action="append", default=[])
+    task_edit.add_argument("--tags", default="")
+    task_edit.add_argument("--priority")
+    task_edit.add_argument("--due")
+    task_edit.add_argument("--json", action="store_true")
     task_complete = task_sub.add_parser("complete", help="Complete a task")
     task_complete.add_argument("task_id")
     task_complete.add_argument("--json", action="store_true")
@@ -601,14 +678,48 @@ def build_parser() -> argparse.ArgumentParser:
     routine_add.add_argument("--tags", default="")
     routine_add.add_argument("--priority", default="medium")
     routine_add.add_argument("--every-days", type=int, default=1)
+    routine_add.add_argument("--frequency", default="")
+    routine_add.add_argument("--interval", type=int, default=1)
+    routine_add.add_argument("--weekday", action="append", default=[])
+    routine_add.add_argument("--day-of-month", type=int, default=0)
     routine_add.add_argument("--next-due", required=True)
     routine_add.add_argument("--json", action="store_true")
     routine_list = task_sub.add_parser("routine-list", help="List recurring task templates")
     routine_list.add_argument("--status", default="active")
     routine_list.add_argument("--json", action="store_true")
+    routine_edit = task_sub.add_parser("routine-edit", help="Edit a recurring task template")
+    routine_edit.add_argument("routine_id")
+    routine_edit.add_argument("--title")
+    routine_edit.add_argument("--notes")
+    routine_edit.add_argument("--tag", action="append", default=[])
+    routine_edit.add_argument("--tags", default="")
+    routine_edit.add_argument("--priority")
+    routine_edit.add_argument("--next-due")
+    routine_edit.add_argument("--frequency", default="")
+    routine_edit.add_argument("--interval", type=int, default=1)
+    routine_edit.add_argument("--weekday", action="append", default=[])
+    routine_edit.add_argument("--day-of-month", type=int, default=0)
+    routine_edit.add_argument("--json", action="store_true")
+    routine_pause = task_sub.add_parser("routine-pause", help="Pause a recurring task template")
+    routine_pause.add_argument("routine_id")
+    routine_pause.add_argument("--json", action="store_true")
+    routine_resume = task_sub.add_parser("routine-resume", help="Resume a recurring task template")
+    routine_resume.add_argument("routine_id")
+    routine_resume.add_argument("--today", default="")
+    routine_resume.add_argument("--json", action="store_true")
+    routine_archive = task_sub.add_parser(
+        "routine-archive", help="Archive a recurring task template"
+    )
+    routine_archive.add_argument("routine_id")
+    routine_archive.add_argument("--json", action="store_true")
     materialize_due = task_sub.add_parser("materialize-due", help="Create tasks for due routines")
     materialize_due.add_argument("--today", default="")
     materialize_due.add_argument("--json", action="store_true")
+    task_digest = task_sub.add_parser("digest", help="Build a task/idea/routine digest")
+    task_digest.add_argument("--period", default="weekly")
+    task_digest.add_argument("--today", default="")
+    task_digest.add_argument("--notify", action="store_true")
+    task_digest.add_argument("--json", action="store_true")
     import_social_radar = task_sub.add_parser(
         "import-social-radar",
         help="Import todos, ideas, and routines from a Social Radar todos.json file",
@@ -846,6 +957,21 @@ def _split_csv(value: str) -> list[str]:
 
 def _tags(args) -> list[str]:
     return [*getattr(args, "tag", []), *_split_csv(getattr(args, "tags", ""))]
+
+
+def _routine_schedule_from_args(args, *, include_default: bool = False) -> dict[str, Any]:
+    frequency = getattr(args, "frequency", "") or ("daily" if include_default else "")
+    if not frequency:
+        return {}
+    schedule: dict[str, Any] = {
+        "frequency": frequency,
+        "interval": getattr(args, "interval", 1),
+    }
+    if frequency == "weekly":
+        schedule["weekdays"] = getattr(args, "weekday", []) or []
+    if frequency == "monthly":
+        schedule["day_of_month"] = getattr(args, "day_of_month", 0)
+    return schedule
 
 
 def _refs(args) -> list[str]:
@@ -1216,7 +1342,9 @@ def main(argv: list[str] | None = None) -> int:
                     check_watchers=not args.skip_watchers,
                     check_blogs=not args.skip_blogs,
                     check_radars=not args.skip_radars,
+                    run_automations=not args.skip_automations,
                     fix_health=not args.skip_health_fix,
+                    today=args.today,
                 )
             else:
                 return _argument_error(
@@ -1226,6 +1354,44 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(service_payload, ensure_ascii=False, indent=2))
             else:
                 print(json.dumps(service_payload, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "automation":
+            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
+            automations = AutomationsModule(home)
+            if args.automation_command == "list":
+                payload = automations.list_jobs(status=args.status)
+            elif args.automation_command == "run":
+                payload = automations.run(args.job_id, allow_agent=args.allow_agent)
+            elif args.automation_command == "run-due":
+                payload = automations.run_due(allow_agent=args.allow_agent)
+            elif args.automation_command == "add-shell":
+                payload = automations.add_shell(
+                    name=args.name,
+                    command=args.cmd,
+                    cwd=args.cwd,
+                    ttl_hours=args.ttl_hours,
+                    timeout_seconds=args.timeout_seconds,
+                    notify=args.notify,
+                )
+            elif args.automation_command == "add-git-sync":
+                payload = automations.add_git_sync(
+                    name=args.name,
+                    repo_path=args.repo_path,
+                    commit_message=args.commit_message,
+                    ttl_hours=args.ttl_hours,
+                    timeout_seconds=args.timeout_seconds,
+                    notify=args.notify,
+                )
+            elif args.automation_command == "import-social-radar":
+                payload = automations.import_social_radar(args.source_home)
+            else:
+                return _argument_error(
+                    parser, "the following arguments are required: automation_command"
+                )
+            if args.json:
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+            else:
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0
         if args.command == "watch":
             home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
@@ -1960,11 +2126,44 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     print(f"task: {payload['task']['id']}")
                 return 0
+            if args.idea_command == "edit":
+                payload = app.global_home.idea_edit_payload(
+                    args.idea_id,
+                    title=args.title,
+                    notes=args.notes,
+                    tags=_optional_tags(args),
+                )
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"idea: {payload['idea']['id']}")
+                return 0
+            if args.idea_command == "archive":
+                payload = app.global_home.idea_archive_payload(args.idea_id)
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"idea: {payload['idea']['id']}")
+                return 0
+            if args.idea_command == "promote-routine":
+                payload = app.global_home.idea_promote_routine_payload(
+                    args.idea_id,
+                    priority=args.priority,
+                    next_due=args.next_due,
+                    notes=args.notes,
+                    schedule=_routine_schedule_from_args(args, include_default=True),
+                )
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"routine: {payload['routine']['id']}")
+                return 0
             return _argument_error(parser, "the following arguments are required: idea_command")
         if args.command == "task":
             runtime = _runtime_from_args(args)
+            app = AlcoveApplication(runtime)
             if args.task_command == "add":
-                payload = AlcoveApplication(runtime).global_home.task_add_payload(
+                payload = app.global_home.task_add_payload(
                     AddTaskRequest(
                         title=args.title,
                         notes=args.notes,
@@ -1979,7 +2178,7 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"task: {payload['task']['id']}")
                 return 0
             if args.task_command == "list":
-                payload = AlcoveApplication(runtime).global_home.task_list_payload(args.status)
+                payload = app.global_home.task_list_payload(args.status)
                 results = payload["tasks"]
                 if args.json:
                     print(json.dumps(results, ensure_ascii=False, indent=2))
@@ -1990,20 +2189,34 @@ def main(argv: list[str] | None = None) -> int:
                             f"{task['title']} | {task['id']}"
                         )
                 return 0
+            if args.task_command == "edit":
+                payload = app.global_home.task_edit_payload(
+                    args.task_id,
+                    title=args.title,
+                    notes=args.notes,
+                    tags=_optional_tags(args),
+                    priority=args.priority,
+                    due=args.due,
+                )
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"task: {payload['task']['id']}")
+                return 0
             if args.task_command == "complete":
-                payload = AlcoveApplication(runtime).global_home.task_complete_payload(args.task_id)
+                payload = app.global_home.task_complete_payload(args.task_id)
                 print(
                     json.dumps(payload, ensure_ascii=False) if args.json else payload["task"]["id"]
                 )
                 return 0
             if args.task_command == "cancel":
-                payload = AlcoveApplication(runtime).global_home.task_cancel_payload(args.task_id)
+                payload = app.global_home.task_cancel_payload(args.task_id)
                 print(
                     json.dumps(payload, ensure_ascii=False) if args.json else payload["task"]["id"]
                 )
                 return 0
             if args.task_command == "routine-add":
-                payload = AlcoveApplication(runtime).global_home.routine_add_payload(
+                payload = app.global_home.routine_add_payload(
                     AddRoutineRequest(
                         title=args.title,
                         notes=args.notes,
@@ -2011,6 +2224,7 @@ def main(argv: list[str] | None = None) -> int:
                         priority=args.priority,
                         every_days=args.every_days,
                         next_due=args.next_due,
+                        schedule=_routine_schedule_from_args(args),
                     )
                 )
                 if args.json:
@@ -2019,7 +2233,7 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"routine: {payload['routine']['id']}")
                 return 0
             if args.task_command == "routine-list":
-                payload = AlcoveApplication(runtime).global_home.routine_list_payload(args.status)
+                payload = app.global_home.routine_list_payload(args.status)
                 results = payload["routines"]
                 if args.json:
                     print(json.dumps(results, ensure_ascii=False, indent=2))
@@ -2030,19 +2244,62 @@ def main(argv: list[str] | None = None) -> int:
                             f"{routine['next_due']} | {routine['title']} | {routine['id']}"
                         )
                 return 0
-            if args.task_command == "materialize-due":
-                payload = AlcoveApplication(runtime).global_home.routine_materialize_due_payload(
-                    args.today
+            if args.task_command == "routine-edit":
+                payload = app.global_home.routine_edit_payload(
+                    args.routine_id,
+                    title=args.title,
+                    notes=args.notes,
+                    tags=_optional_tags(args),
+                    priority=args.priority,
+                    schedule=_routine_schedule_from_args(args) or None,
+                    next_due=args.next_due,
                 )
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"routine: {payload['routine']['id']}")
+                return 0
+            if args.task_command == "routine-pause":
+                payload = app.global_home.routine_pause_payload(args.routine_id)
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"routine: {payload['routine']['id']}")
+                return 0
+            if args.task_command == "routine-resume":
+                payload = app.global_home.routine_resume_payload(args.routine_id, today=args.today)
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"routine: {payload['routine']['id']}")
+                return 0
+            if args.task_command == "routine-archive":
+                payload = app.global_home.routine_archive_payload(args.routine_id)
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"routine: {payload['routine']['id']}")
+                return 0
+            if args.task_command == "materialize-due":
+                payload = app.global_home.routine_materialize_due_payload(args.today)
                 if args.json:
                     print(json.dumps(payload, ensure_ascii=False))
                 else:
                     print(f"created: {len(payload['created'])}")
                 return 0
-            if args.task_command == "import-social-radar":
-                payload = AlcoveApplication(runtime).global_home.task_import_social_radar_payload(
-                    args.source
+            if args.task_command == "digest":
+                payload = app.global_home.task_digest_payload(
+                    period=args.period,
+                    today=args.today,
+                    notify=args.notify,
                 )
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(payload["text"])
+                return 0
+            if args.task_command == "import-social-radar":
+                payload = app.global_home.task_import_social_radar_payload(args.source)
                 if args.json:
                     print(json.dumps(payload, ensure_ascii=False, indent=2))
                 else:

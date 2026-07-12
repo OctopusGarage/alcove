@@ -11,6 +11,9 @@ from alcove.mcp_server import (
     create_mcp_server,
     gardener_tool,
     get_topic_tool,
+    idea_archive_tool,
+    idea_edit_tool,
+    idea_promote_routine_tool,
     idea_promote_tool,
     inbox_peek_tool,
     link_source_tool,
@@ -30,10 +33,15 @@ from alcove.mcp_server import (
     prompt_rebuild_index_tool,
     prompt_save_tool,
     routine_add_tool,
+    routine_archive_tool,
     routine_list_tool,
     routine_materialize_due_tool,
+    routine_pause_tool,
+    routine_resume_tool,
     search_tool,
     task_add_tool,
+    task_digest_tool,
+    task_edit_tool,
     task_list_tool,
 )
 from alcove.mounts import AddMountRequest, MountsModule
@@ -566,6 +574,60 @@ def test_mcp_routine_tools_materialize_due_tasks(tmp_path):
     assert list_payload["count"] == 1
     assert materialize_payload["created"][0]["title"] == "MCP Routine"
     assert materialize_payload["created"][0]["due"] == "2026-07-08"
+
+
+def test_mcp_full_planner_lifecycle_tools(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    sent: list[str] = []
+
+    def fake_send(*, home, text):
+        sent.append(text)
+        return {"status": "sent"}
+
+    monkeypatch.setattr("alcove.tasks.send_telegram_message", fake_send)
+
+    task_payload = task_add_tool("", home=str(home.root), title="MCP Edit Me")
+    edited_task = task_edit_tool(
+        "",
+        home=str(home.root),
+        task_id=task_payload["task"]["id"],
+        title="MCP Edited Task",
+        priority="high",
+    )
+    TasksModule(home=home).idea_add(AddIdeaRequest(title="MCP Routine Idea"))
+    TasksModule(home=home).idea_add(AddIdeaRequest(title="MCP Archive Idea"))
+    edited_idea = idea_edit_tool(
+        "",
+        home=str(home.root),
+        idea_id="mcp-routine-idea",
+        title="MCP Routine Plan",
+    )
+    promoted = idea_promote_routine_tool(
+        "",
+        home=str(home.root),
+        idea_id=edited_idea["idea"]["id"],
+        next_due="2026-07-12",
+        schedule={"frequency": "weekly", "interval": 1, "weekdays": ["sun"]},
+    )
+    paused = routine_pause_tool("", home=str(home.root), routine_id=promoted["routine"]["id"])
+    resumed = routine_resume_tool(
+        "",
+        home=str(home.root),
+        routine_id=promoted["routine"]["id"],
+        today="2026-07-12",
+    )
+    digest = task_digest_tool("", home=str(home.root), today="2026-07-12", notify=True)
+    archived = routine_archive_tool("", home=str(home.root), routine_id=promoted["routine"]["id"])
+    archived_idea = idea_archive_tool("", home=str(home.root), idea_id="mcp-archive-idea")
+
+    assert edited_task["task"]["title"] == "MCP Edited Task"
+    assert promoted["routine"]["schedule"]["weekdays"] == ["sun"]
+    assert paused["routine"]["status"] == "paused"
+    assert resumed["routine"]["status"] == "active"
+    assert digest["status"] == "sent"
+    assert "MCP Edited Task" in sent[0]
+    assert archived["routine"]["status"] == "archived"
+    assert archived_idea["idea"]["status"] == "archived"
 
 
 def test_mcp_link_source_tool_promotes_indexed_item(tmp_path):

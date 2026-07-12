@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 from alcove.connectors.apple_notes import AppleNotesImportRequest, AppleNotesLocalImportRequest
@@ -24,6 +26,7 @@ from alcove.prompts import AddPromptRequest
 from alcove.mcp_context import McpInvocationContext as _McpInvocationContext
 from alcove.mcp_context import agent_payload as _agent_payload
 from alcove.mcp_toolsets import resolve_mcp_toolset
+from alcove.paths import compact_user_path
 from alcove.search import SearchRequest
 from alcove.tasks import AddIdeaRequest, AddRoutineRequest, AddTaskRequest
 
@@ -31,6 +34,9 @@ from alcove.tasks import AddIdeaRequest, AddRoutineRequest, AddTaskRequest
 from alcove.mcp_direct_tools import (
     gardener_tool,
     get_topic_tool,
+    idea_archive_tool,
+    idea_edit_tool,
+    idea_promote_routine_tool,
     idea_promote_tool,
     inbox_peek_tool,
     link_source_tool,
@@ -50,10 +56,15 @@ from alcove.mcp_direct_tools import (
     prompt_save_tool,
     revise_knowledge_tool,
     routine_add_tool,
+    routine_archive_tool,
     routine_list_tool,
     routine_materialize_due_tool,
+    routine_pause_tool,
+    routine_resume_tool,
     search_tool,
     task_add_tool,
+    task_digest_tool,
+    task_edit_tool,
     task_list_tool,
 )
 
@@ -61,6 +72,9 @@ __all__ = [
     "create_mcp_server",
     "gardener_tool",
     "get_topic_tool",
+    "idea_archive_tool",
+    "idea_edit_tool",
+    "idea_promote_routine_tool",
     "idea_promote_tool",
     "inbox_peek_tool",
     "link_source_tool",
@@ -80,11 +94,16 @@ __all__ = [
     "prompt_save_tool",
     "revise_knowledge_tool",
     "routine_add_tool",
+    "routine_archive_tool",
     "routine_list_tool",
     "routine_materialize_due_tool",
+    "routine_pause_tool",
+    "routine_resume_tool",
     "run_mcp_server",
     "search_tool",
     "task_add_tool",
+    "task_digest_tool",
+    "task_edit_tool",
     "task_list_tool",
 ]
 
@@ -104,6 +123,77 @@ def create_mcp_server(
         if fn.__name__ in enabled_tools:
             return mcp.tool(fn)
         return fn
+
+    @mcp.resource(
+        "alcove://home/config",
+        name="alcove_home_config",
+        mime_type="text/yaml",
+        description="Alcove home configuration file.",
+    )
+    def alcove_home_config() -> str:
+        path = _mcp_home_root(context) / "config.yml"
+        return _read_text_or_empty(path)
+
+    @mcp.resource(
+        "alcove://planner/tasks",
+        name="alcove_planner_tasks",
+        mime_type="application/json",
+        description="Alcove tasks, ideas, and routines source-of-truth JSON.",
+    )
+    def alcove_planner_tasks() -> str:
+        path = _mcp_home_root(context) / "tasks" / "tasks.json"
+        return _read_text_or_empty(path, default='{"tasks":[],"ideas":[],"routines":[]}\n')
+
+    @mcp.resource(
+        "alcove://radars/latest",
+        name="alcove_latest_radar_reports",
+        mime_type="application/json",
+        description="Latest radar report files grouped by radar id.",
+    )
+    def alcove_latest_radar_reports() -> str:
+        root = _mcp_home_root(context) / "radars" / "reports"
+        return json.dumps(_latest_radar_reports(root), ensure_ascii=False, indent=2)
+
+    @mcp.resource(
+        "alcove://radars/{date}",
+        name="alcove_radar_reports_by_date",
+        mime_type="application/json",
+        description="Radar report files for a date in YYYY-MM-DD format.",
+    )
+    def alcove_radar_reports_by_date(date: str) -> str:
+        root = _mcp_home_root(context) / "radars" / "reports"
+        return json.dumps(_radar_reports_for_date(root, date), ensure_ascii=False, indent=2)
+
+    @mcp.prompt(
+        "daily_briefing",
+        description="Guide an agent through a daily Alcove briefing.",
+    )
+    def daily_briefing(focus: str = "", home: str = "") -> str:
+        home_hint = home or context.default_home or "~/.alcove"
+        focus_line = f"\nFocus: {focus}" if focus else ""
+        return (
+            "Prepare a concise daily briefing from Alcove.\n"
+            f"Home: {home_hint}{focus_line}\n\n"
+            "Use broad reads first: alcove_search, recent radar reports, planner tasks, "
+            "pins, and managed knowledge-base evidence. Treat search results as leads; "
+            "inspect OKF records or source files before making claims. Do not mutate data "
+            "unless the user explicitly asks for a governed write."
+        )
+
+    @mcp.prompt(
+        "todo_review",
+        description="Guide an agent through reviewing Alcove tasks, ideas, and routines.",
+    )
+    def todo_review(home: str = "") -> str:
+        home_hint = home or context.default_home or "~/.alcove"
+        return (
+            "Review Alcove planner state and produce an actionable summary.\n"
+            f"Home: {home_hint}\n\n"
+            "Read alcove://planner/tasks and use task/idea/routine tools for governed "
+            "writes only after the user confirms changes. Group overdue, due soon, "
+            "waiting ideas, and routines that need adjustment. Preserve task ids in the "
+            "output so follow-up commands are easy."
+        )
 
     @tool
     def alcove_search(
@@ -254,6 +344,27 @@ def create_mcp_server(
         return context.scoped_app(workspace, home).global_home.task_list_payload(status)
 
     @tool
+    def alcove_task_edit(
+        task_id: str,
+        workspace: str = "",
+        home: str = "",
+        title: str | None = None,
+        notes: str | None = None,
+        tags: list[str] | None = None,
+        priority: str | None = None,
+        due: str | None = None,
+    ) -> dict[str, Any]:
+        """Edit a personal task through the governed planner write path."""
+        return context.scoped_app(workspace, home).global_home.task_edit_payload(
+            task_id,
+            title=title,
+            notes=notes,
+            tags=tags,
+            priority=priority,
+            due=due,
+        )
+
+    @tool
     def alcove_idea_promote(
         idea_id: str,
         workspace: str = "",
@@ -271,6 +382,51 @@ def create_mcp_server(
         )
 
     @tool
+    def alcove_idea_edit(
+        idea_id: str,
+        workspace: str = "",
+        home: str = "",
+        title: str | None = None,
+        notes: str | None = None,
+        tags: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Edit a low-friction idea through the governed planner write path."""
+        return context.scoped_app(workspace, home).global_home.idea_edit_payload(
+            idea_id,
+            title=title,
+            notes=notes,
+            tags=tags,
+        )
+
+    @tool
+    def alcove_idea_archive(
+        idea_id: str,
+        workspace: str = "",
+        home: str = "",
+    ) -> dict[str, Any]:
+        """Archive a low-friction idea."""
+        return context.scoped_app(workspace, home).global_home.idea_archive_payload(idea_id)
+
+    @tool
+    def alcove_idea_promote_routine(
+        idea_id: str,
+        workspace: str = "",
+        home: str = "",
+        priority: str = "medium",
+        next_due: str = "",
+        notes: str = "",
+        schedule: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Promote an idea into a recurring task template."""
+        return context.scoped_app(workspace, home).global_home.idea_promote_routine_payload(
+            idea_id=idea_id,
+            priority=priority,
+            next_due=next_due,
+            notes=notes,
+            schedule=schedule or {},
+        )
+
+    @tool
     def alcove_routine_add(
         title: str,
         workspace: str = "",
@@ -280,6 +436,7 @@ def create_mcp_server(
         priority: str = "medium",
         every_days: int = 1,
         next_due: str = "",
+        schedule: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create a recurring task template."""
         return context.scoped_app(workspace, home).global_home.routine_add_payload(
@@ -290,6 +447,7 @@ def create_mcp_server(
                 priority=priority,
                 every_days=every_days,
                 next_due=next_due,
+                schedule=schedule or {},
             )
         )
 
@@ -311,6 +469,52 @@ def create_mcp_server(
         """Create tasks for due recurring templates."""
         return context.scoped_app(workspace, home).global_home.routine_materialize_due_payload(
             today
+        )
+
+    @tool
+    def alcove_routine_pause(
+        routine_id: str,
+        workspace: str = "",
+        home: str = "",
+    ) -> dict[str, Any]:
+        """Pause a recurring task template."""
+        return context.scoped_app(workspace, home).global_home.routine_pause_payload(routine_id)
+
+    @tool
+    def alcove_routine_resume(
+        routine_id: str,
+        workspace: str = "",
+        home: str = "",
+        today: str = "",
+    ) -> dict[str, Any]:
+        """Resume a recurring task template."""
+        return context.scoped_app(workspace, home).global_home.routine_resume_payload(
+            routine_id,
+            today=today,
+        )
+
+    @tool
+    def alcove_routine_archive(
+        routine_id: str,
+        workspace: str = "",
+        home: str = "",
+    ) -> dict[str, Any]:
+        """Archive a recurring task template."""
+        return context.scoped_app(workspace, home).global_home.routine_archive_payload(routine_id)
+
+    @tool
+    def alcove_task_digest(
+        workspace: str = "",
+        home: str = "",
+        period: str = "weekly",
+        today: str = "",
+        notify: bool = False,
+    ) -> dict[str, Any]:
+        """Build a planner digest, optionally notifying through configured credentials."""
+        return context.scoped_app(workspace, home).global_home.task_digest_payload(
+            period=period,
+            today=today,
+            notify=notify,
         )
 
     @tool
@@ -1018,3 +1222,59 @@ def run_mcp_server(
     toolset: str | None = None,
 ) -> None:
     create_mcp_server(default_workspace, default_home, toolset=toolset).run()
+
+
+def _mcp_home_root(context: _McpInvocationContext, home: str = "") -> Path:
+    app = context.scoped_app("", home)
+    if app.runtime.home is None:
+        return Path("~/.alcove").expanduser()
+    return app.runtime.home.root
+
+
+def _read_text_or_empty(path: Path, *, default: str = "") -> str:
+    if not path.is_file():
+        return default
+    return path.read_text(encoding="utf-8")
+
+
+def _latest_radar_reports(root: Path) -> dict[str, Any]:
+    reports: dict[str, dict[str, str]] = {}
+    if not root.is_dir():
+        return {"reports": reports}
+    for radar_root in sorted(path for path in root.iterdir() if path.is_dir()):
+        latest = _latest_report_pair(radar_root)
+        if latest:
+            reports[radar_root.name] = latest
+    return {"reports": reports}
+
+
+def _radar_reports_for_date(root: Path, date: str) -> dict[str, Any]:
+    reports: dict[str, dict[str, str]] = {}
+    if not root.is_dir():
+        return {"date": date, "reports": reports}
+    for radar_root in sorted(path for path in root.iterdir() if path.is_dir()):
+        paths = {}
+        for suffix in ("md", "html", "ai.md"):
+            path = radar_root / f"{date}.{suffix}"
+            if path.is_file():
+                paths[suffix] = compact_user_path(path)
+        if paths:
+            reports[radar_root.name] = paths
+    return {"date": date, "reports": reports}
+
+
+def _latest_report_pair(radar_root: Path) -> dict[str, str]:
+    candidates = sorted(radar_root.glob("*.md"))
+    latest_date = ""
+    for path in candidates:
+        if path.name.endswith(".ai.md"):
+            continue
+        latest_date = max(latest_date, path.stem)
+    if not latest_date:
+        return {}
+    payload: dict[str, str] = {"date": latest_date}
+    for suffix in ("md", "html", "ai.md"):
+        path = radar_root / f"{latest_date}.{suffix}"
+        if path.is_file():
+            payload[suffix] = compact_user_path(path)
+    return payload

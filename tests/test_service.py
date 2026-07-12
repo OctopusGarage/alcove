@@ -6,7 +6,7 @@ from alcove.home import AlcoveHome
 from alcove.cli import main
 from alcove.radars import RadarDefinition, RadarModule, RadarSchedule, RadarSource
 from alcove.service import ServiceModule
-from alcove.tasks import AddRoutineRequest, TasksModule
+from alcove.tasks import AddRoutineRequest, AddTaskRequest, TasksModule
 
 
 def test_service_install_writes_dashboard_and_scheduler_launch_agents(tmp_path, monkeypatch):
@@ -75,6 +75,90 @@ def test_service_tick_materializes_routines_and_writes_stats(tmp_path):
     assert result["radars"]["ran"] == 1
     assert (home.paths().stats / "summary.json").is_file()
     assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
+def test_service_tick_sends_configured_task_digest(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    TasksModule(home=home).task_add(AddTaskRequest(title="Digest item"))
+    notifications_path = home.paths().tasks / "notifications.yml"
+    notifications_path.parent.mkdir(parents=True, exist_ok=True)
+    notifications_path.write_text(
+        "digests:\n  weekly:\n    enabled: true\n    day: sunday\n    notify: true\n",
+        encoding="utf-8",
+    )
+    sent: list[str] = []
+
+    def fake_send(*, home, text):
+        sent.append(text)
+        return {"status": "sent"}
+
+    monkeypatch.setattr("alcove.tasks.send_telegram_message", fake_send)
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["task_notifications"]["sent"] == 1
+    assert "weekly planner digest" in sent[0]
+
+
+def test_service_tick_sends_configured_task_digest_to_multiple_sinks(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    TasksModule(home=home).task_add(AddTaskRequest(title="Digest sink item"))
+    notifications_path = home.paths().tasks / "notifications.yml"
+    notifications_path.parent.mkdir(parents=True, exist_ok=True)
+    notifications_path.write_text(
+        "\n".join(
+            [
+                "digests:",
+                "  weekly:",
+                "    enabled: true",
+                "    day: sunday",
+                "    notify: true",
+                "    sinks:",
+                "      - type: telegram",
+                "      - type: feishu",
+                "        webhook_env: ALCOVE_TEST_FEISHU",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    sent_telegram: list[str] = []
+    sent_feishu: list[str] = []
+
+    def fake_send_telegram(*, home, text):
+        sent_telegram.append(text)
+        return {"status": "sent"}
+
+    def fake_send_feishu(*, home, sink, title, text, report_path=None):
+        sent_feishu.append(f"{title}\n{text}")
+        return {"status": "sent"}
+
+    monkeypatch.setattr("alcove.tasks.send_telegram_message", fake_send_telegram)
+    monkeypatch.setattr("alcove.tasks.send_feishu_message", fake_send_feishu)
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["task_notifications"]["sent"] == 1
+    notify = result["task_notifications"]["digests"][0]["notify"]
+    assert notify["status"] == "sent"
+    assert notify["sinks"]["telegram"]["status"] == "sent"
+    assert notify["sinks"]["feishu"]["status"] == "sent"
+    assert "Digest sink item" in sent_telegram[0]
+    assert "Digest sink item" in sent_feishu[0]
 
 
 def test_cli_service_install_status_and_tick(tmp_path, monkeypatch, capsys):

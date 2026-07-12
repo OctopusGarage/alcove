@@ -23,6 +23,7 @@ It keeps global user state separate from managed knowledge bases:
   under `~/.alcove/knowledge-bases/`.
 - Pins, tasks, prompts, projects, mounts, connector indexes, and dashboard state
   are global by default.
+- User automation jobs live under `~/.alcove/automations/`.
 - Usage statistics are local and privacy-safe: search text is not stored by
   default, only query length, result counts, filters, surface, and a local salted
   hash.
@@ -145,6 +146,15 @@ alcove radar run tech-news --skip-fetch --force --ai --notify --json
 alcove radar import-social-radar ~/.social_radar --json
 ```
 
+Automations:
+
+```sh
+alcove automation list --json
+alcove automation add-git-sync notes ~/notes --commit-message "chore: sync notes" --json
+alcove automation run-due --json
+alcove automation import-social-radar ~/.social_radar --home ~/.alcove --json
+```
+
 MCP and dashboard:
 
 ```sh
@@ -174,9 +184,10 @@ alcove blog check --stale --json
 
 The service layer keeps deterministic work outside AI-agent sessions: dashboard
 serving, stale connector refreshes, due routine materialization, OKF catalog
-rebuilds, usage rollups, health checks, scheduled radar runs, watched-source
-change detection, and blog article discovery. Blog sources can optionally capture new articles into a
-managed KB inbox through the configured capture adapter. AI summarization and
+rebuilds, usage rollups, health checks, scheduled radar runs, user automation
+jobs, watched-source change detection, and blog article discovery. Blog sources
+can optionally capture new articles into a managed KB inbox through the configured
+capture adapter. AI summarization and
 notifications are opt-in. When `--notify` is enabled with Telegram environment
 variables configured, Alcove sends one message per new article with its title,
 link, and captured `summary.md` content when available.

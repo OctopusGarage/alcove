@@ -175,6 +175,7 @@ def sample_payload(value: Any, *, depth: int = 0) -> Any:
                 "pin",
                 "task",
                 "idea",
+                "routine",
                 "prompt",
                 "project",
                 "mount",
@@ -223,7 +224,7 @@ def sample_score(value: Any) -> int:
                 "results",
             }:
                 score += 3
-            if key in {"item", "pin", "task", "idea", "prompt", "project", "mount"}:
+            if key in {"item", "pin", "task", "idea", "routine", "prompt", "project", "mount"}:
                 score += 2
             score += sample_score(item)
         return score
@@ -530,6 +531,12 @@ async def main() -> None:
             "notes": "Task fixture.",
             "tags": ["mcp"],
         })
+        await call("planner", "alcove_task_edit", {
+            "home": str(home),
+            "task_id": task["task"]["id"],
+            "title": "MCP Matrix Edited Task",
+            "priority": "high",
+        })
         cancel_task = await call("planner", "alcove_task_add", {
             "home": str(home),
             "title": "MCP Matrix Cancel Task",
@@ -543,11 +550,39 @@ async def main() -> None:
             "notes": "Idea fixture.",
             "tags": ["mcp"],
         })
+        archive_idea = await call("planner", "alcove_idea_add", {
+            "home": str(home),
+            "title": "MCP Matrix Archive Idea",
+            "notes": "Idea archive fixture.",
+            "tags": ["mcp"],
+        })
+        routine_idea = await call("planner", "alcove_idea_add", {
+            "home": str(home),
+            "title": "MCP Matrix Routine Idea",
+            "notes": "Idea to routine fixture.",
+            "tags": ["mcp"],
+        })
         await call("planner", "alcove_idea_list", {"home": str(home)})
+        await call("planner", "alcove_idea_edit", {
+            "home": str(home),
+            "idea_id": archive_idea["idea"]["id"],
+            "title": "MCP Matrix Edited Archive Idea",
+        })
+        await call("planner", "alcove_idea_archive", {
+            "home": str(home),
+            "idea_id": "mcp-matrix-edited-archive-idea",
+        })
         await call("planner", "alcove_idea_promote", {
             "home": str(home),
             "idea_id": idea["idea"]["id"],
             "notes": "Promoted by MCP matrix.",
+        })
+        promoted_routine = await call("planner", "alcove_idea_promote_routine", {
+            "home": str(home),
+            "idea_id": routine_idea["idea"]["id"],
+            "notes": "Promoted to routine by MCP matrix.",
+            "next_due": "2026-07-12",
+            "schedule": {"frequency": "weekly", "interval": 1, "weekdays": ["sun"]},
         })
         await call("planner", "alcove_task_complete", {
             "home": str(home),
@@ -568,6 +603,25 @@ async def main() -> None:
         await call("planner", "alcove_routine_materialize_due", {
             "home": str(home),
             "today": "2026-07-10",
+        })
+        await call("planner", "alcove_routine_pause", {
+            "home": str(home),
+            "routine_id": promoted_routine["routine"]["id"],
+        })
+        await call("planner", "alcove_routine_resume", {
+            "home": str(home),
+            "routine_id": promoted_routine["routine"]["id"],
+            "today": "2026-07-12",
+        })
+        await call("planner", "alcove_routine_archive", {
+            "home": str(home),
+            "routine_id": promoted_routine["routine"]["id"],
+        })
+        await call("planner", "alcove_task_digest", {
+            "home": str(home),
+            "period": "weekly",
+            "today": "2026-07-12",
+            "notify": False,
         })
 
         await call("external_indexes", "alcove_mount_add", {

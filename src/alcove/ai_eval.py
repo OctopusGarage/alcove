@@ -228,6 +228,7 @@ def _build_eval_packet(
         "warnings": warnings,
         "evidence": {
             "smoke": compact_packet(smoke),
+            "coverage_boundaries": compact_packet(_coverage_boundaries()),
             "real_home": compact_packet(real_home),
             "real_integrations": compact_packet(real_integration_summary_for_eval(integrations)),
             "integration_samples": compact_packet(
@@ -300,6 +301,46 @@ def _operating_model() -> dict[str, Any]:
             "fallback": (
                 "Direct file edits are repair-only fallbacks and should be followed by "
                 "validation, refresh, scan, or index rebuild commands."
+            ),
+        },
+    }
+
+
+def _coverage_boundaries() -> dict[str, Any]:
+    return {
+        "blog_monitor": {
+            "deterministic_eval_scope": [
+                "fixture-backed discovery success",
+                "capture-to-managed-KB inbox write",
+                "summary file presence",
+                "structured Telegram/Feishu notification contracts",
+                "structured failure alert with source_id, stage, error, and retry command",
+                "Hub routing instruction for active checks through alcove blog check",
+            ],
+            "release_grade_external_checks": [
+                "run alcove blog check against the user's configured Playwright sources",
+                "inspect generated inbox bundles and notification deliveries",
+                "run through launchd/service tick when scheduler wiring changes",
+            ],
+            "reason": (
+                "Live blog sites are unstable external dependencies; deterministic AI eval "
+                "keeps behavior contract coverage in-repo and reserves live discovery for "
+                "release-grade or user-data-specific checks."
+            ),
+        },
+        "agent_entries": {
+            "default_eval_scope": [
+                "generated Hub and managed-KB entry files",
+                "MCP stdio client list/call behavior",
+                "global-lite install plan rendering",
+            ],
+            "release_grade_cli_probe": (
+                "ALCOVE_AGENT_CLIENT_SMOKE_CODEX=1 "
+                "ALCOVE_AGENT_CLIENT_SMOKE_CLAUDE=1 scripts/smoke-agent-clients.sh"
+            ),
+            "reason": (
+                "Codex and Claude CLI probes are higher-cost checks, so the default eval "
+                "records whether they were enabled and the release-grade command to run."
             ),
         },
     }
@@ -565,6 +606,7 @@ def _modules() -> list[dict[str, Any]]:
                 "Does the failure alert path give enough source id, stage, and error context for an agent-assisted retry?",
                 "Are captured article paths, summary files, and notification status clear enough for user-facing reporting?",
                 "Is the distinction clear between deterministic scheduled summaries and optional AI/chat summaries?",
+                "Does the packet make clear whether blog evidence is fixture-backed contract coverage, live browser discovery, or release-time external verification?",
             ],
         },
         {

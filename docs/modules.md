@@ -92,8 +92,47 @@ derived search index rebuilt automatically by save/archive/search flows.
 
 Ideas, tasks, and routines are stored in `~/.alcove/tasks/tasks.json`.
 Active ideas and pending tasks participate in global search when `--home` is
-provided. Routines materialize only when `task materialize-due` or the matching
-MCP tool is called.
+provided.
+
+The planner model is:
+
+```text
+IDEA -> promote -> TASK
+     -> promote -> ROUTINE -> materialize -> TASK
+```
+
+- `IDEA`: low-friction capture; can be edited, archived, or promoted.
+- `TASK`: one-off work item with priority, optional due date, complete/cancel,
+  and overdue-first listing.
+- `ROUTINE`: recurring template with `daily`, `weekly`, or `monthly` schedule;
+  supports edit, pause, resume, archive, and idempotent materialization.
+
+Routines materialize when `task materialize-due`, the matching MCP tool, or the
+local service tick runs. The service can also send configured planner digests.
+Planner notification config lives at `~/.alcove/tasks/notifications.yml`; send
+state lives at `~/.alcove/tasks/notification-state.json`.
+
+Example notification config:
+
+```yaml
+digests:
+  weekly:
+    enabled: true
+    day: sunday
+    time: "21:00"
+    notify: true
+    sinks:
+      - type: telegram
+      - type: feishu
+        webhook_env: ALCOVE_FEISHU_WEBHOOK_URL
+        secret_env: ALCOVE_FEISHU_SECRET
+```
+
+Supported planner notification sinks are `telegram`, `feishu`, `tcb`, and
+`tmux_claude_bot`. If `sinks` is omitted, `telegram` is used for backward
+compatibility. `time` is optional; when present, the local service sends the
+digest only after that local time and records the period as sent so later ticks
+do not duplicate it.
 
 ## Mounts
 
@@ -186,6 +225,7 @@ launchd
 - check watched URL/feed sources,
 - check monitored blog sources,
 - run enabled scheduled radars,
+- run due user automation jobs,
 - rebuild the global OKF catalog,
 - run health repair,
 - refresh and prune usage rollups,
@@ -219,6 +259,36 @@ keeps discovery aligned with Clipsmith's browser-based capture model. Discovery
 and capture failures move the source to `needs_attention`, write a failed run,
 and optionally send a Telegram alert. The scheduler never starts Codex or
 Claude automatically; agent-assisted repair is a manual follow-up.
+
+## Automations
+
+Automations are generic repeatable user jobs under `~/.alcove/automations/`.
+They cover the generic "daily user task" capability from Social Radar without
+importing arbitrary Python modules as Alcove core behavior.
+
+```text
+~/.alcove/automations/
+├── jobs/*.yml
+├── runs/*.json
+└── events.jsonl
+```
+
+Supported job kinds are `shell`, `git-sync`, `alcove`, and guarded `agent`.
+The local service runs due jobs according to `ttl_hours`. Agent jobs are skipped
+unless `allow_service: true` is explicitly set or a manual command passes
+`--allow-agent`.
+
+```sh
+alcove automation list --json
+alcove automation add-git-sync notes ~/notes --commit-message "chore: sync notes" --json
+alcove automation run notes --json
+alcove automation run-due --json
+alcove automation import-social-radar ~/.social_radar --json
+```
+
+`import-social-radar` maps legacy `git_repos[]` to `git-sync` jobs and supported
+`ClaudeTask` modules to guarded `agent` jobs. Unsupported Python tasks are
+reported as skipped for manual review.
 
 ## Configurable Radars
 

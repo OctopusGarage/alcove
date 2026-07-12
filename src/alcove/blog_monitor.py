@@ -900,14 +900,36 @@ function hasManualActionText(text) {
         }
 
     def _notify_failure(self, source: BlogSource, *, stage: str, error: str) -> dict[str, Any]:
+        retry_command = self._failure_retry_command(source)
         if source.notify.channel != "telegram":
-            return {"status": "skipped", "reason": "unsupported notification channel"}
+            return {
+                "status": "skipped",
+                "reason": "unsupported notification channel",
+                "source_id": source.id,
+                "stage": stage,
+                "error": error,
+                "retry_command": retry_command,
+            }
         token = self._telegram_credential("ALCOVE_TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_TOKEN")
         chat_id = self._telegram_credential("ALCOVE_TELEGRAM_CHAT_ID", "TELEGRAM_CHAT_ID")
         if not token or not chat_id:
-            return {"status": "skipped", "reason": "telegram token or chat id missing"}
+            return {
+                "status": "skipped",
+                "reason": "telegram token or chat id missing",
+                "source_id": source.id,
+                "stage": stage,
+                "error": error,
+                "retry_command": retry_command,
+            }
         message = self._telegram_failure_message(source, stage=stage, error=error)
-        return self._send_telegram_message(token=token, chat_id=chat_id, text=message)
+        result = self._send_telegram_message(token=token, chat_id=chat_id, text=message)
+        return {
+            **result,
+            "source_id": source.id,
+            "stage": stage,
+            "error": error,
+            "retry_command": retry_command,
+        }
 
     def _telegram_article_message(
         self,
@@ -940,13 +962,16 @@ function hasManualActionText(text) {
             f"Error: {escape(error[:1200])}",
             f"Source ID: {escape(source.id)}",
             f"Stage: {escape(stage)}",
-            f"Retry: <code>alcove blog check {escape(source.id)} --json</code>",
+            f"Retry: <code>{escape(self._failure_retry_command(source))}</code>",
             f"URL: {escape(source.url)}",
             "",
             "Suggested action:",
             escape(action),
         ]
         return "\n".join(lines)
+
+    def _failure_retry_command(self, source: BlogSource) -> str:
+        return f"alcove blog check {source.id} --json"
 
     def _captured_article_summary(self, capture: dict[str, Any], max_chars: int = 1200) -> str:
         inbox_path = str(capture.get("inbox_path") or "")

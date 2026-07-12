@@ -113,7 +113,7 @@ alcove global install --default-kb social_media_posts
 - search,
 - pins,
 - prompts save/search/get,
-- tasks and ideas,
+- lightweight planner tools: tasks, ideas, task edit, complete/cancel,
 - manual-add into a default managed KB inbox when `--default-kb` is configured.
 
 It intentionally hides heavier/admin operations:
@@ -122,6 +122,7 @@ It intentionally hides heavier/admin operations:
 - mount scans,
 - export,
 - gardener,
+- routine administration and planner digest notification,
 - full KB archive/note/delete flows.
 
 Install a wider global surface only when the user explicitly wants it:
@@ -153,10 +154,12 @@ alcove service status
 One maintenance tick runs:
 
 - due routine materialization,
+- configured planner digest notification,
 - stale connector refresh,
 - watched-source checks,
 - monitored blog checks,
 - scheduled radar runs,
+- due user automation jobs,
 - global OKF catalog rebuild,
 - health check/fix,
 - usage rollup refresh and pruning,
@@ -171,6 +174,11 @@ Radar definitions may optionally enable `ai_summary` and Telegram `notify`.
 That AI step runs after deterministic fetching/scoring/report generation, uses
 the radar-specific prompt from the definition, and falls back to the original
 report if the AI provider fails.
+
+Automations are included in the scheduler as repeatable user maintenance jobs.
+Deterministic `shell`, `git-sync`, and `alcove` jobs can run when due. Guarded
+`agent` jobs do not run from launchd unless the job explicitly sets
+`allow_service: true`; manual execution can pass `--allow-agent`.
 
 Watchers:
 

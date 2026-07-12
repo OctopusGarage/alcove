@@ -6,6 +6,7 @@ from alcove.cli import main
 from alcove.home import AlcoveHome
 from alcove.mounts import AddMountRequest, MountsModule
 from alcove.okf_catalog import OkfCatalogModule
+from alcove.paths import compact_user_path
 from alcove.pins import AddPinRequest, PinsModule
 from alcove.projects import AddProjectRequest, ProjectsModule
 from alcove.prompts import AddPromptRequest, PromptsModule
@@ -18,7 +19,7 @@ def test_okf_catalog_builds_global_progressive_disclosure_entry(tmp_path):
     result = OkfCatalogModule(home).build()
 
     assert result["status"] == "built"
-    assert result["root"] == str(home.root / "okf")
+    assert result["root"] == compact_user_path(home.root / "okf")
     assert sorted(result["files"]) == [
         "external-indexes.md",
         "global-memory.md",

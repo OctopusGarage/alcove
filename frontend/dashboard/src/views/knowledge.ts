@@ -50,15 +50,20 @@ export function renderKnowledge(snapshot: DashboardSnapshot): string {
     })
     .join("");
   const rows = [
-    panel("Managed KBs", managed || emptyState("No managed KBs registered yet.")),
-    panel("Connectors", connectors || emptyState("No connectors yet.")),
-    panel("Mounts", mounts || emptyState("No mounts yet.")),
+    panel("Managed KBs", managed || emptyState("No managed KBs registered yet."), "knowledge-managed"),
+    panel("Connectors", connectors || emptyState("No connectors yet."), "knowledge-connectors"),
+    panel("Mounts", mounts || emptyState("No mounts yet."), "knowledge-mounts"),
   ].join("");
   return `
     <header class="page-head">
       <p class="eyebrow">Knowledge system</p>
       <h1>Knowledge</h1>
       <p>Review managed KB inboxes, indexed external folders, and connector freshness before starting deeper local knowledge investigation.</p>
+      ${pageJumps([
+        ["knowledge-managed", "Managed KBs"],
+        ["knowledge-connectors", "Connectors"],
+        ["knowledge-mounts", "Mounts"],
+      ])}
     </header>
     <section class="relationship">
       <div><b>Managed KBs</b><span>Writable knowledge roots with inbox, archive, notes, and OKF indexes.</span></div>
@@ -87,6 +92,14 @@ function moduleToolbar(label: string): string {
   `;
 }
 
-function panel(title: string, content: string): string {
-  return `<div class="panel"><h2>${escapeHtml(title)}</h2>${content}</div>`;
+function pageJumps(items: Array<[string, string]>): string {
+  return `
+    <div class="page-jumps" aria-label="Knowledge section jumps">
+      ${items.map(([target, label]) => `<button type="button" data-page-jump="${escapeHtml(target)}">${escapeHtml(label)}</button>`).join("")}
+    </div>
+  `;
+}
+
+function panel(title: string, content: string, id: string): string {
+  return `<div id="${escapeHtml(id)}" class="panel jump-panel" tabindex="-1"><h2>${escapeHtml(title)}</h2>${content}</div>`;
 }

@@ -10,6 +10,8 @@ the system design.
 - [Modules](modules.md): feature modules and storage contracts.
 - [Configurable Radars](radars.md): generic information radar definitions,
   source adapters, scheduled runs, and Social Radar migration.
+- [Automations](automations.md): repeatable user jobs, Social Radar task import,
+  service scheduling, and notification behavior.
 - [Data and Backup](data-and-backup.md): data locations, export, sync, encryption.
 - [Local Smoke / Agent Eval](evals/local-smoke.md): verification and repair workflows.
 - [Agent Quality Gates](evals/agent-quality-gates.md): Codex/Claude hook

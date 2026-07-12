@@ -20,6 +20,7 @@ Default global home:
 ├── watchers/                 watched URL/feed sources and change events
 ├── blog-monitor/             monitored blog sources and seen state
 ├── radars/                   radar definitions, run cache, reports, and OKF indexes
+├── automations/              repeatable user job configs, runs, and events
 ├── dashboard/                derived dashboard snapshot/build output
 ├── stats/
 │   ├── summary.json          derived usage summary
@@ -72,6 +73,19 @@ If a blog source has capture enabled, new articles are captured through the
 configured adapter and written under the selected managed KB inbox path, such as
 `social_media_posts/inbox/openai`. The source article remains external; Alcove
 stores seen state, run logs, and capture routing metadata.
+
+Automation state is Alcove-owned operational data:
+
+```text
+~/.alcove/automations/
+├── jobs/*.yml                 job definitions and latest run state
+├── runs/*.json                per-run audit records
+└── events.jsonl               automation run events
+```
+
+The source of truth for each automation is the YAML job file. Run records and
+events are append/derived operational evidence and can be pruned or archived
+separately from user knowledge.
 
 Usage logs are local operational data. Search events store query length, result
 count, filters, surface, outcome, and a local salted query hash. Raw query text

@@ -359,6 +359,7 @@ assert_json "radar import social radar" "$fixtures/radar-import-social-radar.jso
 
 run uv run python - "$home" "$kb" "$fixtures" <<'PY'
 import json
+import re
 import sys
 from pathlib import Path
 from types import MethodType
@@ -415,11 +416,23 @@ def fake_capture(self, source, article):
 
 
 def fake_send(self, *, token, chat_id, text):
+    def code_value(label):
+        match = re.search(rf"{label}: <code>([^<]+)</code>", text)
+        return match.group(1) if match else ""
+
+    def line_value(label):
+        match = re.search(rf"{label}: ([^\n]+)", text)
+        return match.group(1).strip() if match else ""
+
     return {
         "status": "sent",
         "http_status": 200,
         "attempts": 1,
         "text_excerpt": text[:180],
+        "source_id": line_value("Source ID"),
+        "stage": line_value("Stage"),
+        "error": line_value("Error"),
+        "retry_command": code_value("Retry"),
     }
 
 
@@ -474,7 +487,7 @@ assert_json "blog monitor success and failure" "$fixtures/blog-monitor-smoke.jso
 
 alcove okf --home "$home" catalog build --json > "$fixtures/okf-catalog.json"
 assert_json "okf catalog" "$fixtures/okf-catalog.json" \
-  "payload['status'] == 'built' and 'search-map.md' in payload['files'] and Path(payload['root'], 'index.md').is_file()"
+  "payload['status'] == 'built' and 'search-map.md' in payload['files'] and (Path(payload['root']).expanduser() / 'index.md').is_file()"
 alcove health --home "$home" --kb research_notes --fix --json > "$fixtures/health.json"
 assert_json "health" "$fixtures/health.json" \
   "payload['status'] in {'ok', 'warnings'} and 'issues' in payload and 'actions' in payload"
@@ -531,7 +544,7 @@ printf '# Todo\n\n## Practice\n\n- todo smoke entry\n' > "$todo"
 alcove dashboard --home "$home" import-pins --regular-file "$regular" --todo-file "$todo" --json > "$fixtures/dashboard-import-pins.json"
 alcove okf --home "$home" catalog build --json > "$fixtures/okf-catalog.json"
 assert_json "okf catalog after dashboard pin import" "$fixtures/okf-catalog.json" \
-  "payload['status'] == 'built' and payload['counts']['pins'] >= 4 and 'search-map.md' in payload['files'] and Path(payload['root'], 'index.md').is_file()"
+  "payload['status'] == 'built' and payload['counts']['pins'] >= 4 and 'search-map.md' in payload['files'] and (Path(payload['root']).expanduser() / 'index.md').is_file()"
 alcove health --home "$home" --kb research_notes --fix --json > "$fixtures/health.json"
 assert_json "health after dashboard pin import" "$fixtures/health.json" \
   "payload['status'] in {'ok', 'warnings'} and payload['counts']['pins'] >= 4"

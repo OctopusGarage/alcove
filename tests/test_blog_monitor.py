@@ -445,6 +445,10 @@ def test_blog_discovery_failure_marks_attention_and_sends_alert(tmp_path, monkey
     assert row["status"] == "needs_attention"
     assert row["stage"] == "discovery"
     assert row["notify"]["status"] == "sent"
+    assert row["notify"]["source_id"] == "example"
+    assert row["notify"]["stage"] == "discovery"
+    assert row["notify"]["error"] == "blocked by challenge"
+    assert row["notify"]["retry_command"] == "alcove blog check example --json"
     assert source.status == "needs_attention"
     assert source.last_error == "blocked by challenge"
     assert "Blog Monitor Failed" in sent_payloads[0]["text"]

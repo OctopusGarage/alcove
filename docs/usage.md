@@ -164,10 +164,40 @@ alcove prompt save "Code Review Lens" \
   --use-case "PR review"
 alcove project add alcove /path/to/alcove --note "Personal information core"
 alcove task add "Wire MCP search" --priority high --tag mcp
+alcove task edit wire-mcp-search --due 2026-07-20 --priority high
 alcove idea add "Review mount design" --notes "Local folders first" --tag mounts
-alcove task routine-add "Weekly inbox review" --every-days 7 --next-due 2026-07-08
+alcove idea promote review-mount-design --due 2026-07-18
+alcove task routine-add "Weekly inbox review" \
+  --frequency weekly \
+  --weekday sun \
+  --next-due 2026-07-12
+alcove task routine-pause weekly-inbox-review
+alcove task routine-resume weekly-inbox-review
 alcove task materialize-due --today 2026-07-08 --json
+alcove task digest --period weekly --notify --json
 ```
+
+Planner digests are opt-in. To let the local service send a weekly digest,
+create `~/.alcove/tasks/notifications.yml`:
+
+```yaml
+digests:
+  weekly:
+    enabled: true
+    day: sunday
+    time: "21:00"
+    notify: true
+    sinks:
+      - type: telegram
+      - type: feishu
+        webhook_env: ALCOVE_FEISHU_WEBHOOK_URL
+        secret_env: ALCOVE_FEISHU_SECRET
+```
+
+`alcove task digest --period weekly --notify --json` also uses the configured
+weekly sinks. Without `sinks`, planner notifications default to Telegram. The
+local service honors `time` and records sent periods to avoid duplicate weekly
+messages.
 
 ## External Indexes
 
@@ -280,13 +310,16 @@ Manual maintenance tick:
 ```sh
 alcove service tick --home ~/.alcove --json
 alcove service tick --home ~/.alcove --skip-radars --json
+alcove service tick --home ~/.alcove --skip-automations --json
 ```
 
-Each tick materializes due routines, refreshes stale connector sources, checks
-watchers and monitored blogs, runs enabled scheduled radars, rebuilds the global
-OKF catalog, runs health repair, refreshes usage rollups, prunes old usage
-events, and rebuilds the dashboard snapshot. This is deterministic maintenance;
-blog summary and notification are opt-in.
+Each tick materializes due routines, sends configured planner digests, refreshes
+stale connector sources, checks watchers and monitored blogs, runs enabled
+scheduled radars, runs due user automation jobs, rebuilds the global OKF
+catalog, runs health repair, refreshes usage rollups, prunes old usage events,
+and rebuilds the dashboard snapshot. This is deterministic maintenance; blog
+summary, radar AI analysis, automation notifications, and agent automation jobs
+are opt-in.
 
 Watch a site or feed:
 
@@ -355,6 +388,33 @@ ALCOVE_TELEGRAM_CHAT_ID=...
 
 Credential priority is `ALCOVE_*` process environment, then `~/.alcove/.env`,
 then generic `TELEGRAM_*` process environment.
+
+## Automations
+
+Automations are repeatable user jobs stored under `~/.alcove/automations/`.
+They are useful for local maintenance such as syncing exported notes or backing
+up repositories.
+
+```sh
+alcove automation list --home ~/.alcove --json
+alcove automation add-shell "backup cache" \
+  --cmd "rsync -a ~/source/ ~/backup/" \
+  --ttl-hours 24 \
+  --json
+alcove automation add-git-sync notes ~/notes \
+  --commit-message "chore: sync notes" \
+  --notify \
+  --json
+alcove automation run notes --home ~/.alcove --json
+alcove automation run-due --home ~/.alcove --json
+alcove automation import-social-radar ~/.social_radar --home ~/.alcove --json
+```
+
+`shell`, `git-sync`, and `alcove` jobs can run from the local service when due.
+`agent` jobs are guarded: scheduled service execution requires
+`allow_service: true`, and manual execution requires `--allow-agent` unless the
+job is already service-approved. This keeps background launchd maintenance from
+silently starting Codex or Claude.
 
 ## Configurable Radars
 

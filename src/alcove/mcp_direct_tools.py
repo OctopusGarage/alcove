@@ -326,6 +326,31 @@ def task_list_tool(workspace: str = "", status: str = "pending", home: str = "")
     return McpInvocationContext().app(workspace, home).global_home.task_list_payload(status)
 
 
+def task_edit_tool(
+    workspace: str,
+    task_id: str,
+    title: str | None = None,
+    notes: str | None = None,
+    tags: list[str] | None = None,
+    priority: str | None = None,
+    due: str | None = None,
+    home: str = "",
+) -> dict[str, Any]:
+    """Edit a personal task."""
+    return (
+        McpInvocationContext()
+        .app(workspace, home)
+        .global_home.task_edit_payload(
+            task_id,
+            title=title,
+            notes=notes,
+            tags=tags,
+            priority=priority,
+            due=due,
+        )
+    )
+
+
 def idea_promote_tool(
     workspace: str,
     idea_id: str,
@@ -347,6 +372,50 @@ def idea_promote_tool(
     )
 
 
+def idea_edit_tool(
+    workspace: str,
+    idea_id: str,
+    title: str | None = None,
+    notes: str | None = None,
+    tags: list[str] | None = None,
+    home: str = "",
+) -> dict[str, Any]:
+    """Edit a low-friction idea."""
+    return (
+        McpInvocationContext()
+        .app(workspace, home)
+        .global_home.idea_edit_payload(idea_id, title=title, notes=notes, tags=tags)
+    )
+
+
+def idea_archive_tool(workspace: str, idea_id: str, home: str = "") -> dict[str, Any]:
+    """Archive a low-friction idea."""
+    return McpInvocationContext().app(workspace, home).global_home.idea_archive_payload(idea_id)
+
+
+def idea_promote_routine_tool(
+    workspace: str,
+    idea_id: str,
+    priority: str = "medium",
+    next_due: str = "",
+    notes: str = "",
+    schedule: dict[str, Any] | None = None,
+    home: str = "",
+) -> dict[str, Any]:
+    """Promote an idea into a recurring task template."""
+    return (
+        McpInvocationContext()
+        .app(workspace, home)
+        .global_home.idea_promote_routine_payload(
+            idea_id,
+            priority=priority,
+            next_due=next_due,
+            notes=notes,
+            schedule=schedule or {},
+        )
+    )
+
+
 def routine_add_tool(
     workspace: str,
     title: str,
@@ -355,6 +424,7 @@ def routine_add_tool(
     priority: str = "medium",
     every_days: int = 1,
     next_due: str = "",
+    schedule: dict[str, Any] | None = None,
     home: str = "",
 ) -> dict[str, Any]:
     """Create a recurring task template."""
@@ -369,6 +439,7 @@ def routine_add_tool(
                 priority=priority,
                 every_days=every_days,
                 next_due=next_due,
+                schedule=schedule or {},
             )
         )
     )
@@ -393,6 +464,47 @@ def routine_materialize_due_tool(
         McpInvocationContext()
         .app(workspace, home)
         .global_home.routine_materialize_due_payload(today)
+    )
+
+
+def routine_pause_tool(workspace: str, routine_id: str, home: str = "") -> dict[str, Any]:
+    """Pause a recurring task template."""
+    return McpInvocationContext().app(workspace, home).global_home.routine_pause_payload(routine_id)
+
+
+def routine_resume_tool(
+    workspace: str,
+    routine_id: str,
+    today: str = "",
+    home: str = "",
+) -> dict[str, Any]:
+    """Resume a recurring task template."""
+    return (
+        McpInvocationContext()
+        .app(workspace, home)
+        .global_home.routine_resume_payload(routine_id, today=today)
+    )
+
+
+def routine_archive_tool(workspace: str, routine_id: str, home: str = "") -> dict[str, Any]:
+    """Archive a recurring task template."""
+    return (
+        McpInvocationContext().app(workspace, home).global_home.routine_archive_payload(routine_id)
+    )
+
+
+def task_digest_tool(
+    workspace: str = "",
+    period: str = "weekly",
+    today: str = "",
+    notify: bool = False,
+    home: str = "",
+) -> dict[str, Any]:
+    """Build a planner digest, optionally notifying through configured credentials."""
+    return (
+        McpInvocationContext()
+        .app(workspace, home)
+        .global_home.task_digest_payload(period=period, today=today, notify=notify)
     )
 
 

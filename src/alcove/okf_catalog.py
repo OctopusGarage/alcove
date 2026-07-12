@@ -60,7 +60,7 @@ class OkfCatalogModule:
         files = [path for path in CATALOG_FILES if (self.root / path).is_file()]
         return {
             "status": "built",
-            "root": str(self.root),
+            "root": compact_user_path(self.root),
             "files": files,
             "counts": {
                 "managed_kbs": len(context["managed_kbs"]),

@@ -50,12 +50,16 @@ export function renderTasks(snapshot: DashboardSnapshot): string {
       "routine",
     ),
   );
-  const rows = [...tasks, ...ideas, ...routines];
   return `
     <header class="page-head">
       <p class="eyebrow">Personal planning</p>
       <h1>Planner</h1>
       <p>Shows open tasks, ideas, and routines that need attention, practice, or a follow-up decision.</p>
+      ${pageJumps([
+        ["planner-tasks", "Task List"],
+        ["planner-ideas", "Idea Inbox"],
+        ["planner-routines", "Routine Templates"],
+      ])}
     </header>
     <section class="module-list" data-filter-list data-filter-limit="12" data-filter-mobile-limit="8">
       ${moduleToolbar("Search planner items", [
@@ -66,7 +70,11 @@ export function renderTasks(snapshot: DashboardSnapshot): string {
         ["", "High priority", "priority: high"],
         ["", "Overdue", "state: overdue"],
       ])}
-      <div class="list" data-filter-items>${rows.join("") || emptyState("No planner items yet.")}</div>
+      <div class="source-columns" data-filter-items>
+        ${panel("Tasks", tasks.join("") || emptyState("No tasks yet."), "planner-tasks")}
+        ${panel("Ideas", ideas.join("") || emptyState("No ideas yet."), "planner-ideas")}
+        ${panel("Routines", routines.join("") || emptyState("No routines yet."), "planner-routines")}
+      </div>
     </section>
   `;
 }
@@ -116,6 +124,18 @@ function quickFilters(filters: Array<[string, string, string?]>): string {
         .join("")}
     </div>
   `;
+}
+
+function pageJumps(items: Array<[string, string]>): string {
+  return `
+    <div class="page-jumps" aria-label="Planner section jumps">
+      ${items.map(([target, label]) => `<button type="button" data-page-jump="${escapeHtml(target)}">${escapeHtml(label)}</button>`).join("")}
+    </div>
+  `;
+}
+
+function panel(title: string, content: string, id: string): string {
+  return `<div id="${escapeHtml(id)}" class="panel jump-panel" tabindex="-1"><h2>${escapeHtml(title)}</h2>${content}</div>`;
 }
 
 function row(title: string, detail: string, badge: string, kind: string): string {

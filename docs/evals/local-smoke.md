@@ -246,6 +246,17 @@ Codex or Claude model clients unless the opt-in environment variables are set.
   `ALCOVE_AI_EVAL_PROVIDER=claude`.
 - Writes `.tmp/ai-eval/ai-review.json` and validates that the result is
   machine-readable JSON.
+- Blog monitor evidence is deterministic by default: fixture-backed discovery,
+  capture-to-inbox, summary output, notification contract, and structured
+  failure alerts. Live Playwright checks against user-configured blog sites are
+  release-grade or user-data-specific checks because external sites can drift.
+
+Run the release-grade Codex/Claude entry probe when agent prompts, skills, or
+entry wiring change:
+
+```sh
+ALCOVE_AGENT_CLIENT_SMOKE_CODEX=1 ALCOVE_AGENT_CLIENT_SMOKE_CLAUDE=1 scripts/smoke-agent-clients.sh
+```
 
 ## What `scripts/agent-quality-gate.sh` Covers
 
@@ -289,7 +300,10 @@ The smoke suite intentionally does not:
 
 - Drive login-gated X, XHS, or WeChat captures.
 - Pull private GitHub or authenticated connector data.
-- Validate a real Codex or Claude MCP client configuration outside stdio.
+- Validate a real Codex or Claude MCP client configuration outside stdio unless
+  the optional CLI probes are explicitly enabled.
+- Prove live Playwright discovery against every user-configured blog source on
+  every eval run.
 - Prove interactive Codex/Claude UI behavior unless the optional CLI probes are
   explicitly enabled.
 
