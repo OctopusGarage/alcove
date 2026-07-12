@@ -1,24 +1,31 @@
 # Alcove
 
-Alcove is a local-first personal information alcove for knowledge, pins, tasks, mounted sources, and agent-readable memory.
+[![CI](https://github.com/OctopusGarage/alcove/actions/workflows/ci.yml/badge.svg)](https://github.com/OctopusGarage/alcove/actions/workflows/ci.yml)
+[![Gitleaks](https://github.com/OctopusGarage/alcove/actions/workflows/gitleaks.yml/badge.svg)](https://github.com/OctopusGarage/alcove/actions/workflows/gitleaks.yml)
+[![Project Health](https://github.com/OctopusGarage/alcove/actions/workflows/project-health.yml/badge.svg)](https://github.com/OctopusGarage/alcove/actions/workflows/project-health.yml)
+[![Pages](https://github.com/OctopusGarage/alcove/actions/workflows/pages.yml/badge.svg)](https://octopusgarage.github.io/alcove/)
+[![version](https://img.shields.io/badge/version-0.1.0-blue)](pyproject.toml)
+[![Python](https://img.shields.io/badge/python-%3E%3D3.12-brightgreen)](https://www.python.org/)
+[![uv](https://img.shields.io/badge/managed_with-uv-654FF0)](https://docs.astral.sh/uv/)
+[![Ruff](https://img.shields.io/badge/lint-Ruff-261230)](https://docs.astral.sh/ruff/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Phase 1
+Alcove is a local-first personal information system for managed knowledge bases,
+pins, tasks, projects, prompts, mounted sources, external connectors, and
+agent-readable memory.
 
-- workspace initialization
-- Markdown-first OKF knowledge writes
-- inbox peek and note processing
-- simple knowledge search
+Website: https://octopusgarage.github.io/alcove/
 
-Implemented modules now include Pins, Tasks/Routines, Mounts, Apple Notes export
-indexing, GitHub Stars indexing, source linking, MCP tools, and installer
-status/uninstall flows.
+It keeps global user state separate from managed knowledge bases:
 
-Alcove now separates a global user home from managed knowledge bases:
-
-- Global user state lives in `~/.alcove` by default, or `ALCOVE_HOME`.
+- Global state lives in `~/.alcove` by default, or `ALCOVE_HOME`.
 - Managed knowledge bases live wherever the user chooses and are registered
   under `~/.alcove/knowledge-bases/`.
-- Pins, tasks, mounts, and connector indexes are global by default.
+- Pins, tasks, prompts, projects, mounts, connector indexes, and dashboard state
+  are global by default.
+- Usage statistics are local and privacy-safe: search text is not stored by
+  default, only query length, result counts, filters, surface, and a local salted
+  hash.
 
 ## Install
 
@@ -35,111 +42,171 @@ uv run alcove --version
 uv tool install --force -e .
 ```
 
-Install entry profiles:
+## Quick Start
 
 ```sh
 alcove home init
-alcove kb add social_media_posts /path/to/social_media_posts
-alcove hub init ~/AlcoveHub --default-kb social_media_posts
-alcove global install
-alcove kb install social_media_posts
+alcove kb add research_notes /path/to/research_notes
+alcove hub init ~/AlcoveHub --default-kb research_notes
+alcove global install --default-kb research_notes
+alcove kb install research_notes
 ```
 
-## Commands
+For local Alcove development, install Hub/KB workflow skills as symlinks to the
+source templates:
 
 ```sh
-uv run alcove init .
-uv run alcove home init
-uv run alcove kb add social_media_posts /path/to/social_media_posts
-uv run alcove kb list --json
-uv run alcove hub init ~/AlcoveHub --default-kb social_media_posts
-uv run alcove global install
-uv run alcove kb install social_media_posts
-uv run alcove status .
-uv run alcove doctor --kb social_media_posts --json
-uv run alcove inbox --kb social_media_posts peek
-uv run alcove inbox --kb social_media_posts read web/example
-uv run alcove inbox --kb social_media_posts manual-add "Manual Thought" --content "Copied note text" --source "chat://manual"
-uv run alcove knowledge --kb social_media_posts note-source --platform xhs --title "Example" --topic agent-engineering/agent-harness --summary "Summary"
-uv run alcove search "Example" --kb social_media_posts
-uv run alcove search --kb social_media_posts --tags
-uv run alcove search --kb social_media_posts --recent 10
-uv run alcove search --kb social_media_posts --tag agent-harness --platform web --json
-uv run alcove search --kb social_media_posts --unindexed --json
-uv run alcove pin add "Japanese Edge Launcher" --description "Launch Edge with TZ=Asia/Tokyo" --tag app-launcher
-uv run alcove pin list --tag app-launcher
-uv run alcove pin archive japanese-edge-launcher --confirm
-uv run alcove idea add "Review mount design" --notes "Local folders first" --tag mounts
-uv run alcove idea promote review-mount-design --priority high --due 2026-07-10
-uv run alcove task add "Wire MCP search" --priority high --tag mcp
-uv run alcove task complete wire-mcp-search
-uv run alcove task routine-add "Weekly inbox review" --every-days 7 --next-due 2026-07-08
-uv run alcove task materialize-due --today 2026-07-08 --json
-uv run alcove mount add ~/programming/github --name github --type local-folder --tag repos
-uv run alcove mount scan github --json
-uv run alcove connector apple-notes index ~/exports/apple-notes --tag apple-notes --json
-uv run alcove connector github-stars index ~/exports/github-stars.json --tag stars --json
-uv run alcove connector fetch "connectors/apple-notes#notes/example-note/note.json" --json
-uv run alcove link --kb social_media_posts source "connectors/github-stars#octopusgarage/alcove" ai-knowledge/knowledge-base --summary "Useful reference" --json
-uv run alcove export global ~/alcove-backup --json
-uv run alcove export kb social_media_posts ~/alcove-backup/social_media_posts --json
-uv run alcove export all ~/alcove-backup-all --json
-uv run alcove serve --mcp
-uv run alcove global install --status --json
+alcove hub install ~/AlcoveHub --default-kb research_notes --link
+alcove kb install research_notes --link
 ```
 
-Recommended entry profiles:
+Both install modes support Claude Code and Codex. By default `--target all`
+writes both sets of files:
 
-- `alcove hub init`: project-local hub workspace for daily Alcove conversations.
-- `alcove global install`: lightweight MCP access from unrelated projects.
-- `alcove kb install`: project-local managed KB workflow files, Claude slash
-  commands, and Claude/Codex skills for inbox review, notes search, social post
-  processing, and Clipsmith capture handoff.
+| Agent | Installed files |
+| --- | --- |
+| Claude Code | `CLAUDE.md`, `.claude/skills/*/SKILL.md`, `.claude/commands/*.md` |
+| Codex | `AGENTS.md`, `.agents/skills/*/SKILL.md` |
 
-Alcove inbox folders can contain Clipsmith capture bundles. When `capture.json`
-is present, Alcove uses it as fallback metadata for title, source URL, and date
-while keeping Markdown files as the human-readable review surface.
+`--link` only symlinks Alcove-owned skills and Claude commands. `AGENTS.md` and
+`CLAUDE.md` stay normal files with an Alcove-managed section.
 
-Pins are small, high-value personal notes stored as Markdown under
-`~/.alcove/pins/` for global usage. They are included in `alcove search`
-alongside knowledge docs when `--home` is provided.
+Check installed entry profiles:
 
-Ideas, tasks, and routines are stored in `~/.alcove/tasks/tasks.json` for
-global usage. Active ideas and pending tasks are included in `alcove search`
-when `--home` is provided. Routines materialize only when
-`task materialize-due` or the matching MCP tool is called.
+```sh
+alcove hub init ~/AlcoveHub --default-kb research_notes --status --json
+alcove global install --status --json
+alcove kb install research_notes --status --json
+```
 
-Mounts let Alcove index external folders or local Git repositories without
-copying their content. Global mount registries and indexes live under
-`~/.alcove/mounts/`. Scanned mounted items are included in `alcove search`.
-Repeated scans reuse unchanged file index rows based on file size and mtime.
+Entry profiles:
 
-The Apple Notes connector indexes deterministic export directories produced by
-the local Apple Notes skill contract: `notes/<encoded-note-id>/note.json`.
-Alcove does not write to Notes.app and does not require Notes automation
-permission for indexing an existing export. `alcove connector fetch` can return
-the full local export detail for indexed Apple Notes hits.
+- `alcove hub init`: local hub workspace for broad personal knowledge work.
+- `alcove global install`: lightweight MCP access from unrelated projects
+  (`--toolset lite` by default).
+- `alcove kb install`: managed-KB workflow files, commands, and skills.
 
-The GitHub Stars connector indexes local JSON exports of starred repositories.
-`alcove link source` promotes any indexed external item into an OKF Source while
-keeping the original mount or connector as the source of truth.
+## Core Commands
 
-The MCP server runs over stdio with FastMCP and exposes v1 tools for search,
-inbox, knowledge writes, topic lookup, pins, tasks, mounts, connectors, external
-source linking, export, doctor/validation, and gardener health reports.
-Global-aware MCP tools accept `home` so pins, tasks, mounts, connectors, export,
-and search do not need a managed KB workspace.
+Managed KB:
 
-`alcove install` writes MCP client config for Codex and Claude Code. Use
-`--print` to preview install or uninstall changes, `--status` to check whether
-the configured workspace matches, and `--uninstall` to remove only Alcove's MCP
-entry while preserving other servers.
-Prefer `alcove global install`, `alcove hub init`, and `alcove kb install` for
-new setups. The older `alcove install --workspace ...` path remains for
-compatibility.
+```sh
+alcove inbox --kb research_notes peek
+alcove inbox --kb research_notes manual-add "Manual Thought" \
+  --content "Copied note text" \
+  --source "chat://manual"
+alcove knowledge --kb research_notes note-source \
+  --platform web \
+  --title "Example" \
+  --topic agent-engineering/agent-harness \
+  --summary "Summary"
+alcove knowledge --kb research_notes revise \
+  concepts/agent-engineering/agent-harness/example.md \
+  --append "AI discussion follow-up" \
+  --tag mcp \
+  --json
+alcove search "Example" --kb research_notes
+```
 
-## Design
+Global memory:
 
-See [docs/architecture.md](docs/architecture.md) for the current architecture and feature overview.
+```sh
+alcove pin add "Useful Pattern" --description "Short reusable note" --tag reference
+alcove prompt save "Code Review Lens" --content "Review for correctness." --tag review
+alcove task add "Wire MCP search" --priority high --tag mcp
+alcove project add alcove /path/to/alcove --note "Personal information core"
+```
 
-See [docs/design/2026-07-07-alcove-design.md](docs/design/2026-07-07-alcove-design.md) for the Phase 1 design.
+External indexes:
+
+```sh
+alcove mount add /path/to/repos --name repos --type local-folder --tag repos
+alcove mount scan repos --json
+alcove connector github-stars import-url "https://github.com/octocat?tab=stars" --json
+alcove connector chrome-bookmarks import-local --tag bookmarks --json
+alcove connector apple-notes import-local --tag apple-notes --json
+alcove connector status --json
+```
+
+MCP and dashboard:
+
+```sh
+alcove serve --mcp
+alcove serve --mcp --kb research_notes
+alcove dashboard --home ~/.alcove build
+alcove serve --dashboard --home ~/.alcove --port 8765
+```
+
+Health:
+
+```sh
+alcove health --home ~/.alcove --json
+alcove health --home ~/.alcove --kb research_notes --fix --json
+```
+
+`--fix` repairs safe metadata/index drift: missing managed-KB OKF schema,
+pin/prompt indexes, and the global OKF catalog.
+
+Export:
+
+```sh
+alcove export global ~/alcove-backup --json
+alcove export kb research_notes ~/alcove-backup/research_notes --json
+alcove export all ~/alcove-backup-all --json
+```
+
+## Default Capture Adapter
+
+Alcove inboxes accept capture bundles from any collector that writes the inbox
+contract. The default capture adapter is Clipsmith:
+
+- GitHub: https://github.com/OctopusGarage/clipsmith
+- Project page: https://octopusgarage.github.io/clipsmith/
+
+Default handoff:
+
+```sh
+clipsmith sink inbox "<bundle_dir>" "<managed-kb-root>" --json
+```
+
+## Backup Recommendation
+
+Alcove data is local-first. Back up managed KB roots and `~/.alcove` outside the
+runtime. Recommended tools:
+
+- Scheduled Git sync: https://github.com/OctopusGarage/git-auto-sync
+- Git encryption before remote sync: https://github.com/AGWA/git-crypt
+
+Alcove does not manage backup scheduling or encryption keys.
+
+## Documentation
+
+- [Documentation Index](docs/README.md): map of user guides, architecture, ADRs,
+  and historical notes.
+- [Usage Guide](docs/usage.md): common CLI/MCP workflows.
+- [Entry Modes](docs/entry-modes.md): hub, global MCP, managed KB, and MCP
+  toolsets.
+- [Modules](docs/modules.md): feature modules and storage contracts.
+- [Alcove OKF Profile](docs/okf-profile.md): official OKF compatibility plus
+  Alcove's stricter write/index rules.
+- [Read/Write Operating Model](docs/read-write-model.md): broad AI-led reads and
+  narrow CLI/MCP-governed writes.
+- [Data and Backup](docs/data-and-backup.md): data locations, export, sync,
+  encryption.
+- [Architecture](docs/architecture.md): relationship model and implementation overview.
+- [Local Smoke / Agent Eval](docs/evals/local-smoke.md): verification and repair
+  workflows.
+- [Agent Quality Gates](docs/evals/agent-quality-gates.md): Codex/Claude hook
+  automation and AI eval trigger rules.
+
+## Verification
+
+```sh
+scripts/smoke.sh
+scripts/smoke-mcp-matrix.sh
+scripts/agent-quality-gate.sh --mode coach
+scripts/check.sh
+```
+
+See [docs/evals/local-smoke.md](docs/evals/local-smoke.md) for the full
+verification matrix.

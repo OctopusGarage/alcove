@@ -5,6 +5,7 @@ from datetime import datetime
 import re
 
 from alcove.markdown import MarkdownDoc, MarkdownRepository
+from alcove.okf import okf_schema_for
 from alcove.taxonomy import load_taxonomy, split_domain_topic
 from alcove.workspace import Workspace
 
@@ -192,6 +193,10 @@ class LifecycleModule:
             doc = self.repo.read_doc(path)
             frontmatter = {
                 **doc.frontmatter,
+                "schema": str(
+                    doc.frontmatter.get("schema")
+                    or okf_schema_for(str(doc.frontmatter.get("type") or ""))
+                ),
                 "status": "superseded",
                 "superseded_by": ref,
             }
@@ -230,6 +235,10 @@ class LifecycleModule:
                 raise ValueError("Cannot refresh a concept document without a path")
             frontmatter = {
                 **target.frontmatter,
+                "schema": str(
+                    target.frontmatter.get("schema")
+                    or okf_schema_for(str(target.frontmatter.get("type") or ""))
+                ),
                 "source_refs": source_refs,
                 "tags": tags,
                 "status": "active",
@@ -245,7 +254,14 @@ class LifecycleModule:
                 self.repo.write_doc(
                     concept.path,
                     MarkdownDoc(
-                        frontmatter={**doc.frontmatter, "status": "superseded"},
+                        frontmatter={
+                            **doc.frontmatter,
+                            "schema": str(
+                                doc.frontmatter.get("schema")
+                                or okf_schema_for(str(doc.frontmatter.get("type") or ""))
+                            ),
+                            "status": "superseded",
+                        },
                         body=doc.body,
                     ),
                 )
@@ -259,6 +275,7 @@ class LifecycleModule:
                 MarkdownDoc(
                     frontmatter={
                         "type": "Knowledge Concept",
+                        "schema": okf_schema_for("Knowledge Concept"),
                         "title": f"{topic_slug} refresh",
                         "domain": domain,
                         "topic": topic_slug,

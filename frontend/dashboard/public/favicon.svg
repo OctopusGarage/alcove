@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Alcove">
+  <rect width="64" height="64" rx="15" fill="#10231f"/>
+  <path d="M17 51V29c0-9.4 6.9-17 15-17s15 7.6 15 17v22H17Z" fill="#f4f0e4"/>
+  <path d="M23 47V30c0-6.5 4.2-12 9-12s9 5.5 9 12v17H23Z" fill="#10231f"/>
+  <path d="M25 41h14" stroke="#f4f0e4" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="28" cy="31" r="4.5" fill="#37b6a0"/>
+  <circle cx="37" cy="36" r="4.5" fill="#f6b44b"/>
+  <path d="M29.5 32.5 35.5 35" stroke="#f4f0e4" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

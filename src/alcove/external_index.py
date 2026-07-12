@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
+from alcove.paths import compact_user_path
+
 
 ExternalIndexItem = dict[str, Any]
 ExternalItemKind = Literal["connector", "mount"]
@@ -182,7 +184,13 @@ class ExternalIndexStore:
         for dataset in self.connector_datasets():
             if dataset.source_id != ref.source_id:
                 continue
-            return self._find_item(dataset.items, ref.relative_path)
+            item = self._find_item(dataset.items, ref.relative_path)
+            if item is not None:
+                return item
+            return self._find_unique_connector_item_by_legacy_path(
+                dataset.items,
+                ref.relative_path,
+            )
         return None
 
     def _find_mount_item(self, ref: ExternalItemReference) -> ExternalIndexItem | None:
@@ -206,6 +214,22 @@ class ExternalIndexStore:
         for item in items:
             if str(item.get("relative_path") or "") == relative_path:
                 return item
+        return None
+
+    def _find_unique_connector_item_by_legacy_path(
+        self,
+        items: list[ExternalIndexItem],
+        relative_path: str,
+    ) -> ExternalIndexItem | None:
+        suffix = f"/{relative_path}"
+        matches = [
+            item
+            for item in items
+            if str(item.get("source_id") or "")
+            and str(item.get("relative_path") or "").endswith(suffix)
+        ]
+        if len(matches) == 1:
+            return matches[0]
         return None
 
     def _find_mount_item_in_legacy_dataset(
@@ -250,7 +274,7 @@ class ExternalIndexItemFactory:
             "mount_id": mount_id,
             "mount_name": mount_name,
             "mount_type": mount_type,
-            "path": str(path),
+            "path": compact_user_path(path),
             "relative_path": relative_path,
             "title": title,
             "text": text[:4000],
@@ -290,7 +314,7 @@ class ExternalIndexItemFactory:
             "title": title,
             "account": account,
             "folder_path": folder_path,
-            "path": path,
+            "path": compact_user_path(path) if path else "",
             "resource": resource,
             "relative_path": relative_path,
             "text": text[:4000],

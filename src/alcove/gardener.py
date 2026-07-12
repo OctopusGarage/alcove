@@ -6,6 +6,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from alcove.markdown import MarkdownDoc, MarkdownRepository
+from alcove.okf import okf_schema_for
 from alcove.validate import ValidateModule
 from alcove.workspace import Workspace
 
@@ -94,7 +95,7 @@ class GardenerModule:
                         "message": f"Topic {topic!r} has {count} active sources but no Entity docs",
                     }
                 )
-        return issues
+        return [self._enrich_issue(issue) for issue in issues]
 
     def gardener(self, prune: bool = False) -> GardenerReport:
         issues = self.scan()
@@ -116,7 +117,15 @@ class GardenerModule:
                         self.repo.write_doc(
                             path,
                             MarkdownDoc(
-                                frontmatter={**doc.frontmatter, "status": "active"}, body=doc.body
+                                frontmatter={
+                                    **doc.frontmatter,
+                                    "schema": str(
+                                        doc.frontmatter.get("schema")
+                                        or okf_schema_for(str(doc.frontmatter.get("type") or ""))
+                                    ),
+                                    "status": "active",
+                                },
+                                body=doc.body,
                             ),
                         )
                         actions.append({"action": "added_status", "path": str(path)})
@@ -127,7 +136,15 @@ class GardenerModule:
                         self.repo.write_doc(
                             path,
                             MarkdownDoc(
-                                frontmatter={**doc.frontmatter, "status": "stale"}, body=doc.body
+                                frontmatter={
+                                    **doc.frontmatter,
+                                    "schema": str(
+                                        doc.frontmatter.get("schema")
+                                        or okf_schema_for(str(doc.frontmatter.get("type") or ""))
+                                    ),
+                                    "status": "stale",
+                                },
+                                body=doc.body,
                             ),
                         )
                         actions.append({"action": "marked_stale", "path": str(path)})
@@ -151,3 +168,33 @@ class GardenerModule:
                 "message": f"Published {published}, confidence {confidence}",
             }
         return None
+
+    def _enrich_issue(self, issue: dict) -> dict:
+        kind = str(issue.get("kind") or "")
+        severity = {
+            "dead_source_ref": "high",
+            "missing_path": "high",
+            "missing_type": "medium",
+            "missing_status": "medium",
+            "stale_source": "medium",
+            "question_backlog": "medium",
+            "entity_backlog": "medium",
+            "empty_tag": "low",
+            "orphan_tag": "low",
+        }.get(kind, "medium")
+        suggested_action = {
+            "dead_source_ref": "Fix or remove the broken source_refs entry.",
+            "missing_path": "Create the missing managed workspace directory.",
+            "missing_type": "Add OKF frontmatter type to the markdown document.",
+            "missing_status": "Add status: active or choose a more precise lifecycle status.",
+            "stale_source": "Review the source, refresh it, or mark it stale.",
+            "question_backlog": "Add a reusable Question doc for the topic.",
+            "entity_backlog": "Add an Entity doc for recurring tools, projects, or platforms.",
+            "empty_tag": "Delete the empty tag or add references before pruning.",
+            "orphan_tag": "Keep if intentionally rare; otherwise merge with a broader tag.",
+        }.get(kind, "Review the issue and decide whether to fix, merge, or ignore it.")
+        return {
+            "severity": severity,
+            **issue,
+            "suggested_action": suggested_action,
+        }

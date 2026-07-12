@@ -5,7 +5,8 @@ import json
 
 from alcove.connectors.github_stars import GitHubStarsConnector, GitHubStarsImportRequest
 from alcove.home import AlcoveHome
-from alcove.knowledge import KnowledgeModule, NoteSourceRequest
+from alcove.knowledge import AddConceptRequest, KnowledgeModule, NoteSourceRequest
+from alcove.markdown import MarkdownRepository
 from alcove.mcp_server import (
     create_mcp_server,
     gardener_tool,
@@ -15,7 +16,19 @@ from alcove.mcp_server import (
     link_source_tool,
     mount_list_tool,
     note_source_tool,
+    okf_catalog_build_tool,
+    revise_knowledge_tool,
     pin_add_tool,
+    pin_get_tool,
+    pin_rebuild_index_tool,
+    pin_render_html_tool,
+    pin_search_tool,
+    pin_update_tool,
+    project_add_tool,
+    project_find_tool,
+    prompt_get_tool,
+    prompt_rebuild_index_tool,
+    prompt_save_tool,
     routine_add_tool,
     routine_list_tool,
     routine_materialize_due_tool,
@@ -25,6 +38,7 @@ from alcove.mcp_server import (
 )
 from alcove.mounts import AddMountRequest, MountsModule
 from alcove.tasks import AddIdeaRequest, TasksModule
+from alcove.usage import UsageRecorder
 from alcove.workspace import Workspace
 
 
@@ -43,7 +57,8 @@ def test_mcp_search_tool_returns_search_payload(tmp_path):
 
     payload = search_tool(str(tmp_path), query="searchable", tag="mcp", type_filter="Source")
 
-    assert payload["workspace"] == str(tmp_path.resolve())
+    assert "workspace" not in payload
+    assert "_diagnostic" not in payload
     assert payload["count"] == 1
     assert payload["results"][0]["title"] == "MCP Search Source"
     json.dumps(payload, ensure_ascii=False)
@@ -100,6 +115,64 @@ def test_mcp_global_home_tools_do_not_require_workspace(tmp_path):
     assert {row["root"] for row in search_payload["results"]} == {"pins", "tasks"}
 
 
+def test_mcp_search_records_privacy_safe_usage(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    task_add_tool("", home=str(home.root), title="MCP Usage Needle", notes="Searchable MCP usage.")
+
+    payload = search_tool("", home=str(home.root), query="mcp usage")
+    events = (home.paths().logs / "usage.jsonl").read_text(encoding="utf-8")
+    summary = UsageRecorder(home).summary()
+
+    assert payload["count"] == 1
+    assert payload["results"][0]["title"] == "MCP Usage Needle"
+    assert summary["search"]["surfaces"] == {"mcp": 1}
+    assert "mcp usage" not in events
+
+
+def test_mcp_project_and_prompt_tools_use_global_home(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    project_root = tmp_path / "alcove"
+    project_root.mkdir()
+
+    project_payload = project_add_tool(
+        "",
+        home=str(home.root),
+        alias="alcove",
+        path=str(project_root),
+        note="Knowledge manager.",
+    )
+    find_payload = project_find_tool("", home=str(home.root), keyword="knowledge")
+    prompt_payload = prompt_save_tool(
+        "",
+        home=str(home.root),
+        title="Review Lens",
+        content="Check regressions and missing tests.",
+        tags=["review"],
+    )
+    get_payload = prompt_get_tool("", home=str(home.root), prompt_id="review-lens")
+    index_payload = prompt_rebuild_index_tool("", home=str(home.root))
+    search_payload = search_tool("", home=str(home.root), query="regressions")
+
+    assert project_payload["project"]["alias"] == "alcove"
+    assert find_payload["projects"][0]["path"] == str(project_root.resolve())
+    assert prompt_payload["prompt"]["id"] == "review-lens"
+    assert get_payload["prompt"]["content"] == "Check regressions and missing tests."
+    assert index_payload["status"] == "rebuilt"
+    assert index_payload["count"] == 1
+    assert {row["root"] for row in search_payload["results"]} >= {"prompts"}
+
+
+def test_mcp_okf_catalog_build_tool_uses_global_home(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+
+    payload = okf_catalog_build_tool("", home=str(home.root))
+
+    assert payload["home"] == str(home.root)
+    assert payload["status"] == "built"
+    assert "search-map.md" in payload["files"]
+    assert (home.root / "okf" / "index.md").is_file()
+
+
 def test_mcp_server_registers_v1_tools(tmp_path):
     Workspace.init(tmp_path)
     mcp = create_mcp_server(str(tmp_path))
@@ -120,12 +193,32 @@ def test_mcp_server_registers_v1_tools(tmp_path):
         "alcove_knowledge_add_note",
         "alcove_knowledge_add_question",
         "alcove_knowledge_add_entity",
+        "alcove_knowledge_revise",
+        "alcove_knowledge_delete",
         "alcove_knowledge_promote",
         "alcove_knowledge_refresh",
         "alcove_knowledge_topics",
         "alcove_pin_add",
         "alcove_pin_list",
+        "alcove_pin_get",
+        "alcove_pin_search",
+        "alcove_pin_update",
+        "alcove_pin_rebuild_index",
+        "alcove_pin_render_html",
         "alcove_pin_archive",
+        "alcove_project_add",
+        "alcove_project_get",
+        "alcove_project_find",
+        "alcove_project_list",
+        "alcove_project_remove",
+        "alcove_project_roots_set",
+        "alcove_prompt_save",
+        "alcove_prompt_search",
+        "alcove_prompt_get",
+        "alcove_prompt_archive",
+        "alcove_prompt_tags",
+        "alcove_prompt_rebuild_index",
+        "alcove_okf_catalog_build",
         "alcove_task_add",
         "alcove_task_list",
         "alcove_task_complete",
@@ -141,8 +234,14 @@ def test_mcp_server_registers_v1_tools(tmp_path):
         "alcove_mount_add",
         "alcove_mount_scan",
         "alcove_connector_fetch",
+        "alcove_connector_status",
+        "alcove_connector_refresh",
         "alcove_connector_apple_notes_index",
+        "alcove_connector_apple_notes_import_local",
         "alcove_connector_github_stars_index",
+        "alcove_connector_github_stars_import_url",
+        "alcove_connector_chrome_bookmarks_index",
+        "alcove_connector_chrome_bookmarks_import_local",
         "alcove_gardener",
         "alcove_doctor",
         "alcove_validate",
@@ -152,15 +251,115 @@ def test_mcp_server_registers_v1_tools(tmp_path):
     }
 
 
+def test_mcp_server_lite_toolset_keeps_global_common_tools_small(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    mcp = create_mcp_server(default_home=str(home.root), toolset="lite")
+
+    tools = {tool.name for tool in asyncio.run(mcp.list_tools())}
+
+    assert "alcove_search" in tools
+    assert "alcove_pin_add" in tools
+    assert "alcove_task_add" in tools
+    assert "alcove_prompt_save" in tools
+    assert "alcove_inbox_manual_add" in tools
+    assert "alcove_connector_github_stars_import_url" not in tools
+    assert "alcove_mount_scan" not in tools
+    assert "alcove_export_all" not in tools
+    assert len(tools) < 25
+
+
+def test_mcp_server_kb_toolset_keeps_kb_workflow_without_admin_tools(tmp_path):
+    Workspace.init(tmp_path)
+    mcp = create_mcp_server(default_workspace=str(tmp_path), toolset="kb")
+
+    tools = {tool.name for tool in asyncio.run(mcp.list_tools())}
+
+    assert "alcove_inbox_peek" in tools
+    assert "alcove_inbox_note" in tools
+    assert "alcove_knowledge_revise" in tools
+    assert "alcove_knowledge_delete" in tools
+    assert "alcove_validate" in tools
+    assert "alcove_connector_chrome_bookmarks_import_local" not in tools
+    assert "alcove_export_all" not in tools
+    assert "alcove_gardener" not in tools
+
+
+def test_mcp_tool_descriptions_encode_read_write_operating_model(tmp_path):
+    Workspace.init(tmp_path)
+    mcp = create_mcp_server(str(tmp_path))
+
+    tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
+
+    assert "candidate Alcove records" in tools["alcove_search"].description
+    assert "leads, not final truth" in tools["alcove_search"].description
+    assert "local files before answering" in tools["alcove_search"].description
+    assert "governed OKF write path" in tools["alcove_knowledge_revise"].description
+    assert "soft-delete" in tools["alcove_knowledge_delete"].description
+    assert "governed global write path" in tools["alcove_pin_update"].description
+    assert "governed prompt write path" in tools["alcove_prompt_save"].description
+    assert "derived global OKF catalog" in tools["alcove_okf_catalog_build"].description
+    assert "AI-led reads" in tools["alcove_okf_catalog_build"].description
+    assert "governed planner write path" in tools["alcove_task_add"].description
+    assert "Lazy-fetch detail" in tools["alcove_connector_fetch"].description
+    assert "before final synthesis" in tools["alcove_connector_fetch"].description
+
+
+def test_mcp_knowledge_revise_tool_updates_existing_note(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    KnowledgeModule(workspace).add_concept(
+        AddConceptRequest(
+            topic="agent-engineering/agent-harness",
+            title="MCP Revision",
+            summary="Old MCP summary.",
+            tags=["mcp"],
+        )
+    )
+
+    payload = revise_knowledge_tool(
+        str(workspace.root),
+        path="concepts/agent-engineering/agent-harness/mcp-revision.md",
+        summary="New MCP summary.",
+        append="MCP 调用补充的讨论记录。",
+        tags=["managed-kb"],
+        source_refs=["sources/chat/agent-engineering/mcp-discussion.md"],
+        reason="MCP discussion",
+    )
+
+    doc = MarkdownRepository().read_doc(
+        workspace.paths().knowledge
+        / "concepts"
+        / "agent-engineering"
+        / "agent-harness"
+        / "mcp-revision.md"
+    )
+    assert payload["status"] == "revised"
+    assert doc.frontmatter["tags"] == ["mcp", "managed-kb"]
+    assert "MCP 调用补充的讨论记录。" in doc.body
+
+
 def test_mcp_server_default_home_routes_global_tools(tmp_path):
     home = AlcoveHome.init(tmp_path / "home")
     mcp = create_mcp_server(default_home=str(home.root))
 
     add_result = asyncio.run(mcp.call_tool("alcove_task_add", {"title": "Default Home MCP Task"}))
+    project_result = asyncio.run(
+        mcp.call_tool(
+            "alcove_project_add",
+            {"alias": "alcove", "path": str(tmp_path), "note": "Default project."},
+        )
+    )
+    prompt_result = asyncio.run(
+        mcp.call_tool(
+            "alcove_prompt_save",
+            {"title": "Default Prompt", "content": "Default home prompt."},
+        )
+    )
     list_result = asyncio.run(mcp.call_tool("alcove_task_list", {}))
 
     assert add_result.structured_content["home"] == str(home.root)
     assert add_result.structured_content["task"]["id"] == "default-home-mcp-task"
+    assert project_result.structured_content["project"]["alias"] == "alcove"
+    assert prompt_result.structured_content["prompt"]["id"] == "default-prompt"
     assert list_result.structured_content["home"] == str(home.root)
     assert list_result.structured_content["tasks"][0]["title"] == "Default Home MCP Task"
 
@@ -270,16 +469,37 @@ def test_mcp_pin_add_tool_creates_pin(tmp_path):
     payload = pin_add_tool(
         str(tmp_path),
         title="MCP Pin",
-        description="Pinned from MCP.",
+        summary="Pinned from MCP.",
+        content="Keep a reusable MCP pin visible.",
+        kind="regular",
         tags=["mcp"],
         priority="high",
         source_refs=["sources/web/demo.md"],
+        resources=["https://example.test/mcp-pin"],
     )
+    update_payload = pin_update_tool(
+        str(tmp_path),
+        pin_id="mcp-pin",
+        kind="todo",
+        content="Try the MCP pin workflow again.",
+        tags=["mcp", "practice"],
+    )
+    get_payload = pin_get_tool(str(tmp_path), pin_id="mcp-pin")
+    search_payload = pin_search_tool(str(tmp_path), query="workflow", kind="todo")
+    index_payload = pin_rebuild_index_tool(str(tmp_path))
+    html_payload = pin_render_html_tool(str(tmp_path))
 
     assert payload["workspace"] == str(tmp_path.resolve())
     assert payload["status"] == "pinned"
     assert payload["pin"]["id"] == "mcp-pin"
+    assert payload["pin"]["kind"] == "regular"
     assert payload["pin"]["source_refs"] == ["/sources/web/demo.md"]
+    assert payload["pin"]["resources"] == ["https://example.test/mcp-pin"]
+    assert update_payload["pin"]["kind"] == "todo"
+    assert get_payload["pin"]["tags"] == ["mcp", "practice"]
+    assert search_payload["count"] == 1
+    assert index_payload["status"] == "rebuilt"
+    assert html_payload["path"].endswith("pins/board.html")
 
 
 def test_mcp_task_add_and_list_tools_use_task_store(tmp_path):

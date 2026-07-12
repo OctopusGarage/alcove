@@ -9,11 +9,24 @@ class InboxPost:
     name: str
     path: Path
     platform: str
+    identifier: str
     title: str
     source: str | None
     date: str | None
     content: str
     content_source: str
+    capture_status: str = ""
+    capture_warnings: list[str] = field(default_factory=list)
+    content_files: list[dict] = field(default_factory=list)
+    content_outline: list[dict] = field(default_factory=list)
+    review_content: str = ""
+    review_summary: str = ""
+    review_outline: list[dict] = field(default_factory=list)
+    review_content_truncated: bool = False
+    review_content_omitted_chars: int = 0
+    content_truncated: bool = False
+    full_content_command: str = ""
+    full_content_hint: str = ""
 
 
 @dataclass(frozen=True)

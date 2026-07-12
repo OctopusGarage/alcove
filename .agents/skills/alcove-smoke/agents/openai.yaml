@@ -1,0 +1,4 @@
+interface:
+  display_name: "Alcove Smoke"
+  short_description: "Run Alcove smoke/eval suites and report verification evidence."
+  default_prompt: "Run the appropriate Alcove smoke/eval suite for the current change and report evidence."

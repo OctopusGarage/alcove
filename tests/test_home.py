@@ -32,19 +32,34 @@ def test_home_default_honors_alcove_home_environment(tmp_path, monkeypatch):
 
 def test_home_registers_and_lists_managed_knowledge_bases(tmp_path):
     home = AlcoveHome.init(tmp_path / "home")
-    kb_root = tmp_path / "social_media_posts"
+    kb_root = tmp_path / "research_notes"
     kb_root.mkdir()
 
-    record = home.register_knowledge_base("social_media_posts", kb_root)
+    record = home.register_knowledge_base("research_notes", kb_root)
     records = home.list_knowledge_bases()
-    loaded = home.get_knowledge_base("social_media_posts")
+    loaded = home.get_knowledge_base("research_notes")
 
-    assert record.name == "social_media_posts"
+    assert record.name == "research_notes"
     assert record.path == kb_root.resolve()
     assert loaded == record
     assert records == [record]
     assert (
-        (home.paths().knowledge_bases / "social_media_posts.yml")
-        .read_text()
-        .startswith("version: 1\n")
+        (home.paths().knowledge_bases / "research_notes.yml").read_text().startswith("version: 1\n")
     )
+
+
+def test_home_registry_persists_user_paths_with_tilde(tmp_path, monkeypatch):
+    user_home = tmp_path / "user-home"
+    monkeypatch.setenv("HOME", str(user_home))
+    home = AlcoveHome.init(user_home / ".alcove")
+    kb_root = user_home / "projects" / "research_notes"
+    kb_root.mkdir(parents=True)
+
+    record = home.register_knowledge_base("research_notes", kb_root)
+    raw_config = yaml.safe_load(
+        (home.paths().knowledge_bases / "research_notes.yml").read_text(encoding="utf-8")
+    )
+
+    assert raw_config["path"] == "~/projects/research_notes"
+    assert record.path == kb_root.resolve()
+    assert home.get_knowledge_base("research_notes").path == kb_root.resolve()

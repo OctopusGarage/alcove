@@ -1,16 +1,22 @@
 # Alcove Design
 
+> Historical note: this document captures the original 2026-07-07 phase-1
+> design. It predates the current Alcove Home, managed-KB registry, connector
+> index, dashboard, prompt, project, export, and expanded MCP model. For current
+> behavior, use `docs/usage.md`, `docs/modules.md`, `docs/architecture.md`, and
+> the ADRs.
+
 Date: 2026-07-07
 
 ## Summary
 
-Alcove is a local-first personal information core for knowledge, pins, tasks, mounted archives, and agent-readable memory. It lives at `~/programming/OctopusGarage/alcove`, exposes an `alcove` CLI, and runs a local MCP server for Codex, Claude Code, Cursor, and similar agents.
+Alcove is a local-first personal information core for knowledge, pins, tasks, mounted archives, and agent-readable memory. It lives in this repository, exposes an `alcove` CLI, and runs a local MCP server for Codex, Claude Code, Cursor, and similar agents.
 
-The first version should productize the existing `social_media_posts` knowledge workflow without turning Alcove into only a knowledge-base script. The architecture must leave clean room for personal pinned notes, task management, Apple Notes export, browser/bookmark sources, local folder mounts, GitHub repo mounts, and starred-repo indexes.
+The first version should productize the existing `research_notes` knowledge workflow without turning Alcove into only a knowledge-base script. The architecture must leave clean room for personal pinned notes, task management, Apple Notes export, browser/bookmark sources, local folder mounts, GitHub repo mounts, and starred-repo indexes.
 
 ## Goals
 
-- Extract the current OKF knowledge-management behavior from the `social_media_posts` project into a reusable standalone project.
+- Extract the current OKF knowledge-management behavior from the `research_notes` project into a reusable standalone project.
 - Preserve Markdown-first source-of-truth files so the user can inspect, edit, git-track, and migrate data without a database dependency.
 - Provide one shared Python core used by both the CLI and MCP server.
 - Start with a small set of high-leverage CLI commands and MCP tools rather than mirroring every internal helper.
@@ -32,10 +38,10 @@ The first version should productize the existing `social_media_posts` knowledge 
 
 The current knowledge workflow lives in:
 
-- `social_media_posts/.claude/skills/social_post_manager/scripts/post_manager.py`
-- `social_media_posts/.claude/skills/social_post_manager/scripts/okf_manager.py`
-- `social_media_posts/.claude/skills/social_post_manager/scripts/notes_search.py`
-- `social_media_posts/.claude/skills/social_post_manager/scripts/okf_gardener.py`
+- `research_notes/.claude/skills/social_post_manager/scripts/post_manager.py`
+- `research_notes/.claude/skills/social_post_manager/scripts/okf_manager.py`
+- `research_notes/.claude/skills/social_post_manager/scripts/notes_search.py`
+- `research_notes/.claude/skills/social_post_manager/scripts/okf_gardener.py`
 
 Important behaviors to preserve:
 
@@ -49,7 +55,7 @@ Important behaviors to preserve:
 
 ### CodeGraph
 
-`~/programming/github/codegraph` is the product-shape reference, not the implementation stack reference.
+CodeGraph is the product-shape reference, not the implementation stack reference.
 
 Useful patterns:
 
@@ -67,7 +73,7 @@ Patterns not needed in Alcove v1:
 
 ### Social Radar Tasks
 
-`~/programming/kingson4wu/social-radar` provides the task-system reference.
+The prior Social Radar project provides the task-system reference.
 
 Useful model:
 
@@ -80,7 +86,7 @@ For Alcove v1, adopt the object model but not the scheduler. Tasks are personal 
 
 ### Apple Notes Local Skill
 
-`~/programming/kingson4wu/labali-skills/skills/private/labali-apple-notes-local` provides the Apple Notes connector reference.
+The prior Apple Notes local skill provides the Apple Notes connector reference.
 
 Useful constraints:
 
@@ -97,7 +103,7 @@ For Alcove v1, Apple Notes is read-only/export-only.
 Project:
 
 ```text
-~/programming/OctopusGarage/alcove
+<alcove-repo>
 ```
 
 Names:
@@ -253,27 +259,38 @@ Interface:
 ```python
 class PinsModule:
     def add(self, request: AddPinRequest) -> PinResult
-    def list(self, request: ListPinsRequest) -> list[Pin]
+    def list(self, tag: str | None = None, status: str = "active") -> list[Pin]
     def get(self, pin_id: str) -> Pin
+    def search(self, query: str = "", kind: str = "", tag: str = "", status: str = "active") -> list[Pin]
     def update(self, request: UpdatePinRequest) -> PinResult
+    def rebuild_index(self) -> Path
+    def render_html(self, output_path: str | Path | None = None) -> Path
     def archive(self, pin_id: str, confirm: bool = False) -> ArchivePreview | ArchiveResult
 ```
 
-Suggested frontmatter:
+Current frontmatter:
 
 ```yaml
 type: Pin
+schema: okf/pin/v1
 title: string
 description: string
+summary: string
+kind: regular|todo
+content_format: text|markdown
 tags: []
 status: active
 priority: high|medium|low
 source_refs: []
+resources: []
 created_at: YYYY-MM-DD
 updated_at: YYYY-MM-DD
+last_used_at: YYYY-MM-DD
 ```
 
-Pins should live under `pins/<slug>.md` initially. Topic/domain can be added later only if it proves useful.
+Pins live under `pins/<slug>.md`. Topic/domain stays out of the base model until
+there is a proven need. Source Markdown is durable data; `index.json`,
+`index.md`, and `board.html` are derived and can be rebuilt.
 
 ### Tasks Module
 
@@ -432,8 +449,10 @@ alcove install --workspace PATH [--target codex|claude|all] [--print] [--status]
 ```
 
 The current inbox reader also accepts Clipsmith capture bundles. If a bundle has
-`capture.json`, Alcove treats it as fallback metadata for title, source URL, and
-date, while preserving the existing platform-specific Markdown read order.
+`capture.json`, Alcove reads declared `content_files` first, including OCR text
+files declared by the bundle, and treats metadata as the source of title, source
+URL, and date. Platform-specific Markdown filenames remain as a backward
+compatibility fallback for legacy inbox folders.
 
 The current Pins slice stores Markdown pins under `pins/`, supports add/list and
 previewable archive operations, and includes active pins in `alcove search`.
@@ -447,10 +466,13 @@ The current Mounts slice stores mount metadata in `mounts/mounts.json`, stores
 a rebuildable scan index in `mounts/index.json`, supports `local-folder` and
 `git-repo-local`, and includes scanned text items in `alcove search`.
 
-The current Apple Notes connector slice indexes existing deterministic Apple
-Notes export directories from `notes/<encoded-note-id>/note.json`, stores a
-rebuildable connector index in `.alcove/connectors/apple-notes/index.json`, and
-includes imported notes in `alcove search`. It does not call Notes.app directly.
+The current Apple Notes connector slice can export the local Notes.app library
+read-only into `~/.alcove/connectors/apple-notes/exports/full/`, register
+`sources/local.yml`, rebuild `.alcove/connectors/apple-notes/index.json`, and
+include imported notes in `alcove search`. It can also index existing
+deterministic export directories from `notes/<encoded-note-id>/note.json`.
+Alcove does not write to Notes.app. Unchanged exported note files are left
+untouched so the connector index can reuse unchanged rows by file size and mtime.
 
 The current GitHub Stars connector indexes local JSON exports of starred
 repositories into `.alcove/connectors/github-stars/index.json`, supports common
@@ -509,7 +531,9 @@ alcove mount add <path> [--name ...] [--type local-folder]
 alcove mount list
 alcove mount scan [id]
 
-alcove connector apple-notes export --output-dir <dir>
+alcove connector apple-notes import-local
+alcove connector apple-notes refresh local --force
+alcove connector apple-notes index <export-dir>
 
 alcove serve --mcp
 alcove install --target codex,claude
@@ -577,8 +601,10 @@ Integration tests:
 Regression fixtures:
 
 - XHS folder with `summary.md`, `ocr-merge.txt`, and sparse `post.md`.
+- Clipsmith bundle with `capture.json.content_files`, including image OCR text
+  output files.
 - Web article folder with `article.md`.
-- Existing OKF bundle migrated from `social_media_posts`.
+- Existing OKF bundle migrated from `research_notes`.
 - Social Radar task JSON sample.
 - Apple Notes deterministic export sample.
 
@@ -586,11 +612,11 @@ Regression fixtures:
 
 ### Phase 1: Core and OKF Extraction
 
-- Create `~/programming/OctopusGarage/alcove`.
+- Create the Alcove repository.
 - Set up Python package with `uv`, tests, and CLI entrypoint.
 - Implement Workspace, Repository, Knowledge, Inbox, and Search basics.
 - Port current OKF behavior with tests.
-- Preserve current `social_media_posts` workflow through Alcove CLI.
+- Preserve current `research_notes` workflow through Alcove CLI.
 - Status: implemented.
 
 ### Phase 2: Pins and Tasks
@@ -638,7 +664,7 @@ These are intentionally deferred. The MVP should make them possible without forc
 The user approved:
 
 - Name: Alcove.
-- Path: `~/programming/OctopusGarage/alcove`.
+- Path: this repository.
 - Scheme C: local personal information core plus first OKF extraction.
 - Technical route: Python + uv + Markdown-first + FastMCP/CLI.
 - References: current OKF tool, CodeGraph product shape, Social Radar tasks, Apple Notes local skill, pins, and historical mounts.

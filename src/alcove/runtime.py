@@ -5,7 +5,9 @@ from pathlib import Path
 from typing import Any
 
 from alcove.home import AlcoveHome
+from alcove.paths import compact_user_path
 from alcove.workspace import Workspace
+from alcove.errors import WorkspaceNotFoundError
 
 
 @dataclass(frozen=True)
@@ -23,6 +25,8 @@ class AlcoveRuntime:
         init_default_home: bool = True,
     ) -> "AlcoveRuntime":
         alcove_workspace = cls._resolve_workspace(workspace)
+        if alcove_workspace is None and require_workspace and not kb:
+            alcove_workspace = cls._discover_current_workspace()
         alcove_home = cls._resolve_home(
             home,
             init_default=bool(kb)
@@ -70,6 +74,13 @@ class AlcoveRuntime:
             return Workspace.discover(Path(workspace))
         return None
 
+    @staticmethod
+    def _discover_current_workspace() -> Workspace | None:
+        try:
+            return Workspace.discover()
+        except WorkspaceNotFoundError:
+            return None
+
     @property
     def is_global(self) -> bool:
         return self.home is not None
@@ -90,6 +101,22 @@ class AlcoveRuntime:
         if self.workspace is None:
             raise ValueError("Pins root requires home or workspace")
         return self.workspace.paths().pins
+
+    @property
+    def projects_root(self) -> Path:
+        if self.home is not None:
+            return self.home.paths().projects
+        if self.workspace is None:
+            raise ValueError("Projects root requires home or workspace")
+        return self.workspace.root / "projects"
+
+    @property
+    def prompts_root(self) -> Path:
+        if self.home is not None:
+            return self.home.paths().prompts
+        if self.workspace is None:
+            raise ValueError("Prompts root requires home or workspace")
+        return self.workspace.root / "prompts"
 
     @property
     def tasks_root(self) -> Path:
@@ -132,7 +159,7 @@ class AlcoveRuntime:
     def scope_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         scoped = dict(payload)
         if self.workspace is not None:
-            scoped["workspace"] = str(self.workspace.root)
+            scoped["workspace"] = compact_user_path(self.workspace.root)
         if self.home is not None:
-            scoped["home"] = str(self.home.root)
+            scoped["home"] = compact_user_path(self.home.root)
         return scoped

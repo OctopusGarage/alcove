@@ -98,6 +98,33 @@ def test_inbox_note_writes_human_notes_confidence_and_supersedes_similar_source(
     assert result.superseded == ["sources/web/agent-engineering/old.md"]
 
 
+def test_inbox_note_marks_low_confidence_source_needs_review(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    repo = MarkdownRepository()
+    _write_post(
+        tmp_path,
+        "manual",
+        "clipboard-note",
+        "# Clipboard Note\n\nUnverified short note.",
+    )
+
+    result = InboxModule(workspace).note(
+        InboxNoteRequest(
+            name="manual/clipboard-note",
+            topic="agent-engineering/agent-harness",
+            summary="Unverified short note.",
+        )
+    )
+
+    source = repo.read_doc(result.source_path)
+    concept = repo.read_doc(result.concept_path)
+    assert result.confidence["confidence"] < 0.35
+    assert source.frontmatter["status"] == "needs-review"
+    assert "## 来源" in source.body
+    assert "archive/" in source.body
+    assert concept.frontmatter["status"] == "needs-review"
+
+
 def test_lifecycle_refresh_topic_creates_new_concept_and_supersedes_old(tmp_path):
     workspace = Workspace.init(tmp_path)
     knowledge = KnowledgeModule(workspace)
@@ -157,7 +184,9 @@ def test_validate_and_gardener_report_issues(tmp_path):
     report = GardenerModule(workspace).gardener()
 
     assert any(issue["kind"] == "dead_source_ref" for issue in validation)
-    assert any(issue["kind"] == "empty_tag" for issue in report.issues)
+    empty_tag = next(issue for issue in report.issues if issue["kind"] == "empty_tag")
+    assert empty_tag["severity"] == "low"
+    assert "suggested_action" in empty_tag
 
 
 def test_question_entity_and_concept_support_source_refs(tmp_path):

@@ -7,9 +7,14 @@ from pathlib import Path
 
 from alcove import __version__
 from alcove.application import AlcoveApplication
-from alcove.connectors.apple_notes import AppleNotesImportRequest
-from alcove.connectors.github_stars import GitHubStarsImportRequest
-from alcove.errors import AlcoveError
+from alcove.connectors.apple_notes import AppleNotesImportRequest, AppleNotesLocalImportRequest
+from alcove.connectors.chrome_bookmarks import (
+    ChromeBookmarksImportRequest,
+    ChromeBookmarksLocalImportRequest,
+)
+from alcove.connectors.github_stars import GitHubStarsImportRequest, GitHubStarsUrlImportRequest
+from alcove.dashboard import DashboardModule, serve_dashboard
+from alcove.errors import AlcoveError, WorkspaceNotFoundError
 from alcove.home import AlcoveHome, KnowledgeBaseRecord
 from alcove.inbox_models import InboxNoteRequest
 from alcove.knowledge import (
@@ -17,15 +22,20 @@ from alcove.knowledge import (
     AddEntityRequest,
     AddQuestionRequest,
     NoteSourceRequest,
+    ReviseKnowledgeRequest,
 )
 from alcove.linking import LinkSourceRequest
 from alcove.mcp_server import run_mcp_server
 from alcove.mounts import AddMountRequest
-from alcove.pins import AddPinRequest
+from alcove.paths import compact_user_path
+from alcove.pins import AddPinRequest, UpdatePinRequest
+from alcove.projects import AddProjectRequest
+from alcove.prompts import AddPromptRequest
 from alcove.profile_installer import ProfileInstaller
 from alcove.runtime import AlcoveRuntime
 from alcove.search import SearchRequest
 from alcove.tasks import AddIdeaRequest, AddRoutineRequest, AddTaskRequest
+from alcove.usage import UsageRecorder
 from alcove.workspace import Workspace
 
 
@@ -47,11 +57,20 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--kb")
     doctor.add_argument("--json", action="store_true")
 
+    health = sub.add_parser("health", help="Check Alcove data, OKF, and index health")
+    health.add_argument("--workspace")
+    health.add_argument("--home")
+    health.add_argument("--kb")
+    health.add_argument("--strict", action="store_true")
+    health.add_argument("--fix", action="store_true")
+    health.add_argument("--json", action="store_true")
+
     install = sub.add_parser("install", help="Install Alcove MCP config for agents")
     install.add_argument("--home")
     install.add_argument("--workspace")
     install.add_argument("--kb")
-    install.add_argument("--target", action="append", default=["all"])
+    install.add_argument("--target", action="append")
+    install.add_argument("--toolset", default="full")
     install.add_argument("--print", dest="print_config", action="store_true")
     install.add_argument("--status", action="store_true")
     install.add_argument("--uninstall", action="store_true")
@@ -63,30 +82,70 @@ def build_parser() -> argparse.ArgumentParser:
     home_init.add_argument("--home")
     home_init.add_argument("--json", action="store_true")
 
+    okf = sub.add_parser("okf", help="Build derived OKF catalogs")
+    okf.add_argument("--home")
+    okf_sub = okf.add_subparsers(dest="okf_command", required=True)
+    okf_catalog = okf_sub.add_parser("catalog", help="Build the global OKF catalog")
+    okf_catalog_sub = okf_catalog.add_subparsers(dest="okf_catalog_command", required=True)
+    okf_catalog_build = okf_catalog_sub.add_parser(
+        "build", help="Build ~/.alcove/okf from module source-of-truth data"
+    )
+    okf_catalog_build.add_argument("--json", action="store_true")
+
     hub = sub.add_parser("hub", help="Manage an Alcove hub workspace")
     hub_sub = hub.add_subparsers(dest="hub_command", required=True)
     hub_init = hub_sub.add_parser("init", help="Initialize a hub workspace")
     hub_init.add_argument("path")
     hub_init.add_argument("--home")
     hub_init.add_argument("--default-kb", default="")
-    hub_init.add_argument("--target", action="append", default=["all"])
+    hub_init.add_argument("--target", action="append")
+    hub_init.add_argument("--link", action="store_true")
+    hub_init.add_argument("--status", action="store_true")
     hub_init.add_argument("--json", action="store_true")
     hub_install = hub_sub.add_parser("install", help="Install hub entry files")
     hub_install.add_argument("path")
     hub_install.add_argument("--home")
     hub_install.add_argument("--default-kb", default="")
-    hub_install.add_argument("--target", action="append", default=["all"])
+    hub_install.add_argument("--target", action="append")
+    hub_install.add_argument("--link", action="store_true")
+    hub_install.add_argument("--status", action="store_true")
     hub_install.add_argument("--json", action="store_true")
 
     global_cmd = sub.add_parser("global", help="Install lightweight global Alcove access")
     global_sub = global_cmd.add_subparsers(dest="global_command", required=True)
     global_install = global_sub.add_parser("install", help="Install global-lite MCP")
     global_install.add_argument("--home")
-    global_install.add_argument("--target", action="append", default=["all"])
+    global_install.add_argument("--target", action="append")
+    global_install.add_argument("--toolset", default="lite")
+    global_install.add_argument("--default-kb", default="")
     global_install.add_argument("--print", dest="print_config", action="store_true")
     global_install.add_argument("--status", action="store_true")
     global_install.add_argument("--uninstall", action="store_true")
     global_install.add_argument("--json", action="store_true")
+
+    dashboard = sub.add_parser("dashboard", help="Build and serve the local Alcove dashboard")
+    dashboard.add_argument("--home")
+    dashboard_sub = dashboard.add_subparsers(dest="dashboard_command", required=True)
+    dashboard_build = dashboard_sub.add_parser("build", help="Build the dashboard static site")
+    dashboard_build.add_argument("--output", default="")
+    dashboard_build.add_argument("--skip-frontend-build", action="store_true")
+    dashboard_build.add_argument("--json", action="store_true")
+    dashboard_import = dashboard_sub.add_parser("import-pins", help="Import pin text files")
+    dashboard_import.add_argument("--regular-file", default="")
+    dashboard_import.add_argument("--todo-file", default="")
+    dashboard_import.add_argument("--json", action="store_true")
+
+    usage = sub.add_parser("usage", help="Inspect and prune local usage telemetry")
+    usage.add_argument("--home")
+    usage_sub = usage.add_subparsers(dest="usage_command", required=True)
+    usage_summary = usage_sub.add_parser("summary", help="Show usage summary")
+    usage_summary.add_argument("--home")
+    usage_summary.add_argument("--json", action="store_true")
+    usage_prune = usage_sub.add_parser("prune", help="Prune old usage and activity events")
+    usage_prune.add_argument("--home")
+    usage_prune.add_argument("--days", type=int, default=90)
+    usage_prune.add_argument("--now", default="")
+    usage_prune.add_argument("--json", action="store_true")
 
     kb = sub.add_parser("kb", help="Register and list managed knowledge bases")
     kb.add_argument("--home")
@@ -99,7 +158,9 @@ def build_parser() -> argparse.ArgumentParser:
     kb_list.add_argument("--json", action="store_true")
     kb_install = kb_sub.add_parser("install", help="Install managed KB entry files")
     kb_install.add_argument("name")
-    kb_install.add_argument("--target", action="append", default=["all"])
+    kb_install.add_argument("--target", action="append")
+    kb_install.add_argument("--link", action="store_true")
+    kb_install.add_argument("--status", action="store_true")
     kb_install.add_argument("--json", action="store_true")
 
     inbox = sub.add_parser("inbox", help="Work with inbox items")
@@ -111,6 +172,11 @@ def build_parser() -> argparse.ArgumentParser:
     inbox_peek.add_argument("--json", action="store_true")
     inbox_read = inbox_sub.add_parser("read", help="Read an inbox item")
     inbox_read.add_argument("name")
+    inbox_read.add_argument(
+        "--full",
+        action="store_true",
+        help="Return the unabridged merged inbox payload",
+    )
     inbox_read.add_argument("--json", action="store_true")
     inbox_classify = inbox_sub.add_parser("classify", help="Suggest topic, tags, and summary")
     inbox_classify.add_argument("name")
@@ -170,6 +236,26 @@ def build_parser() -> argparse.ArgumentParser:
     add_note.add_argument("--summary", default="")
     add_note.add_argument("--tag", action="append", default=[])
     add_note.add_argument("--tags", default="")
+    revise = knowledge_sub.add_parser("revise", help="Revise an existing OKF knowledge note")
+    revise.add_argument("path")
+    revise.add_argument("--summary", default="")
+    revise.add_argument("--answer", default="")
+    revise.add_argument("--append", default="")
+    revise.add_argument("--tag", action="append", default=[])
+    revise.add_argument("--tags", default="")
+    revise.add_argument("--source-ref", action="append", default=[])
+    revise.add_argument("--source-refs", default="")
+    revise.add_argument("--reason", default="")
+    revise.add_argument("--status", default="")
+    revise.add_argument("--json", action="store_true")
+    knowledge_delete = knowledge_sub.add_parser(
+        "delete",
+        help="Soft-delete a knowledge result by path after confirmation",
+    )
+    knowledge_delete.add_argument("path")
+    knowledge_delete.add_argument("--reason", default="")
+    knowledge_delete.add_argument("--confirm", action="store_true")
+    knowledge_delete.add_argument("--json", action="store_true")
     add_question = knowledge_sub.add_parser("add-question", help="Add a reusable question")
     add_question.add_argument("topic")
     add_question.add_argument("question")
@@ -222,20 +308,113 @@ def build_parser() -> argparse.ArgumentParser:
     pin_add = pin_sub.add_parser("add", help="Add a pinned personal note")
     pin_add.add_argument("title")
     pin_add.add_argument("--description", default="")
+    pin_add.add_argument("--summary", default="")
+    pin_add.add_argument("--content", default="")
+    pin_add.add_argument("--kind", default="regular")
     pin_add.add_argument("--tag", action="append", default=[])
     pin_add.add_argument("--tags", default="")
     pin_add.add_argument("--priority", default="medium")
     pin_add.add_argument("--source-ref", action="append", default=[])
     pin_add.add_argument("--source-refs", default="")
+    pin_add.add_argument("--resource", action="append", default=[])
+    pin_add.add_argument("--resources", default="")
+    pin_add.add_argument("--content-format", default="text")
     pin_add.add_argument("--json", action="store_true")
+    pin_get = pin_sub.add_parser("get", help="Get a pinned personal note")
+    pin_get.add_argument("pin_id")
+    pin_get.add_argument("--json", action="store_true")
     pin_list = pin_sub.add_parser("list", help="List pinned personal notes")
     pin_list.add_argument("--tag")
     pin_list.add_argument("--status", default="active")
     pin_list.add_argument("--json", action="store_true")
+    pin_search = pin_sub.add_parser("search", help="Search pinned personal notes")
+    pin_search.add_argument("query", nargs="?", default="")
+    pin_search.add_argument("--kind", default="")
+    pin_search.add_argument("--tag", default="")
+    pin_search.add_argument("--status", default="active")
+    pin_search.add_argument("--json", action="store_true")
+    pin_update = pin_sub.add_parser("update", help="Update a pinned personal note")
+    pin_update.add_argument("pin_id")
+    pin_update.add_argument("--title")
+    pin_update.add_argument("--description")
+    pin_update.add_argument("--summary")
+    pin_update.add_argument("--content")
+    pin_update.add_argument("--kind")
+    pin_update.add_argument("--tag", action="append")
+    pin_update.add_argument("--tags")
+    pin_update.add_argument("--priority")
+    pin_update.add_argument("--source-ref", action="append")
+    pin_update.add_argument("--source-refs")
+    pin_update.add_argument("--resource", action="append")
+    pin_update.add_argument("--resources")
+    pin_update.add_argument("--status")
+    pin_update.add_argument("--content-format")
+    pin_update.add_argument("--json", action="store_true")
+    pin_index = pin_sub.add_parser("rebuild-index", help="Rebuild the pins index")
+    pin_index.add_argument("--json", action="store_true")
+    pin_html = pin_sub.add_parser("render-html", help="Render the pins HTML board")
+    pin_html.add_argument("--output", default="")
+    pin_html.add_argument("--json", action="store_true")
     pin_archive = pin_sub.add_parser("archive", help="Archive a pin")
     pin_archive.add_argument("pin_id")
     pin_archive.add_argument("--confirm", action="store_true")
     pin_archive.add_argument("--json", action="store_true")
+
+    project = sub.add_parser("project", help="Work with global project aliases")
+    project.add_argument("--workspace")
+    project.add_argument("--home")
+    project_sub = project.add_subparsers(dest="project_command", required=True)
+    project_add = project_sub.add_parser("add", help="Add a project alias")
+    project_add.add_argument("alias")
+    project_add.add_argument("path")
+    project_add.add_argument("--note", default="")
+    project_add.add_argument("--json", action="store_true")
+    project_get = project_sub.add_parser("get", help="Get a project alias")
+    project_get.add_argument("alias")
+    project_get.add_argument("--json", action="store_true")
+    project_find = project_sub.add_parser("find", help="Find project aliases or scanned roots")
+    project_find.add_argument("keyword")
+    project_find.add_argument("--json", action="store_true")
+    project_list = project_sub.add_parser("list", help="List project aliases")
+    project_list.add_argument("--json", action="store_true")
+    project_remove = project_sub.add_parser("remove", help="Remove a project alias")
+    project_remove.add_argument("alias")
+    project_remove.add_argument("--json", action="store_true")
+    project_roots = project_sub.add_parser("roots-set", help="Set project root scan paths")
+    project_roots.add_argument("roots", nargs="+")
+    project_roots.add_argument("--json", action="store_true")
+
+    prompt = sub.add_parser("prompt", help="Work with reusable global prompts")
+    prompt.add_argument("--workspace")
+    prompt.add_argument("--home")
+    prompt_sub = prompt.add_subparsers(dest="prompt_command", required=True)
+    prompt_save = prompt_sub.add_parser("save", help="Save or update a global prompt")
+    prompt_save.add_argument("title")
+    prompt_save.add_argument("--content", required=True)
+    prompt_save.add_argument("--description", default="")
+    prompt_save.add_argument("--tag", action="append", default=[])
+    prompt_save.add_argument("--tags", default="")
+    prompt_save.add_argument("--use-case", action="append", default=[])
+    prompt_save.add_argument("--use-cases", default="")
+    prompt_save.add_argument("--source-ref", action="append", default=[])
+    prompt_save.add_argument("--source-refs", default="")
+    prompt_save.add_argument("--json", action="store_true")
+    prompt_search = prompt_sub.add_parser("search", help="Search reusable global prompts")
+    prompt_search.add_argument("query", nargs="?", default="")
+    prompt_search.add_argument("--tag", default="")
+    prompt_search.add_argument("--status", default="active")
+    prompt_search.add_argument("--json", action="store_true")
+    prompt_get = prompt_sub.add_parser("get", help="Get a reusable global prompt")
+    prompt_get.add_argument("prompt_id")
+    prompt_get.add_argument("--json", action="store_true")
+    prompt_archive = prompt_sub.add_parser("archive", help="Archive a reusable global prompt")
+    prompt_archive.add_argument("prompt_id")
+    prompt_archive.add_argument("--confirm", action="store_true")
+    prompt_archive.add_argument("--json", action="store_true")
+    prompt_tags = prompt_sub.add_parser("tags", help="List prompt tags")
+    prompt_tags.add_argument("--json", action="store_true")
+    prompt_index = prompt_sub.add_parser("rebuild-index", help="Rebuild the prompt index")
+    prompt_index.add_argument("--json", action="store_true")
 
     idea = sub.add_parser("idea", help="Work with low-friction ideas")
     idea.add_argument("--workspace")
@@ -293,6 +472,12 @@ def build_parser() -> argparse.ArgumentParser:
     materialize_due = task_sub.add_parser("materialize-due", help="Create tasks for due routines")
     materialize_due.add_argument("--today", default="")
     materialize_due.add_argument("--json", action="store_true")
+    import_social_radar = task_sub.add_parser(
+        "import-social-radar",
+        help="Import todos, ideas, and routines from a Social Radar todos.json file",
+    )
+    import_social_radar.add_argument("--source", default="~/.social_radar/data/todos.json")
+    import_social_radar.add_argument("--json", action="store_true")
 
     mount = sub.add_parser("mount", help="Work with mounted external sources")
     mount.add_argument("--workspace")
@@ -310,12 +495,24 @@ def build_parser() -> argparse.ArgumentParser:
     mount_list.add_argument("--json", action="store_true")
     mount_scan = mount_sub.add_parser("scan", help="Scan mounted sources")
     mount_scan.add_argument("mount_id", nargs="?")
+    mount_scan.add_argument("--include-diagnostics", action="store_true")
     mount_scan.add_argument("--json", action="store_true")
 
     connector = sub.add_parser("connector", help="Work with external connectors")
     connector.add_argument("--workspace")
     connector.add_argument("--home")
     connector_sub = connector.add_subparsers(dest="connector_command", required=True)
+    connector_status = connector_sub.add_parser("status", help="Show registered connector sources")
+    connector_status.add_argument("--connector", default="")
+    connector_status.add_argument("--json", action="store_true")
+    connector_refresh = connector_sub.add_parser(
+        "refresh", help="Refresh registered connector sources"
+    )
+    connector_refresh.add_argument("--connector", default="")
+    connector_refresh.add_argument("--stale", action="store_true")
+    connector_refresh.add_argument("--all", action="store_true")
+    connector_refresh.add_argument("--include-diff", action="store_true")
+    connector_refresh.add_argument("--json", action="store_true")
     connector_fetch = connector_sub.add_parser("fetch", help="Fetch indexed connector item detail")
     connector_fetch.add_argument("item_path")
     connector_fetch.add_argument("--json", action="store_true")
@@ -327,7 +524,27 @@ def build_parser() -> argparse.ArgumentParser:
     apple_notes_index.add_argument("export_dir")
     apple_notes_index.add_argument("--tag", action="append", default=[])
     apple_notes_index.add_argument("--tags", default="")
+    apple_notes_index.add_argument("--include-items", action="store_true")
     apple_notes_index.add_argument("--json", action="store_true")
+    apple_notes_import_local = apple_notes_sub.add_parser(
+        "import-local",
+        help="Export local Notes.app notes into Alcove, then index them",
+    )
+    apple_notes_import_local.add_argument("--export-dir", default="")
+    apple_notes_import_local.add_argument("--source-id", default="local")
+    apple_notes_import_local.add_argument("--tag", action="append", default=[])
+    apple_notes_import_local.add_argument("--tags", default="")
+    apple_notes_import_local.add_argument("--include-items", action="store_true")
+    apple_notes_import_local.add_argument("--include-diff", action="store_true")
+    apple_notes_import_local.add_argument("--json", action="store_true")
+    apple_notes_refresh = apple_notes_sub.add_parser(
+        "refresh",
+        help="Refresh a registered Apple Notes source",
+    )
+    apple_notes_refresh.add_argument("source_id", nargs="?", default="")
+    apple_notes_refresh.add_argument("--force", action="store_true")
+    apple_notes_refresh.add_argument("--include-diff", action="store_true")
+    apple_notes_refresh.add_argument("--json", action="store_true")
     github_stars = connector_sub.add_parser(
         "github-stars",
         help="Index a local GitHub starred repositories export",
@@ -343,7 +560,66 @@ def build_parser() -> argparse.ArgumentParser:
     github_stars_index.add_argument("export_file")
     github_stars_index.add_argument("--tag", action="append", default=[])
     github_stars_index.add_argument("--tags", default="")
+    github_stars_index.add_argument("--include-items", action="store_true")
     github_stars_index.add_argument("--json", action="store_true")
+    github_stars_import_url = github_stars_sub.add_parser(
+        "import-url",
+        help="Fetch starred repositories from a GitHub stars page or username, then index them",
+    )
+    github_stars_import_url.add_argument("source")
+    github_stars_import_url.add_argument("--export-file", default="")
+    github_stars_import_url.add_argument("--limit", type=int, default=0)
+    github_stars_import_url.add_argument("--max-pages", type=int, default=0)
+    github_stars_import_url.add_argument("--tag", action="append", default=[])
+    github_stars_import_url.add_argument("--tags", default="")
+    github_stars_import_url.add_argument("--include-items", action="store_true")
+    github_stars_import_url.add_argument("--include-diff", action="store_true")
+    github_stars_import_url.add_argument("--json", action="store_true")
+    github_stars_refresh = github_stars_sub.add_parser(
+        "refresh",
+        help="Refresh a registered GitHub Stars source",
+    )
+    github_stars_refresh.add_argument("source_id", nargs="?", default="")
+    github_stars_refresh.add_argument("--force", action="store_true")
+    github_stars_refresh.add_argument("--include-diff", action="store_true")
+    github_stars_refresh.add_argument("--json", action="store_true")
+    chrome_bookmarks = connector_sub.add_parser(
+        "chrome-bookmarks",
+        help="Index Chrome bookmarks from a local Bookmarks file or exported HTML",
+    )
+    chrome_bookmarks_sub = chrome_bookmarks.add_subparsers(
+        dest="chrome_bookmarks_command",
+        required=True,
+    )
+    chrome_bookmarks_index = chrome_bookmarks_sub.add_parser(
+        "index",
+        help="Index a Chrome Bookmarks JSON file or Netscape bookmarks HTML export",
+    )
+    chrome_bookmarks_index.add_argument("export_file")
+    chrome_bookmarks_index.add_argument("--tag", action="append", default=[])
+    chrome_bookmarks_index.add_argument("--tags", default="")
+    chrome_bookmarks_index.add_argument("--include-items", action="store_true")
+    chrome_bookmarks_index.add_argument("--json", action="store_true")
+    chrome_bookmarks_import_local = chrome_bookmarks_sub.add_parser(
+        "import-local",
+        help="Index the local Chrome profile Bookmarks file and register it for refresh",
+    )
+    chrome_bookmarks_import_local.add_argument("--source-file", default="")
+    chrome_bookmarks_import_local.add_argument("--profile", default="Default")
+    chrome_bookmarks_import_local.add_argument("--source-id", default="default")
+    chrome_bookmarks_import_local.add_argument("--tag", action="append", default=[])
+    chrome_bookmarks_import_local.add_argument("--tags", default="")
+    chrome_bookmarks_import_local.add_argument("--include-items", action="store_true")
+    chrome_bookmarks_import_local.add_argument("--include-diff", action="store_true")
+    chrome_bookmarks_import_local.add_argument("--json", action="store_true")
+    chrome_bookmarks_refresh = chrome_bookmarks_sub.add_parser(
+        "refresh",
+        help="Refresh a registered Chrome Bookmarks source",
+    )
+    chrome_bookmarks_refresh.add_argument("source_id", nargs="?", default="")
+    chrome_bookmarks_refresh.add_argument("--force", action="store_true")
+    chrome_bookmarks_refresh.add_argument("--include-diff", action="store_true")
+    chrome_bookmarks_refresh.add_argument("--json", action="store_true")
 
     link = sub.add_parser("link", help="Promote indexed external items into knowledge")
     link.add_argument("--workspace")
@@ -359,9 +635,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     serve = sub.add_parser("serve", help="Run Alcove local services")
     serve.add_argument("--mcp", action="store_true", help="Run the MCP server over stdio")
+    serve.add_argument("--dashboard", action="store_true", help="Run the local dashboard server")
     serve.add_argument("--workspace", default="")
     serve.add_argument("--home", default="")
     serve.add_argument("--kb", default="")
+    serve.add_argument("--toolset", default="full")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8765)
 
     search = sub.add_parser("search", help="Search and browse knowledge")
     search.add_argument("query", nargs="?", default="")
@@ -438,6 +718,37 @@ def _refs(args) -> list[str]:
     ]
 
 
+def _resources(args) -> list[str]:
+    return [
+        *getattr(args, "resource", []),
+        *_split_csv(getattr(args, "resources", "")),
+    ]
+
+
+def _optional_tags(args) -> list[str] | None:
+    if getattr(args, "tag", None) is None and getattr(args, "tags", None) is None:
+        return None
+    return [*(getattr(args, "tag", None) or []), *_split_csv(getattr(args, "tags", "") or "")]
+
+
+def _optional_refs(args) -> list[str] | None:
+    if getattr(args, "source_ref", None) is None and getattr(args, "source_refs", None) is None:
+        return None
+    return [
+        *(getattr(args, "source_ref", None) or []),
+        *_split_csv(getattr(args, "source_refs", "") or ""),
+    ]
+
+
+def _optional_resources(args) -> list[str] | None:
+    if getattr(args, "resource", None) is None and getattr(args, "resources", None) is None:
+        return None
+    return [
+        *(getattr(args, "resource", None) or []),
+        *_split_csv(getattr(args, "resources", "") or ""),
+    ]
+
+
 def _selected_takeaways(value: str) -> list[str]:
     return [
         item.strip()
@@ -448,20 +759,71 @@ def _selected_takeaways(value: str) -> list[str]:
 
 def _print_search_rows(rows: list[dict]) -> None:
     for row in rows:
+        collected = row.get("collected_at") or ""
+        updated = row.get("updated_at") or ""
+        lifecycle = f"collected={collected[:10] or '-'} updated={updated[:10] or '-'}"
         print(
             f"{row.get('date') or '':<10} | "
             f"{row.get('confidence', 0.5):.2f} | "
             f"{row.get('status') or 'active':<10} | "
             f"{row.get('type')} | {row.get('topic')} | "
-            f"{row.get('title')} | {row.get('path')}"
+            f"{row.get('title')} | {lifecycle} | {row.get('path')}"
         )
+
+
+def _connector_cli_report(
+    report: dict,
+    *,
+    include_items: bool,
+    include_diff: bool = False,
+) -> dict:
+    payload = dict(report)
+    _move_connector_storage_paths(payload)
+    items = payload.get("items")
+    if isinstance(items, list):
+        payload["item_count"] = len(items)
+        if not include_items:
+            payload.pop("items", None)
+    _summarize_diff_payload(payload, include_diff=include_diff)
+    for source in payload.get("sources", []):
+        if isinstance(source, dict):
+            _move_connector_storage_paths(source)
+            _summarize_diff_payload(source, include_diff=include_diff)
+    return payload
+
+
+def _move_connector_storage_paths(payload: dict) -> None:
+    for key in ["export_file", "export_dir", "index_path", "source_file"]:
+        if key in payload:
+            payload.pop(key)
+
+
+def _connector_storage_path(payload: dict, key: str) -> object:
+    if key in payload:
+        return payload[key]
+    debug = payload.get("debug") if isinstance(payload.get("debug"), dict) else {}
+    storage = debug.get("storage") if isinstance(debug.get("storage"), dict) else {}
+    return storage.get(key, "")
+
+
+def _summarize_diff_payload(payload: dict, *, include_diff: bool) -> None:
+    diff = payload.get("diff")
+    if include_diff or not isinstance(diff, dict):
+        return
+    payload["diff_summary"] = {
+        "added_count": len(diff.get("added") or []),
+        "removed_count": len(diff.get("removed") or []),
+        "updated_count": len(diff.get("updated") or []),
+        "unchanged": int(diff.get("unchanged") or 0),
+    }
+    payload.pop("diff", None)
 
 
 def _kb_dict(record: KnowledgeBaseRecord) -> dict:
     return {
         "name": record.name,
-        "path": str(record.path),
-        "config_path": str(record.config_path),
+        "path": compact_user_path(record.path),
+        "config_path": compact_user_path(record.config_path),
     }
 
 
@@ -469,6 +831,42 @@ def _argument_error(parser: argparse.ArgumentParser, message: str) -> int:
     parser.print_usage(sys.stderr)
     print(f"{parser.prog}: error: {message}", file=sys.stderr)
     return 2
+
+
+def _json_error_payload(args: argparse.Namespace, exc: Exception) -> dict:
+    command = str(getattr(args, "command", "") or "")
+    connector = str(getattr(args, "connector_command", "") or "")
+    error_type = exc.__class__.__name__
+    message = str(exc)
+    payload = {
+        "error": {
+            "error_code": error_type.replace("Error", "").replace("Exception", "").lower()
+            or "error",
+            "message": message,
+            "remediation_hint": _error_remediation_hint(args, exc),
+        }
+    }
+    if command:
+        payload["error"]["command"] = command
+    if connector:
+        payload["error"]["connector"] = connector
+    return payload
+
+
+def _error_remediation_hint(args: argparse.Namespace, exc: Exception) -> str:
+    connector = str(getattr(args, "connector_command", "") or "")
+    message = str(exc)
+    if connector == "github-stars":
+        if "Unsupported GitHub Stars URL host" in message:
+            return "Use a GitHub profile URL such as https://github.com/<user>?tab=stars or pass a GitHub username."
+        return "Check the GitHub Stars source, network access, and any local export file before retrying."
+    if connector == "chrome-bookmarks":
+        return "Export Chrome bookmarks as valid JSON or pass a readable Chrome Bookmarks file."
+    if connector == "apple-notes":
+        return "Check macOS Notes automation permissions, osascript availability, or the Apple Notes export directory."
+    if isinstance(exc, FileNotFoundError):
+        return "Check that the referenced path exists and is readable."
+    return "Fix the input and retry the command."
 
 
 def _print_install_result(result: dict) -> None:
@@ -509,6 +907,22 @@ def _runtime_from_args(
     )
 
 
+def _health_runtime_from_args(args) -> AlcoveRuntime:
+    workspace = Path(args.workspace) if getattr(args, "workspace", None) else None
+    if workspace is None and not getattr(args, "kb", None) and not getattr(args, "home", None):
+        try:
+            workspace = Workspace.discover()
+        except WorkspaceNotFoundError:
+            workspace = None
+    return AlcoveRuntime.resolve(
+        workspace=workspace,
+        home=Path(args.home) if getattr(args, "home", None) else None,
+        kb=getattr(args, "kb", None),
+        require_workspace=False,
+        init_default_home=True,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     try:
@@ -542,6 +956,24 @@ def main(argv: list[str] | None = None) -> int:
                 for check in report["checks"]:
                     print(f"{check['status']} | {check['name']} | {check.get('message', '')}")
             return 1 if report["status"] == "issues" else 0
+        if args.command == "health":
+            runtime = _health_runtime_from_args(args)
+            report = AlcoveApplication(runtime).system.health_payload(
+                fix=args.fix,
+                strict=args.strict,
+            )
+            if args.json:
+                print(json.dumps(report, ensure_ascii=False, indent=2))
+            else:
+                print(f"status: {report['status']}")
+                for issue in report["issues"]:
+                    print(
+                        f"{issue['severity']} | {issue['module']} | "
+                        f"{issue['kind']} | {issue['path']} | {issue['message']}"
+                    )
+                for action in report["actions"]:
+                    print(f"action | {action['module']} | {action['action']} | {action['path']}")
+            return 1 if report["status"] == "issues" else 0
         if args.command == "install":
             runtime = _runtime_from_args(args, require_workspace=True)
             result = AlcoveApplication(runtime).system.install_payload(
@@ -549,6 +981,7 @@ def main(argv: list[str] | None = None) -> int:
                 status=args.status,
                 uninstall=args.uninstall,
                 dry_run=args.print_config,
+                mcp_toolset=args.toolset,
             )
             if args.json:
                 print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -563,14 +996,17 @@ def main(argv: list[str] | None = None) -> int:
                 home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
                 payload = {
                     "status": "initialized",
-                    "home": str(home.root),
+                    "home": compact_user_path(home.root),
                     "paths": {
-                        "config": str(home.paths().config),
-                        "knowledge_bases": str(home.paths().knowledge_bases),
-                        "pins": str(home.paths().pins),
-                        "tasks": str(home.paths().tasks),
-                        "mounts": str(home.paths().mounts),
-                        "connectors": str(home.paths().connectors),
+                        "config": compact_user_path(home.paths().config),
+                        "knowledge_bases": compact_user_path(home.paths().knowledge_bases),
+                        "projects": compact_user_path(home.paths().projects),
+                        "prompts": compact_user_path(home.paths().prompts),
+                        "pins": compact_user_path(home.paths().pins),
+                        "tasks": compact_user_path(home.paths().tasks),
+                        "mounts": compact_user_path(home.paths().mounts),
+                        "connectors": compact_user_path(home.paths().connectors),
+                        "stats": compact_user_path(home.paths().stats),
                     },
                 }
                 if args.json:
@@ -579,20 +1015,65 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"Alcove home: {home.root}")
                 return 0
             return _argument_error(parser, "the following arguments are required: home_command")
+        if args.command == "okf":
+            runtime = AlcoveRuntime.resolve(home=args.home)
+            app = AlcoveApplication(runtime)
+            if args.okf_command == "catalog" and args.okf_catalog_command == "build":
+                payload = app.system.okf_catalog_build_payload()
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False, indent=2))
+                else:
+                    print(f"okf catalog: {payload['root']} | files: {len(payload['files'])}")
+                return 0
+            return _argument_error(parser, "the following arguments are required: okf_command")
+        if args.command == "usage":
+            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
+            recorder = UsageRecorder(home)
+            if args.usage_command == "summary":
+                payload = recorder.write_rollups()
+            elif args.usage_command == "prune":
+                payload = recorder.prune(retention_days=args.days, now=args.now or None)
+            else:
+                return _argument_error(
+                    parser, "the following arguments are required: usage_command"
+                )
+            if args.json:
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+            else:
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0
         if args.command == "hub":
             home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
             profiles = ProfileInstaller(home)
             if args.hub_command == "init":
-                result = profiles.hub_init(
-                    args.path,
-                    default_kb=args.default_kb,
-                    targets=args.target,
+                result = (
+                    profiles.hub_status(
+                        args.path,
+                        default_kb=args.default_kb,
+                        targets=args.target,
+                    )
+                    if args.status
+                    else profiles.hub_init(
+                        args.path,
+                        default_kb=args.default_kb,
+                        targets=args.target,
+                        link=args.link,
+                    )
                 )
             elif args.hub_command == "install":
-                result = profiles.hub_install(
-                    args.path,
-                    default_kb=args.default_kb,
-                    targets=args.target,
+                result = (
+                    profiles.hub_status(
+                        args.path,
+                        default_kb=args.default_kb,
+                        targets=args.target,
+                    )
+                    if args.status
+                    else profiles.hub_install(
+                        args.path,
+                        default_kb=args.default_kb,
+                        targets=args.target,
+                        link=args.link,
+                    )
                 )
             else:
                 return _argument_error(parser, "the following arguments are required: hub_command")
@@ -609,6 +1090,8 @@ def main(argv: list[str] | None = None) -> int:
                     status=args.status,
                     uninstall=args.uninstall,
                     dry_run=args.print_config,
+                    mcp_toolset=args.toolset,
+                    default_kb=args.default_kb,
                 )
                 if args.json:
                     print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -638,9 +1121,18 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"{record['name']} | {record['path']}")
                 return 0
             if args.kb_command == "install":
-                result = ProfileInstaller(home).kb_install(
-                    args.name,
-                    targets=args.target,
+                profiles = ProfileInstaller(home)
+                result = (
+                    profiles.kb_status(
+                        args.name,
+                        targets=args.target,
+                    )
+                    if args.status
+                    else profiles.kb_install(
+                        args.name,
+                        targets=args.target,
+                        link=args.link,
+                    )
                 )
                 if args.json:
                     print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -775,6 +1267,41 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 print(json.dumps(payload, ensure_ascii=False))
                 return 0
+            if args.knowledge_command == "revise":
+                payload = app.knowledge.knowledge_revise_payload(
+                    ReviseKnowledgeRequest(
+                        path=args.path,
+                        summary=args.summary,
+                        answer=args.answer,
+                        append=args.append,
+                        tags=_tags(args),
+                        source_refs=_refs(args),
+                        reason=args.reason,
+                        status=args.status,
+                    )
+                )
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False, indent=2))
+                else:
+                    _print_path("revised", Path(payload["path"]))
+                return 0
+            if args.knowledge_command == "delete":
+                payload = app.knowledge.knowledge_delete_payload(
+                    args.path,
+                    confirm=args.confirm,
+                    reason=args.reason,
+                )
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False, indent=2))
+                elif payload["status"] == "preview":
+                    print(
+                        "delete preview: "
+                        f"{payload['type']} | {payload['title']} | {payload['path']}"
+                    )
+                    print("rerun with --confirm to mark this knowledge item as deleted")
+                else:
+                    print(f"deleted: {payload['path']}")
+                return 0
             if args.knowledge_command == "add-question":
                 payload = app.knowledge.knowledge_add_question_payload(
                     AddQuestionRequest(
@@ -840,7 +1367,7 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"{issue['kind']} | {issue['path']} | {issue['message']}")
                 return 1 if issues else 0
             if args.tags:
-                results = app.search.search_tags_payload()["tags"]
+                results = app.search.search_tags_payload()["tags"][: max(args.limit, 0)]
                 if args.json:
                     print(json.dumps(results, ensure_ascii=False, indent=2))
                 else:
@@ -848,7 +1375,7 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"{row['tag']} | {row['count']}")
                 return 0
             if args.tag_doctor:
-                results = app.search.search_tag_doctor_payload()["issues"]
+                results = app.search.search_tag_doctor_payload()["issues"][: max(args.limit, 0)]
                 if args.json:
                     print(json.dumps(results, ensure_ascii=False, indent=2))
                 else:
@@ -870,7 +1397,8 @@ def main(argv: list[str] | None = None) -> int:
                         min_confidence=args.min_confidence,
                         status=args.status,
                         limit=args.limit,
-                    )
+                    ),
+                    surface="cli",
                 )
             if args.json:
                 print(json.dumps(results, ensure_ascii=False, indent=2))
@@ -885,15 +1413,32 @@ def main(argv: list[str] | None = None) -> int:
                     AddPinRequest(
                         title=args.title,
                         description=args.description,
+                        summary=args.summary,
+                        content=args.content,
+                        kind=args.kind,
                         tags=_tags(args),
                         priority=args.priority,
                         source_refs=_refs(args),
+                        resources=_resources(args),
+                        content_format=args.content_format,
                     )
                 )
                 if args.json:
                     print(json.dumps(payload, ensure_ascii=False))
                 else:
                     _print_path("pin", Path(payload["path"]))
+                return 0
+            if args.pin_command == "get":
+                payload = app.global_home.pin_get_payload(args.pin_id)
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False, indent=2))
+                else:
+                    pin = payload["pin"]
+                    print(f"{pin['priority']} | {pin['kind']} | {pin['status']} | {pin['title']}")
+                    if pin.get("summary"):
+                        print(pin["summary"])
+                    if pin.get("content"):
+                        print(pin["content"])
                 return 0
             if args.pin_command == "list":
                 payload = app.global_home.pin_list_payload(args.tag, args.status)
@@ -903,8 +1448,60 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     for pin in results:
                         print(
-                            f"{pin['priority']} | {pin['status']} | {pin['title']} | {pin['path']}"
+                            f"{pin['priority']} | {pin['kind']} | {pin['status']} | {pin['title']} | {pin['path']}"
                         )
+                return 0
+            if args.pin_command == "search":
+                payload = app.global_home.pin_search_payload(
+                    query=args.query,
+                    kind=args.kind,
+                    tag=args.tag,
+                    status=args.status,
+                )
+                results = payload["pins"]
+                if args.json:
+                    print(json.dumps(results, ensure_ascii=False, indent=2))
+                else:
+                    for pin in results:
+                        print(
+                            f"{pin['priority']} | {pin['kind']} | {pin['status']} | {pin['title']} | {pin['path']}"
+                        )
+                return 0
+            if args.pin_command == "update":
+                payload = app.global_home.pin_update_payload(
+                    UpdatePinRequest(
+                        pin_id=args.pin_id,
+                        title=args.title,
+                        description=args.description,
+                        summary=args.summary,
+                        content=args.content,
+                        kind=args.kind,
+                        tags=_optional_tags(args),
+                        priority=args.priority,
+                        source_refs=_optional_refs(args),
+                        resources=_optional_resources(args),
+                        status=args.status,
+                        content_format=args.content_format,
+                    )
+                )
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"{payload['status']}: {payload['path']}")
+                return 0
+            if args.pin_command == "rebuild-index":
+                payload = app.global_home.pin_rebuild_index_payload()
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"{payload['status']}: {payload['index_path']}")
+                return 0
+            if args.pin_command == "render-html":
+                payload = app.global_home.pin_render_html_payload(args.output)
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"{payload['status']}: {payload['path']}")
                 return 0
             if args.pin_command == "archive":
                 payload = app.global_home.pin_archive_payload(args.pin_id, confirm=args.confirm)
@@ -914,6 +1511,122 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"{payload['status']}: {payload['path']}")
                 return 0
             return _argument_error(parser, "the following arguments are required: pin_command")
+        if args.command == "project":
+            runtime = _runtime_from_args(args)
+            app = AlcoveApplication(runtime)
+            if args.project_command == "add":
+                payload = app.global_home.project_add_payload(
+                    AddProjectRequest(alias=args.alias, path=args.path, note=args.note)
+                )
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"project: {payload['project']['alias']} | {payload['project']['path']}")
+                return 0
+            if args.project_command == "get":
+                payload = app.global_home.project_get_payload(args.alias)
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    project = payload["project"]
+                    print(f"{project['alias']} | {project['path']} | {project['note']}")
+                return 0
+            if args.project_command == "find":
+                payload = app.global_home.project_find_payload(args.keyword)
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False, indent=2))
+                else:
+                    for project in payload["projects"]:
+                        print(f"{project['source']} | {project['alias']} | {project['path']}")
+                return 0
+            if args.project_command == "list":
+                payload = app.global_home.project_list_payload()
+                if args.json:
+                    print(json.dumps(payload["projects"], ensure_ascii=False, indent=2))
+                else:
+                    for project in payload["projects"]:
+                        print(f"{project['alias']} | {project['path']} | {project['note']}")
+                return 0
+            if args.project_command == "remove":
+                payload = app.global_home.project_remove_payload(args.alias)
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"{payload['status']}: {args.alias}")
+                return 0
+            if args.project_command == "roots-set":
+                payload = app.global_home.project_roots_set_payload(args.roots)
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False, indent=2))
+                else:
+                    print("roots: " + ", ".join(payload["roots"]))
+                return 0
+            return _argument_error(parser, "the following arguments are required: project_command")
+        if args.command == "prompt":
+            runtime = _runtime_from_args(args)
+            app = AlcoveApplication(runtime)
+            if args.prompt_command == "save":
+                payload = app.global_home.prompt_save_payload(
+                    AddPromptRequest(
+                        title=args.title,
+                        content=args.content,
+                        description=args.description,
+                        tags=_tags(args),
+                        use_cases=args.use_case + _split_csv(args.use_cases),
+                        source_refs=_refs(args),
+                    )
+                )
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"prompt: {payload['prompt']['id']} | {payload['path']}")
+                return 0
+            if args.prompt_command == "search":
+                payload = app.global_home.prompt_search_payload(
+                    query=args.query,
+                    tag=args.tag,
+                    status=args.status,
+                )
+                if args.json:
+                    print(json.dumps(payload["prompts"], ensure_ascii=False, indent=2))
+                else:
+                    for prompt in payload["prompts"]:
+                        print(f"{prompt['status']} | {prompt['title']} | {prompt['id']}")
+                return 0
+            if args.prompt_command == "get":
+                payload = app.global_home.prompt_get_payload(args.prompt_id)
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False, indent=2))
+                else:
+                    prompt = payload["prompt"]
+                    print(f"# {prompt['title']}\n\n{prompt['content']}")
+                return 0
+            if args.prompt_command == "archive":
+                payload = app.global_home.prompt_archive_payload(
+                    args.prompt_id,
+                    confirm=args.confirm,
+                )
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(f"{payload['status']}: {payload['path']}")
+                return 0
+            if args.prompt_command == "tags":
+                payload = app.global_home.prompt_tags_payload()
+                if args.json:
+                    print(json.dumps(payload["tags"], ensure_ascii=False, indent=2))
+                else:
+                    for tag in payload["tags"]:
+                        print(f"{tag['tag']} | {tag['count']}")
+                return 0
+            if args.prompt_command == "rebuild-index":
+                payload = app.global_home.prompt_rebuild_index_payload()
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False, indent=2))
+                else:
+                    print(f"index: {payload['index_path']} | prompts: {payload['count']}")
+                return 0
+            return _argument_error(parser, "the following arguments are required: prompt_command")
         if args.command == "idea":
             runtime = _runtime_from_args(args)
             app = AlcoveApplication(runtime)
@@ -1030,6 +1743,20 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     print(f"created: {len(payload['created'])}")
                 return 0
+            if args.task_command == "import-social-radar":
+                payload = AlcoveApplication(runtime).global_home.task_import_social_radar_payload(
+                    args.source
+                )
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False, indent=2))
+                else:
+                    print(
+                        "imported social-radar: "
+                        f"{payload['tasks']['imported']} tasks, "
+                        f"{payload['ideas']['imported']} ideas, "
+                        f"{payload['routines']['imported']} routines"
+                    )
+                return 0
             return _argument_error(parser, "the following arguments are required: task_command")
         if args.command == "mount":
             runtime = _runtime_from_args(args)
@@ -1058,7 +1785,10 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"{mount['type']} | {mount['name']} | {mount['path']}")
                 return 0
             if args.mount_command == "scan":
-                report = app.external.mount_scan_payload(args.mount_id)
+                report = app.external.mount_scan_payload(
+                    args.mount_id,
+                    include_diagnostics=args.include_diagnostics,
+                )
                 if args.json:
                     print(json.dumps(report, ensure_ascii=False, indent=2))
                 else:
@@ -1068,6 +1798,37 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "connector":
             runtime = _runtime_from_args(args)
             app = AlcoveApplication(runtime)
+            if args.connector_command == "status":
+                payload = app.external.connector_status_payload(args.connector)
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False, indent=2))
+                else:
+                    for source in payload["sources"]:
+                        print(
+                            f"{source['connector']}/{source['id']} | {source['status']} | "
+                            f"{source['item_count']} items | checked: {source['checked_at']}"
+                        )
+                return 0
+            if args.connector_command == "refresh":
+                payload = app.external.connector_refresh_payload(
+                    connector=args.connector,
+                    stale_only=not args.all,
+                )
+                if args.json:
+                    print(
+                        json.dumps(
+                            _connector_cli_report(
+                                payload,
+                                include_items=False,
+                                include_diff=args.include_diff,
+                            ),
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+                    )
+                else:
+                    print(f"refreshed: {payload['refreshed']}, skipped: {payload['skipped']}")
+                return 0
             if args.connector_command == "fetch":
                 payload = app.external.connector_fetch_payload(args.item_path)
                 if args.json:
@@ -1086,9 +1847,66 @@ def main(argv: list[str] | None = None) -> int:
                         )
                     )
                     if args.json:
-                        print(json.dumps(report, ensure_ascii=False, indent=2))
+                        print(
+                            json.dumps(
+                                _connector_cli_report(
+                                    report,
+                                    include_items=args.include_items,
+                                ),
+                                ensure_ascii=False,
+                                indent=2,
+                            )
+                        )
                     else:
                         print(f"indexed: {report['scanned']}, skipped: {report['skipped']}")
+                    return 0
+                if args.apple_notes_command == "import-local":
+                    report = app.external.apple_notes_import_local_payload(
+                        AppleNotesLocalImportRequest(
+                            export_dir=args.export_dir,
+                            tags=_tags(args),
+                            source_id=args.source_id,
+                        )
+                    )
+                    if args.json:
+                        print(
+                            json.dumps(
+                                _connector_cli_report(
+                                    report,
+                                    include_items=args.include_items,
+                                    include_diff=args.include_diff,
+                                ),
+                                ensure_ascii=False,
+                                indent=2,
+                            )
+                        )
+                    else:
+                        export_dir = _connector_storage_path(report, "export_dir")
+                        print(
+                            f"imported: {report['exported']}, indexed: {report['scanned']}, "
+                            f"skipped: {report['skipped']}, export: {export_dir}"
+                        )
+                    return 0
+                if args.apple_notes_command == "refresh":
+                    payload = app.external.connector_refresh_payload(
+                        connector="apple-notes",
+                        stale_only=not args.force,
+                        source_id=args.source_id,
+                    )
+                    if args.json:
+                        print(
+                            json.dumps(
+                                _connector_cli_report(
+                                    payload,
+                                    include_items=False,
+                                    include_diff=args.include_diff,
+                                ),
+                                ensure_ascii=False,
+                                indent=2,
+                            )
+                        )
+                    else:
+                        print(f"refreshed: {payload['refreshed']}, skipped: {payload['skipped']}")
                     return 0
                 return _argument_error(
                     parser,
@@ -1103,13 +1921,147 @@ def main(argv: list[str] | None = None) -> int:
                         )
                     )
                     if args.json:
-                        print(json.dumps(report, ensure_ascii=False, indent=2))
+                        print(
+                            json.dumps(
+                                _connector_cli_report(
+                                    report,
+                                    include_items=args.include_items,
+                                ),
+                                ensure_ascii=False,
+                                indent=2,
+                            )
+                        )
                     else:
                         print(f"indexed: {report['scanned']}, skipped: {report['skipped']}")
+                    return 0
+                if args.github_stars_command == "import-url":
+                    report = app.external.github_stars_import_url_payload(
+                        GitHubStarsUrlImportRequest(
+                            source=args.source,
+                            export_file=args.export_file,
+                            tags=_tags(args),
+                            limit=args.limit,
+                            max_pages=args.max_pages,
+                        )
+                    )
+                    if args.json:
+                        print(
+                            json.dumps(
+                                _connector_cli_report(
+                                    report,
+                                    include_items=args.include_items,
+                                    include_diff=args.include_diff,
+                                ),
+                                ensure_ascii=False,
+                                indent=2,
+                            )
+                        )
+                    else:
+                        export_file = _connector_storage_path(report, "export_file")
+                        print(
+                            f"imported: {report['exported']}, indexed: {report['scanned']}, "
+                            f"skipped: {report['skipped']}, export: {export_file}"
+                        )
+                    return 0
+                if args.github_stars_command == "refresh":
+                    payload = app.external.connector_refresh_payload(
+                        connector="github-stars",
+                        stale_only=not args.force,
+                        source_id=args.source_id,
+                    )
+                    if args.json:
+                        print(
+                            json.dumps(
+                                _connector_cli_report(
+                                    payload,
+                                    include_items=False,
+                                    include_diff=args.include_diff,
+                                ),
+                                ensure_ascii=False,
+                                indent=2,
+                            )
+                        )
+                    else:
+                        print(f"refreshed: {payload['refreshed']}, skipped: {payload['skipped']}")
                     return 0
                 return _argument_error(
                     parser,
                     "the following arguments are required: github_stars_command",
+                )
+            if args.connector_command == "chrome-bookmarks":
+                if args.chrome_bookmarks_command == "index":
+                    report = app.external.chrome_bookmarks_index_payload(
+                        ChromeBookmarksImportRequest(
+                            export_file=args.export_file,
+                            tags=_tags(args),
+                        )
+                    )
+                    if args.json:
+                        print(
+                            json.dumps(
+                                _connector_cli_report(
+                                    report,
+                                    include_items=args.include_items,
+                                ),
+                                ensure_ascii=False,
+                                indent=2,
+                            )
+                        )
+                    else:
+                        print(f"indexed: {report['scanned']}, skipped: {report['skipped']}")
+                    return 0
+                if args.chrome_bookmarks_command == "import-local":
+                    report = app.external.chrome_bookmarks_import_local_payload(
+                        ChromeBookmarksLocalImportRequest(
+                            source_file=args.source_file,
+                            profile=args.profile,
+                            source_id=args.source_id,
+                            tags=_tags(args),
+                        )
+                    )
+                    if args.json:
+                        print(
+                            json.dumps(
+                                _connector_cli_report(
+                                    report,
+                                    include_items=args.include_items,
+                                    include_diff=args.include_diff,
+                                ),
+                                ensure_ascii=False,
+                                indent=2,
+                            )
+                        )
+                    else:
+                        source_file = _connector_storage_path(report, "source_file")
+                        print(
+                            f"imported: {report['exported']}, indexed: {report['scanned']}, "
+                            f"skipped: {report['skipped']}, source: {source_file}"
+                        )
+                    return 0
+                if args.chrome_bookmarks_command == "refresh":
+                    payload = app.external.connector_refresh_payload(
+                        connector="chrome-bookmarks",
+                        stale_only=not args.force,
+                        source_id=args.source_id,
+                    )
+                    if args.json:
+                        print(
+                            json.dumps(
+                                _connector_cli_report(
+                                    payload,
+                                    include_items=False,
+                                    include_diff=args.include_diff,
+                                ),
+                                ensure_ascii=False,
+                                indent=2,
+                            )
+                        )
+                    else:
+                        print(f"refreshed: {payload['refreshed']}, skipped: {payload['skipped']}")
+                    return 0
+                return _argument_error(
+                    parser,
+                    "the following arguments are required: chrome_bookmarks_command",
                 )
             return _argument_error(
                 parser,
@@ -1168,13 +2120,51 @@ def main(argv: list[str] | None = None) -> int:
                 parser,
                 "the following arguments are required: export_command",
             )
+        if args.command == "dashboard":
+            home = AlcoveHome.init(args.home or None)
+            module = DashboardModule(home=home)
+            if args.dashboard_command == "build":
+                result = module.build(
+                    args.output or None,
+                    build_frontend=not args.skip_frontend_build,
+                )
+                if args.json:
+                    print(json.dumps(result, ensure_ascii=False, indent=2))
+                else:
+                    print(f"dashboard: {result['index']}")
+                return 0
+            if args.dashboard_command == "import-pins":
+                result = module.import_pins(
+                    regular_file=args.regular_file or None,
+                    todo_file=args.todo_file or None,
+                )
+                if args.json:
+                    print(json.dumps(result, ensure_ascii=False, indent=2))
+                else:
+                    for kind, payload in result.items():
+                        if isinstance(payload, dict) and "imported" in payload:
+                            print(f"{kind}: {payload['imported']} pins")
+                        else:
+                            print(f"{kind}: {payload}")
+                return 0
+            return _argument_error(
+                parser,
+                "the following arguments are required: dashboard_command",
+            )
         if args.command == "serve":
             if args.mcp:
                 workspace = _workspace_from_args(args)
                 workspace_arg = str(workspace.root) if workspace is not None else "."
-                run_mcp_server(workspace_arg, args.home or None)
+                run_mcp_server(workspace_arg, args.home or None, toolset=args.toolset)
                 return 0
-            return _argument_error(parser, "serve requires --mcp")
+            if args.dashboard:
+                serve_dashboard(
+                    AlcoveHome.init(args.home or None),
+                    host=args.host,
+                    port=args.port,
+                )
+                return 0
+            return _argument_error(parser, "serve requires --mcp or --dashboard")
         if args.command == "validate":
             runtime = _runtime_from_args(args, require_workspace=True)
             issues = AlcoveApplication(runtime).system.validate_payload(
@@ -1199,7 +2189,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         return _argument_error(parser, "the following arguments are required: command")
     except (AlcoveError, FileNotFoundError, ValueError) as exc:
-        print(f"alcove: {exc}", file=sys.stderr)
+        if "args" in locals() and bool(getattr(args, "json", False)):
+            print(json.dumps(_json_error_payload(args, exc), ensure_ascii=False, indent=2))
+        else:
+            print(f"alcove: {exc}", file=sys.stderr)
         return 2
 
 

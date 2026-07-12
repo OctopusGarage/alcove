@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, date, datetime, timedelta
+import hashlib
 import json
+from pathlib import Path
+from typing import Any
 
 from alcove.home import AlcoveHome
 from alcove.markdown import normalize_slug
+from alcove.paths import compact_user_path, compact_user_paths_in_text
 from alcove.runtime import AlcoveRuntime
 from alcove.taxonomy import load_taxonomy, normalize_tag
 from alcove.workspace import Workspace
@@ -65,6 +69,7 @@ class Task:
     created_at: str
     updated_at: str
     completed_at: str = ""
+    source_routine_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -228,7 +233,7 @@ class TasksModule:
             )
             task_data = {**asdict(task), "source_routine_id": routine.get("id")}
             data["tasks"].append(task_data)
-            created.append(task)
+            created.append(self._task(task_data))
             every_days = max(int(routine.get("every_days") or 1), 1)
             while next_due <= current:
                 next_due += timedelta(days=every_days)
@@ -238,6 +243,40 @@ class TasksModule:
         if created:
             self._save(data)
         return created
+
+    def import_social_radar(self, source: str | Path) -> dict[str, Any]:
+        source_path = Path(source).expanduser()
+        raw = json.loads(source_path.read_text(encoding="utf-8"))
+        data = self._load()
+        timestamp = now_iso()
+        archive = self._archive_import_source(source_path)
+        summary: dict[str, Any] = {
+            "source": compact_user_path(source_path),
+            "archive": archive,
+            "tasks": {"imported": 0, "updated": 0},
+            "ideas": {"imported": 0, "updated": 0},
+            "routines": {"imported": 0, "updated": 0},
+        }
+        for item in self._list(raw.get("todos")):
+            result = self._upsert_imported(
+                data["tasks"],
+                self._social_radar_task(item, timestamp),
+            )
+            summary["tasks"][result] += 1
+        for item in self._list(raw.get("ideas")):
+            result = self._upsert_imported(
+                data["ideas"],
+                self._social_radar_idea(item, timestamp),
+            )
+            summary["ideas"][result] += 1
+        for item in self._list(raw.get("routines")):
+            result = self._upsert_imported(
+                data["routines"],
+                self._social_radar_routine(item, timestamp),
+            )
+            summary["routines"][result] += 1
+        self._save(data)
+        return summary
 
     def _update_task_status(self, task_id: str, status: str) -> Task:
         data = self._load()
@@ -252,6 +291,126 @@ class TasksModule:
                 self._save(data)
                 return self._task(item)
         raise FileNotFoundError(f"Task not found: {task_id}")
+
+    def _social_radar_task(self, item: dict[str, Any], timestamp: str) -> dict[str, Any]:
+        raw_id = str(item.get("id") or "")
+        status = str(item.get("status") or "pending")
+        created_at = str(item.get("created_at") or timestamp)
+        archived_at = str(item.get("archived_at") or "")
+        return {
+            "id": self._import_id("social-radar-task", raw_id, str(item.get("title") or "")),
+            "title": str(item.get("title") or raw_id),
+            "notes": compact_user_paths_in_text(str(item.get("notes") or "")),
+            "tags": self._normalize_tags(["social-radar", str(item.get("category") or "")]),
+            "status": status if status in {"pending", "done", "cancelled"} else "pending",
+            "priority": self._priority(str(item.get("priority") or "medium")),
+            "due": str(item.get("due") or ""),
+            "created_at": created_at,
+            "updated_at": archived_at or created_at,
+            "completed_at": str(item.get("completed_at") or ""),
+            "social_radar_id": raw_id,
+            "social_radar_kind": "todo",
+            "source": compact_user_paths_in_text(str(item.get("source") or "")),
+            "category": str(item.get("category") or ""),
+            "routine_id": compact_user_paths_in_text(str(item.get("routine_id") or "")),
+            "archived_at": archived_at,
+            "imported_at": timestamp,
+        }
+
+    def _social_radar_idea(self, item: dict[str, Any], timestamp: str) -> dict[str, Any]:
+        raw_id = str(item.get("id") or "")
+        status = str(item.get("status") or "active")
+        created_at = str(item.get("created_at") or timestamp)
+        archived_at = str(item.get("archived_at") or "")
+        return {
+            "id": self._import_id("social-radar-idea", raw_id, str(item.get("title") or "")),
+            "title": str(item.get("title") or raw_id),
+            "notes": compact_user_paths_in_text(str(item.get("notes") or "")),
+            "tags": self._normalize_tags(["social-radar", str(item.get("category") or "")]),
+            "status": status if status else "active",
+            "created_at": created_at,
+            "updated_at": archived_at or created_at,
+            "promoted_task_id": str(item.get("promoted_to_id") or ""),
+            "social_radar_id": raw_id,
+            "social_radar_kind": "idea",
+            "source": compact_user_paths_in_text(str(item.get("source") or "")),
+            "category": str(item.get("category") or ""),
+            "category_hint": str(item.get("category_hint") or ""),
+            "archived_at": archived_at,
+            "outcome": str(item.get("outcome") or ""),
+            "promoted_to_type": str(item.get("promoted_to_type") or ""),
+            "imported_at": timestamp,
+        }
+
+    def _social_radar_routine(self, item: dict[str, Any], timestamp: str) -> dict[str, Any]:
+        raw_id = str(item.get("id") or "")
+        created_at = str(item.get("created_at") or timestamp)
+        archived_at = str(item.get("archived_at") or "")
+        raw_schedule = item.get("schedule")
+        schedule: dict[str, Any] = raw_schedule if isinstance(raw_schedule, dict) else {}
+        return {
+            "id": self._import_id("social-radar-routine", raw_id, str(item.get("title") or "")),
+            "title": str(item.get("title") or raw_id),
+            "notes": compact_user_paths_in_text(str(item.get("notes") or "")),
+            "tags": self._normalize_tags(["social-radar", str(item.get("category") or "")]),
+            "status": str(item.get("status") or "active"),
+            "priority": self._priority(str(item.get("priority") or "medium")),
+            "every_days": self._schedule_every_days(schedule),
+            "next_due": str(item.get("next_due") or ""),
+            "created_at": created_at,
+            "updated_at": archived_at or created_at,
+            "last_materialized_due": str(item.get("last_generated_due") or ""),
+            "social_radar_id": raw_id,
+            "social_radar_kind": "routine",
+            "category": str(item.get("category") or ""),
+            "schedule": schedule,
+            "generated_todo_ids": self._list(item.get("generated_todo_ids")),
+            "archived_at": archived_at,
+            "imported_at": timestamp,
+        }
+
+    def _upsert_imported(self, items: list[dict[str, Any]], imported: dict[str, Any]) -> str:
+        for index, item in enumerate(items):
+            if item.get("social_radar_id") == imported.get("social_radar_id"):
+                existing_created = str(item.get("created_at") or imported["created_at"])
+                items[index] = {**item, **imported, "created_at": existing_created}
+                return "updated"
+        items.append(imported)
+        return "imported"
+
+    def _archive_import_source(self, source_path: Path) -> dict[str, Any]:
+        content = source_path.read_bytes()
+        digest = hashlib.sha256(content).hexdigest()
+        imports_root = self.task_root / "imports"
+        imports_root.mkdir(parents=True, exist_ok=True)
+        target = imports_root / f"social-radar-todos-{digest[:12]}.json"
+        if not target.exists():
+            target.write_bytes(content)
+        manifest = {
+            "source": compact_user_path(source_path),
+            "path": compact_user_path(target),
+            "sha256": digest,
+            "bytes": len(content),
+        }
+        manifest_path = imports_root / "social-radar-todos.latest.json"
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return manifest
+
+    def _import_id(self, prefix: str, raw_id: str, fallback: str) -> str:
+        base = normalize_slug(raw_id or fallback)
+        return normalize_slug(f"{prefix}-{base}")
+
+    def _schedule_every_days(self, schedule: dict[str, Any]) -> int:
+        interval = max(int(schedule.get("interval") or 1), 1)
+        frequency = str(schedule.get("frequency") or "daily")
+        if frequency == "weekly":
+            return interval * 7
+        if frequency == "monthly":
+            return interval * 30
+        return interval
 
     def _new_task(
         self,
@@ -275,7 +434,7 @@ class TasksModule:
             updated_at=timestamp,
         )
 
-    def _load(self) -> dict[str, list[dict]]:
+    def _load(self) -> dict[str, list[dict[str, Any]]]:
         if not self.store_path.is_file():
             return {"ideas": [], "tasks": [], "routines": []}
         data = json.loads(self.store_path.read_text(encoding="utf-8"))
@@ -287,7 +446,7 @@ class TasksModule:
             "routines": self._list(data.get("routines")),
         }
 
-    def _save(self, data: dict[str, list[dict]]) -> None:
+    def _save(self, data: dict[str, list[dict[str, Any]]]) -> None:
         self.store_path.parent.mkdir(parents=True, exist_ok=True)
         self.store_path.write_text(
             json.dumps(data, ensure_ascii=False, indent=2) + "\n",
@@ -311,7 +470,7 @@ class TasksModule:
         priority = normalize_slug(value)
         return priority if priority in {"high", "medium", "low"} else "medium"
 
-    def _idea(self, item: dict) -> Idea:
+    def _idea(self, item: dict[str, Any]) -> Idea:
         return Idea(
             id=str(item.get("id") or ""),
             title=str(item.get("title") or ""),
@@ -323,7 +482,7 @@ class TasksModule:
             promoted_task_id=str(item.get("promoted_task_id") or ""),
         )
 
-    def _task(self, item: dict) -> Task:
+    def _task(self, item: dict[str, Any]) -> Task:
         return Task(
             id=str(item.get("id") or ""),
             title=str(item.get("title") or ""),
@@ -335,9 +494,10 @@ class TasksModule:
             created_at=str(item.get("created_at") or ""),
             updated_at=str(item.get("updated_at") or ""),
             completed_at=str(item.get("completed_at") or ""),
+            source_routine_id=str(item.get("source_routine_id") or ""),
         )
 
-    def _routine(self, item: dict) -> Routine:
+    def _routine(self, item: dict[str, Any]) -> Routine:
         return Routine(
             id=str(item.get("id") or ""),
             title=str(item.get("title") or ""),
@@ -364,5 +524,5 @@ class TasksModule:
     def _parse_date(self, value: str) -> date:
         return datetime.strptime(value, "%Y-%m-%d").date()
 
-    def _list(self, value: object) -> list:
+    def _list(self, value: object) -> list[Any]:
         return value if isinstance(value, list) else []

@@ -50,6 +50,9 @@ class SearchQueryPlan:
 
     def matches_doc(self, doc: MarkdownDoc) -> bool:
         frontmatter = doc.frontmatter
+        status = str(frontmatter.get("status") or "active")
+        if self.status is None and status.casefold() == "deleted":
+            return False
         if self.type_filter and str(frontmatter.get("type") or "") != self.type_filter:
             return False
         if self.tag_filter is not None and self.tag_filter not in self._normalized_tags(
@@ -68,10 +71,7 @@ class SearchQueryPlan:
             and str(frontmatter.get("platform") or "").casefold() != self.platform.casefold()
         ):
             return False
-        if (
-            self.status
-            and str(frontmatter.get("status") or "active").casefold() != self.status.casefold()
-        ):
+        if self.status and status.casefold() != self.status.casefold():
             return False
         if (
             self.min_confidence is not None
@@ -81,6 +81,9 @@ class SearchQueryPlan:
         return self._matches_date(frontmatter_date(frontmatter))
 
     def matches_row(self, row: Mapping[str, Any]) -> bool:
+        status = str(row.get("status") or "active")
+        if self.status is None and status.casefold() == "deleted":
+            return False
         if self.type_filter and str(row.get("type") or "") != self.type_filter:
             return False
         if self.tag_filter is not None and self.tag_filter not in self._normalized_tags(
@@ -93,7 +96,7 @@ class SearchQueryPlan:
             row_topic = str(row.get("topic") or "").casefold()
             if self.topic_filter.topic.casefold() not in row_topic:
                 return False
-        if self.status and str(row.get("status") or "").casefold() != self.status.casefold():
+        if self.status and status.casefold() != self.status.casefold():
             return False
         return self._matches_date(str(row.get("date") or ""))
 

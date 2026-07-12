@@ -1,6 +1,12 @@
 import json
 
 from alcove.cli import build_parser, main
+from alcove.connector_sources import ConnectorSourceRegistry
+from alcove.connectors.apple_notes import write_apple_notes_export_tree
+from alcove.connectors.github_stars import GitHubStarsConnector
+from alcove.home import AlcoveHome
+from alcove.pins import AddPinRequest, PinsModule
+from alcove.usage import UsageRecorder
 
 
 def _write_post(root, platform, name, files):
@@ -62,7 +68,24 @@ def test_cli_doctor_json_reports_workspace_health(tmp_path, capsys):
     payload = json.loads(captured.out)
     assert code == 0
     assert payload["status"] == "ok"
-    assert any(check["name"] == "workspace" for check in payload["checks"])
+    workspace_check = next(check for check in payload["checks"] if check["name"] == "workspace")
+    assert workspace_check["component"] == "Workspace config"
+    assert workspace_check["remediation"] == ""
+    assert "debug_path" not in json.dumps(payload)
+
+
+def test_cli_inbox_discovers_current_workspace(tmp_path, monkeypatch, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+    _write_xhs_post(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    code = main(["inbox", "peek", "--json"])
+    captured = capsys.readouterr()
+
+    assert code == 0
+    payload = json.loads(captured.out)
+    assert payload["identifier"] == "xhs/20260707-post"
 
 
 def test_cli_parser_accepts_serve_mcp_command(tmp_path):
@@ -71,6 +94,77 @@ def test_cli_parser_accepts_serve_mcp_command(tmp_path):
     assert args.command == "serve"
     assert args.mcp is True
     assert args.workspace == str(tmp_path)
+
+
+def test_cli_parser_accepts_serve_dashboard_command(tmp_path):
+    args = build_parser().parse_args(
+        ["serve", "--dashboard", "--home", str(tmp_path), "--port", "8123"]
+    )
+
+    assert args.command == "serve"
+    assert args.dashboard is True
+    assert args.home == str(tmp_path)
+    assert args.port == 8123
+
+
+def test_cli_search_records_privacy_safe_usage(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / "home")
+    PinsModule(home=home).add(
+        AddPinRequest(title="CLI Usage Needle", content="Searchable usage content.")
+    )
+
+    code = main(["search", "usage needle", "--home", str(home.root), "--json"])
+    output = capsys.readouterr()
+    summary = UsageRecorder(home).summary()
+    events = (home.paths().logs / "usage.jsonl").read_text(encoding="utf-8")
+
+    assert code == 0
+    assert json.loads(output.out)[0]["title"] == "CLI Usage Needle"
+    assert summary["search"]["surfaces"] == {"cli": 1}
+    assert summary["search"]["zero_result"] == 0
+    assert "usage needle" not in events
+
+
+def test_cli_usage_summary_and_prune(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / "home")
+    recorder = UsageRecorder(home)
+    recorder.record_search(surface="cli", query="usage summary secret", result_count=0)
+    (home.paths().logs / "activity.jsonl").write_text(
+        json.dumps(
+            {
+                "updated_at": "2026-06-01T00:00:00+08:00",
+                "area": "pin",
+                "action": "pin.add",
+                "summary": "Old pin",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    summary_code = main(["usage", "summary", "--home", str(home.root), "--json"])
+    summary_output = capsys.readouterr()
+    prune_code = main(
+        [
+            "usage",
+            "prune",
+            "--home",
+            str(home.root),
+            "--days",
+            "14",
+            "--now",
+            "2026-07-10T12:00:00+08:00",
+            "--json",
+        ]
+    )
+    prune_output = capsys.readouterr()
+
+    assert summary_code == 0
+    summary = json.loads(summary_output.out)
+    assert summary["search"]["total"] == 1
+    assert "usage summary secret" not in summary_output.out
+    assert prune_code == 0
+    assert json.loads(prune_output.out)["activity_removed"] == 1
 
 
 def test_cli_install_prints_mcp_config_without_writing(tmp_path, monkeypatch, capsys):
@@ -146,6 +240,137 @@ def test_cli_install_status_and_uninstall(tmp_path, monkeypatch, capsys):
     assert json.loads(status_output.out)["files"][0]["installed"] is True
     assert uninstall_code == 0
     assert json.loads(uninstall_output.out)["files"][0]["action"] == "removed"
+
+
+def test_cli_hub_status_reports_profile_files_without_writing(tmp_path, capsys):
+    home = tmp_path / "home"
+    hub = tmp_path / "hub"
+
+    before_code = main(
+        [
+            "hub",
+            "init",
+            str(hub),
+            "--home",
+            str(home),
+            "--default-kb",
+            "research_notes",
+            "--target",
+            "codex",
+            "--status",
+            "--json",
+        ]
+    )
+    before_output = capsys.readouterr()
+    before = json.loads(before_output.out)
+    assert before_code == 0
+    assert before["profile"] == "hub"
+    assert before["exists"] is False
+    assert all(file["installed"] is False for file in before["files"])
+    assert all(file["workspace_match"] is False for file in before["files"])
+    assert not hub.exists()
+
+    init_code = main(
+        [
+            "hub",
+            "init",
+            str(hub),
+            "--home",
+            str(home),
+            "--default-kb",
+            "research_notes",
+            "--target",
+            "codex",
+            "--json",
+        ]
+    )
+    capsys.readouterr()
+    after_code = main(
+        [
+            "hub",
+            "install",
+            str(hub),
+            "--home",
+            str(home),
+            "--default-kb",
+            "research_notes",
+            "--target",
+            "codex",
+            "--status",
+            "--json",
+        ]
+    )
+    after_output = capsys.readouterr()
+
+    assert init_code == 0
+
+    after = json.loads(after_output.out)
+    assert after_code == 0
+    assert after["exists"] is True
+    assert all(file["installed"] is True for file in after["files"])
+    assert all(file["workspace_match"] is True for file in after["files"])
+
+
+def test_cli_kb_install_status_reports_managed_kb_profile_files(tmp_path, capsys):
+    home = tmp_path / "home"
+    kb_root = tmp_path / "kb"
+    kb_root.mkdir()
+    main(["kb", "--home", str(home), "add", "research_notes", str(kb_root), "--json"])
+    capsys.readouterr()
+
+    before_code = main(
+        [
+            "kb",
+            "--home",
+            str(home),
+            "install",
+            "research_notes",
+            "--target",
+            "codex",
+            "--status",
+            "--json",
+        ]
+    )
+    before_output = capsys.readouterr()
+    install_code = main(
+        [
+            "kb",
+            "--home",
+            str(home),
+            "install",
+            "research_notes",
+            "--target",
+            "codex",
+            "--json",
+        ]
+    )
+    capsys.readouterr()
+    after_code = main(
+        [
+            "kb",
+            "--home",
+            str(home),
+            "install",
+            "research_notes",
+            "--target",
+            "codex",
+            "--status",
+            "--json",
+        ]
+    )
+    after_output = capsys.readouterr()
+
+    before = json.loads(before_output.out)
+    after = json.loads(after_output.out)
+    assert before_code == 0
+    assert before["profile"] == "managed-kb"
+    assert before["exists"] is True
+    assert all(file["installed"] is False for file in before["files"])
+    assert install_code == 0
+    assert after_code == 0
+    assert after["kb"] == "research_notes"
+    assert all(file["installed"] is True for file in after["files"])
+    assert all(file["workspace_match"] is True for file in after["files"])
 
 
 def test_cli_init_existing_file_returns_controlled_error(tmp_path, capsys):
@@ -252,7 +477,16 @@ def test_cli_inbox_peek_json_outputs_post_payload(tmp_path, capsys):
     assert code == 0
     payload = json.loads(captured.out)
     assert payload["title"] == "代码图谱怎么选"
+    assert payload["identifier"] == "xhs/20260707-post"
     assert payload["content_source"] == "summary.md"
+    assert payload["content_truncated"] is False
+    assert payload["full_content_command"] == "alcove inbox read xhs/20260707-post --full --json"
+    assert payload["content_files"][0]["path"] == "summary.md"
+    assert payload["content_files"][0]["included"] is True
+    assert (
+        payload["content_files"][0]["read_command"]
+        == "alcove inbox read xhs/20260707-post --full --json"
+    )
 
 
 def test_cli_inbox_empty_prints_message(tmp_path, capsys):
@@ -329,6 +563,134 @@ def test_cli_knowledge_note_source_followed_by_search_outputs_matching_title(tmp
     assert "source:" in note_output.out
     assert "concept:" in note_output.out
     assert "CLI Source" in search_output.out
+
+
+def test_cli_knowledge_revise_updates_existing_note(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+    main(
+        [
+            "knowledge",
+            "--workspace",
+            str(tmp_path),
+            "add-note",
+            "agent-engineering/agent-harness",
+            "CLI Revision",
+            "--summary",
+            "Old CLI summary.",
+            "--tag",
+            "mcp",
+        ]
+    )
+    capsys.readouterr()
+
+    code = main(
+        [
+            "knowledge",
+            "--workspace",
+            str(tmp_path),
+            "revise",
+            "concepts/agent-engineering/agent-harness/cli-revision.md",
+            "--summary",
+            "New CLI summary.",
+            "--append",
+            "AI 讨论后补充的修订内容。",
+            "--tag",
+            "managed-kb",
+            "--source-ref",
+            "sources/chat/agent-engineering/cli-discussion.md",
+            "--reason",
+            "AI discussion",
+            "--json",
+        ]
+    )
+    output = capsys.readouterr()
+
+    payload = json.loads(output.out)
+    assert code == 0
+    assert payload["status"] == "revised"
+    assert payload["path"].endswith(
+        "knowledge/concepts/agent-engineering/agent-harness/cli-revision.md"
+    )
+
+
+def test_cli_knowledge_delete_is_preview_first_and_hides_default_search(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+    capsys.readouterr()
+    main(
+        [
+            "knowledge",
+            "--workspace",
+            str(tmp_path),
+            "note-source",
+            "--platform",
+            "web",
+            "--title",
+            "Outdated Source",
+            "--topic",
+            "agent-engineering/agent-harness",
+            "--resource",
+            "https://example.test/outdated",
+            "--summary",
+            "Outdated cleanup needle.",
+        ]
+    )
+    capsys.readouterr()
+
+    preview_code = main(
+        [
+            "knowledge",
+            "--workspace",
+            str(tmp_path),
+            "delete",
+            "sources/web/agent-engineering/outdated-source.md",
+            "--json",
+        ]
+    )
+    preview_output = capsys.readouterr()
+    delete_code = main(
+        [
+            "knowledge",
+            "--workspace",
+            str(tmp_path),
+            "delete",
+            "sources/web/agent-engineering/outdated-source.md",
+            "--reason",
+            "confirmed obsolete from search result",
+            "--confirm",
+            "--json",
+        ]
+    )
+    delete_output = capsys.readouterr()
+    search_code = main(["search", "Outdated", "--workspace", str(tmp_path), "--json"])
+    search_output = capsys.readouterr()
+    audit_code = main(
+        [
+            "search",
+            "Outdated",
+            "--workspace",
+            str(tmp_path),
+            "--status",
+            "deleted",
+            "--json",
+        ]
+    )
+    audit_output = capsys.readouterr()
+
+    preview = json.loads(preview_output.out)
+    deleted = json.loads(delete_output.out)
+    search_rows = json.loads(search_output.out)
+    audit_rows = json.loads(audit_output.out)
+    assert preview_code == 0
+    assert preview["status"] == "preview"
+    assert delete_code == 0
+    assert deleted["status"] == "deleted"
+    assert deleted["deleted_at"]
+    assert search_code == 0
+    assert search_rows == []
+    assert audit_code == 0
+    assert audit_rows[0]["status"] == "deleted"
+    assert audit_rows[0]["deleted_at"] == deleted["deleted_at"]
 
 
 def test_cli_search_json_outputs_valid_json_with_title_and_path(tmp_path, capsys):
@@ -479,20 +841,60 @@ def test_cli_pin_add_list_archive_and_search(tmp_path, capsys):
             str(tmp_path),
             "add",
             "Pinned Snippet",
-            "--description",
+            "--summary",
             "Use Alcove for durable personal notes.",
+            "--content",
+            "Pin exact commands and references that need repeated lookup.",
+            "--kind",
+            "regular",
             "--tag",
             "personal-notes",
             "--priority",
             "high",
+            "--resource",
+            "https://example.test/pin",
             "--json",
         ]
     )
     add_output = capsys.readouterr()
-    list_code = main(
-        ["pin", "--workspace", str(tmp_path), "list", "--tag", "personal-notes", "--json"]
+    get_code = main(["pin", "--workspace", str(tmp_path), "get", "pinned-snippet", "--json"])
+    get_output = capsys.readouterr()
+    update_code = main(
+        [
+            "pin",
+            "--workspace",
+            str(tmp_path),
+            "update",
+            "pinned-snippet",
+            "--kind",
+            "todo",
+            "--content",
+            "Practice this workflow and refine it later.",
+            "--tag",
+            "practice",
+            "--json",
+        ]
     )
+    update_output = capsys.readouterr()
+    list_code = main(["pin", "--workspace", str(tmp_path), "list", "--tag", "practice", "--json"])
     list_output = capsys.readouterr()
+    pin_search_code = main(
+        [
+            "pin",
+            "--workspace",
+            str(tmp_path),
+            "search",
+            "practice",
+            "--kind",
+            "todo",
+            "--json",
+        ]
+    )
+    pin_search_output = capsys.readouterr()
+    index_code = main(["pin", "--workspace", str(tmp_path), "rebuild-index", "--json"])
+    index_output = capsys.readouterr()
+    render_code = main(["pin", "--workspace", str(tmp_path), "render-html", "--json"])
+    render_output = capsys.readouterr()
     search_code = main(["search", "durable", "--workspace", str(tmp_path), "--json"])
     search_output = capsys.readouterr()
     archive_code = main(
@@ -510,10 +912,156 @@ def test_cli_pin_add_list_archive_and_search(tmp_path, capsys):
 
     assert add_code == 0
     assert json.loads(add_output.out)["status"] == "pinned"
+    assert json.loads(add_output.out)["pin"]["kind"] == "regular"
+    assert get_code == 0
+    assert json.loads(get_output.out)["pin"]["resources"] == ["https://example.test/pin"]
+    assert update_code == 0
+    assert json.loads(update_output.out)["pin"]["kind"] == "todo"
     assert list_code == 0
     assert json.loads(list_output.out)[0]["title"] == "Pinned Snippet"
+    assert pin_search_code == 0
+    pin_search_payload = json.loads(pin_search_output.out)
+    assert pin_search_payload[0]["kind"] == "todo"
+    assert pin_search_payload[0]["path"] == "pins/pinned-snippet.md"
+    assert index_code == 0
+    assert json.loads(index_output.out)["status"] == "rebuilt"
+    assert render_code == 0
+    assert json.loads(render_output.out)["path"].endswith("pins/board.html")
     assert search_code == 0
     assert json.loads(search_output.out)[0]["root"] == "pins"
+    assert archive_code == 0
+    assert json.loads(archive_output.out)["status"] == "archived"
+
+
+def test_cli_dashboard_import_and_build(tmp_path, capsys):
+    home = tmp_path / "home"
+    regular = tmp_path / "regular.txt"
+    todo = tmp_path / "todo.txt"
+    regular.write_text(
+        "开发参考\n\nClaude Code\n\n/plan\n\n===\n\n快捷键\n\nCtrl + U\n", encoding="utf-8"
+    )
+    todo.write_text("数据看板搜索记录使用记录\n\n===\n\ngithub star 索引\n", encoding="utf-8")
+
+    import_code = main(
+        [
+            "dashboard",
+            "--home",
+            str(home),
+            "import-pins",
+            "--regular-file",
+            str(regular),
+            "--todo-file",
+            str(todo),
+            "--json",
+        ]
+    )
+    import_output = capsys.readouterr()
+    build_code = main(
+        ["dashboard", "--home", str(home), "build", "--skip-frontend-build", "--json"]
+    )
+    build_output = capsys.readouterr()
+
+    assert import_code == 0
+    assert json.loads(import_output.out)["regular"]["imported"] == 1
+    assert build_code == 0
+    assert json.loads(build_output.out)["status"] == "built"
+    assert (home / "dashboard" / "snapshot.json").is_file()
+
+
+def test_cli_project_add_get_find_list_remove(tmp_path, capsys):
+    home = tmp_path / "home"
+    project_root = tmp_path / "work" / "alcove"
+    project_root.mkdir(parents=True)
+
+    add_code = main(
+        [
+            "project",
+            "--home",
+            str(home),
+            "add",
+            "alcove",
+            str(project_root),
+            "--note",
+            "Knowledge manager.",
+            "--json",
+        ]
+    )
+    add_output = capsys.readouterr()
+    get_code = main(["project", "--home", str(home), "get", "alcove", "--json"])
+    get_output = capsys.readouterr()
+    find_code = main(["project", "--home", str(home), "find", "knowledge", "--json"])
+    find_output = capsys.readouterr()
+    list_code = main(["project", "--home", str(home), "list", "--json"])
+    list_output = capsys.readouterr()
+    remove_code = main(["project", "--home", str(home), "remove", "alcove", "--json"])
+    remove_output = capsys.readouterr()
+
+    assert add_code == 0
+    assert json.loads(add_output.out)["project"]["alias"] == "alcove"
+    assert get_code == 0
+    assert json.loads(get_output.out)["project"]["path"] == str(project_root.resolve())
+    assert find_code == 0
+    assert json.loads(find_output.out)["projects"][0]["alias"] == "alcove"
+    assert list_code == 0
+    assert json.loads(list_output.out)[0]["note"] == "Knowledge manager."
+    assert remove_code == 0
+    assert json.loads(remove_output.out)["status"] == "removed"
+
+
+def test_cli_prompt_save_search_get_tags_archive(tmp_path, capsys):
+    home = tmp_path / "home"
+
+    save_code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "save",
+            "Review Lens",
+            "--content",
+            "Look for regressions and missing tests.",
+            "--description",
+            "Review helper.",
+            "--tag",
+            "review",
+            "--use-case",
+            "PR review",
+            "--source-ref",
+            "pins/review.md",
+            "--json",
+        ]
+    )
+    save_output = capsys.readouterr()
+    search_code = main(
+        ["prompt", "--home", str(home), "search", "regressions", "--tag", "review", "--json"]
+    )
+    search_output = capsys.readouterr()
+    get_code = main(["prompt", "--home", str(home), "get", "review-lens", "--json"])
+    get_output = capsys.readouterr()
+    tags_code = main(["prompt", "--home", str(home), "tags", "--json"])
+    tags_output = capsys.readouterr()
+    index_code = main(["prompt", "--home", str(home), "rebuild-index", "--json"])
+    index_output = capsys.readouterr()
+    archive_code = main(
+        ["prompt", "--home", str(home), "archive", "review-lens", "--confirm", "--json"]
+    )
+    archive_output = capsys.readouterr()
+
+    assert save_code == 0
+    assert json.loads(save_output.out)["prompt"]["id"] == "review-lens"
+    assert search_code == 0
+    prompt_search_payload = json.loads(search_output.out)
+    assert prompt_search_payload[0]["title"] == "Review Lens"
+    assert prompt_search_payload[0]["path"] == "prompts/review-lens.md"
+    assert get_code == 0
+    assert (
+        json.loads(get_output.out)["prompt"]["content"] == "Look for regressions and missing tests."
+    )
+    assert tags_code == 0
+    assert json.loads(tags_output.out) == [{"tag": "review", "count": 1}]
+    assert index_code == 0
+    assert json.loads(index_output.out)["count"] == 1
+    assert (home / "prompts" / "index.json").is_file()
     assert archive_code == 0
     assert json.loads(archive_output.out)["status"] == "archived"
 
@@ -746,13 +1294,122 @@ def test_cli_connector_apple_notes_index_and_search(tmp_path, capsys):
     fetch_output = capsys.readouterr()
 
     assert index_code == 0
-    assert json.loads(index_output.out)["scanned"] == 1
+    index_payload = json.loads(index_output.out)
+    assert index_payload["scanned"] == 1
+    assert index_payload["item_count"] == 1
+    assert "items" not in index_payload
     assert search_code == 0
     assert json.loads(search_output.out)[0]["type"] == "Apple Note"
     assert fetch_code == 0
     fetch_payload = json.loads(fetch_output.out)
     assert fetch_payload["source"] == "local-export"
     assert fetch_payload["detail"]["body_html"] == "<div>CLI connector needle.</div>"
+    assert "path" not in fetch_payload["item"]
+    assert "path" not in fetch_payload["detail"]
+
+
+def test_cli_connector_apple_notes_import_local_and_refresh(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    home_root = tmp_path / "home"
+    notes = [
+        {
+            "id": "x-coredata://note-cli-local",
+            "title": "CLI Local Apple Note",
+            "account": "iCloud",
+            "folder_path": "iCloud/Inbox",
+            "created_at": "2026-07-07T08:00:00Z",
+            "updated_at": "2026-07-08T09:00:00Z",
+            "plaintext": "CLI local connector needle.",
+            "body_html": "<div>CLI local connector needle.</div>",
+        }
+    ]
+
+    def fake_export(self, output_dir):
+        return write_apple_notes_export_tree(notes, output_dir)
+
+    monkeypatch.setattr(
+        "alcove.connectors.apple_notes.LocalAppleNotesExporter.export_all", fake_export
+    )
+
+    import_code = main(
+        [
+            "connector",
+            "--home",
+            str(home_root),
+            "apple-notes",
+            "import-local",
+            "--tag",
+            "apple-notes",
+            "--json",
+        ]
+    )
+    import_output = capsys.readouterr()
+    notes[0]["plaintext"] = "CLI refreshed connector needle."
+    notes[0]["updated_at"] = "2026-07-09T09:00:00Z"
+    refresh_code = main(
+        [
+            "connector",
+            "--home",
+            str(home_root),
+            "apple-notes",
+            "refresh",
+            "local",
+            "--force",
+            "--json",
+        ]
+    )
+    refresh_output = capsys.readouterr()
+    reuse_code = main(
+        [
+            "connector",
+            "--home",
+            str(home_root),
+            "apple-notes",
+            "refresh",
+            "local",
+            "--force",
+            "--json",
+        ]
+    )
+    reuse_output = capsys.readouterr()
+    search_code = main(
+        [
+            "search",
+            "--home",
+            str(home_root),
+            "refreshed connector",
+            "--type",
+            "Apple Note",
+            "--json",
+        ]
+    )
+    search_output = capsys.readouterr()
+
+    import_payload = json.loads(import_output.out)
+    refresh_payload = json.loads(refresh_output.out)
+    assert import_code == 0
+    assert import_payload["status"] == "imported"
+    assert import_payload["scanned"] == 1
+    assert import_payload["summary"]["added_count"] == 1
+    assert "home" not in import_payload
+    assert "export_dir" not in import_payload
+    assert "index_path" not in import_payload
+    assert "debug" not in import_payload
+    assert refresh_code == 0
+    assert refresh_payload["refreshed"] == 1
+    assert "home" not in refresh_payload
+    assert refresh_payload["sources"][0]["diff_summary"]["updated_count"] == 1
+    assert "export_dir" not in refresh_payload["sources"][0]
+    assert "index_path" not in refresh_payload["sources"][0]
+    reuse_payload = json.loads(reuse_output.out)
+    assert reuse_code == 0
+    assert reuse_payload["reused"] == 1
+    assert reuse_payload["sources"][0]["reused"] == 1
+    assert search_code == 0
+    assert json.loads(search_output.out)[0]["title"] == "CLI Local Apple Note"
 
 
 def test_cli_connector_github_stars_index_and_search(tmp_path, capsys):
@@ -792,15 +1449,152 @@ def test_cli_connector_github_stars_index_and_search(tmp_path, capsys):
     index_output = capsys.readouterr()
     search_code = main(["search", "knowledge management", "--workspace", str(tmp_path), "--json"])
     search_output = capsys.readouterr()
+    tags_code = main(["search", "--workspace", str(tmp_path), "--tags", "--limit", "1", "--json"])
+    tags_output = capsys.readouterr()
 
     assert index_code == 0
-    assert json.loads(index_output.out)["scanned"] == 1
+    index_payload = json.loads(index_output.out)
+    assert index_payload["scanned"] == 1
+    assert index_payload["item_count"] == 1
+    assert "items" not in index_payload
     assert search_code == 0
     assert json.loads(search_output.out)[0]["type"] == "GitHub Star"
+    assert tags_code == 0
+    assert len(json.loads(tags_output.out)) == 1
+
+
+def test_cli_connector_json_errors_are_structured(tmp_path, capsys):
+    home_root = tmp_path / "home"
+
+    code = main(
+        [
+            "connector",
+            "--home",
+            str(home_root),
+            "github-stars",
+            "import-url",
+            "https://example.com/octocat?tab=stars",
+            "--json",
+        ]
+    )
+    output = capsys.readouterr()
+
+    payload = json.loads(output.out)
+    assert code == 2
+    assert output.err == ""
+    assert payload["error"]["connector"] == "github-stars"
+    assert payload["error"]["error_code"] == "value"
+    assert payload["error"]["message"] == "Unsupported GitHub Stars URL host: example.com"
+    assert "GitHub profile URL" in payload["error"]["remediation_hint"]
+
+
+def test_cli_connector_chrome_bookmarks_index_import_local_and_refresh(
+    tmp_path,
+    capsys,
+):
+    home_root = tmp_path / "home"
+    bookmarks_file = tmp_path / "Bookmarks"
+    bookmarks_file.write_text(
+        json.dumps(
+            {
+                "roots": {
+                    "bookmark_bar": {
+                        "type": "folder",
+                        "name": "Bookmarks Bar",
+                        "children": [
+                            {
+                                "type": "url",
+                                "name": "Codegraph",
+                                "url": "https://github.com/colbymchenry/codegraph",
+                                "date_added": "13300000001000000",
+                            }
+                        ],
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    import_code = main(
+        [
+            "connector",
+            "--home",
+            str(home_root),
+            "chrome-bookmarks",
+            "import-local",
+            "--source-file",
+            str(bookmarks_file),
+            "--tag",
+            "bookmarks",
+            "--json",
+        ]
+    )
+    import_output = capsys.readouterr()
+    search_code = main(["search", "codegraph", "--home", str(home_root), "--json"])
+    search_output = capsys.readouterr()
+    bookmarks_file.write_text(
+        json.dumps(
+            {
+                "roots": {
+                    "bookmark_bar": {
+                        "type": "folder",
+                        "name": "Bookmarks Bar",
+                        "children": [
+                            {
+                                "type": "url",
+                                "name": "Codegraph",
+                                "url": "https://github.com/colbymchenry/codegraph",
+                                "date_added": "13300000001000000",
+                            },
+                            {
+                                "type": "url",
+                                "name": "Alcove",
+                                "url": "https://github.com/OctopusGarage/alcove",
+                                "date_added": "13300000002000000",
+                            },
+                        ],
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    refresh_code = main(
+        [
+            "connector",
+            "--home",
+            str(home_root),
+            "chrome-bookmarks",
+            "refresh",
+            "--force",
+            "--json",
+        ]
+    )
+    refresh_output = capsys.readouterr()
+
+    import_payload = json.loads(import_output.out)
+    search_payload = json.loads(search_output.out)
+    refresh_payload = json.loads(refresh_output.out)
+    assert import_code == 0
+    assert import_payload["scanned"] == 1
+    assert import_payload["item_count"] == 1
+    assert "home" not in import_payload
+    assert "source_file" not in import_payload
+    assert (home_root / "connectors" / "chrome-bookmarks" / "index.json").is_file()
+    assert search_code == 0
+    assert search_payload[0]["type"] == "Chrome Bookmark"
+    assert search_payload[0]["date"] == "2022-06-18"
+    assert refresh_code == 0
+    assert refresh_payload["refreshed"] == 1
+    assert refresh_payload["sources"][0]["diff_summary"]["added_count"] == 1
+    assert "source_file" not in refresh_payload["sources"][0]
 
 
 def test_cli_kb_add_and_list_use_alcove_home_registry(tmp_path, capsys):
-    kb_root = tmp_path / "social_media_posts"
+    kb_root = tmp_path / "research_notes"
     main(["init", str(kb_root)])
     capsys.readouterr()
     home_root = tmp_path / "home"
@@ -811,7 +1605,7 @@ def test_cli_kb_add_and_list_use_alcove_home_registry(tmp_path, capsys):
             "--home",
             str(home_root),
             "add",
-            "social_media_posts",
+            "research_notes",
             str(kb_root),
             "--json",
         ]
@@ -821,14 +1615,14 @@ def test_cli_kb_add_and_list_use_alcove_home_registry(tmp_path, capsys):
     list_output = capsys.readouterr()
 
     assert add_code == 0
-    assert json.loads(add_output.out)["knowledge_base"]["name"] == "social_media_posts"
-    assert (home_root / "knowledge-bases" / "social_media_posts.yml").is_file()
+    assert json.loads(add_output.out)["knowledge_base"]["name"] == "research_notes"
+    assert (home_root / "knowledge-bases" / "research_notes.yml").is_file()
     assert list_code == 0
     assert json.loads(list_output.out)[0]["path"] == str(kb_root.resolve())
 
 
 def test_cli_registered_kb_name_can_replace_workspace_path(tmp_path, capsys):
-    kb_root = tmp_path / "social_media_posts"
+    kb_root = tmp_path / "research_notes"
     main(["init", str(kb_root)])
     capsys.readouterr()
     home_root = tmp_path / "home"
@@ -838,7 +1632,7 @@ def test_cli_registered_kb_name_can_replace_workspace_path(tmp_path, capsys):
             "--home",
             str(home_root),
             "add",
-            "social_media_posts",
+            "research_notes",
             str(kb_root),
             "--json",
         ]
@@ -852,7 +1646,7 @@ def test_cli_registered_kb_name_can_replace_workspace_path(tmp_path, capsys):
             "--home",
             str(home_root),
             "--kb",
-            "social_media_posts",
+            "research_notes",
             "peek",
             "--json",
         ]
@@ -948,7 +1742,7 @@ def test_cli_global_home_features_are_searchable_without_workspace(tmp_path, cap
     assert mount_code == 0
     assert scan_code == 0
     assert connector_code == 0
-    assert json.loads(connector_output.out)["home"] == str(home_root.resolve())
+    assert "home" not in json.loads(connector_output.out)
     assert (home_root / "pins" / "global-pin.md").is_file()
     assert (home_root / "tasks" / "tasks.json").is_file()
     assert (home_root / "mounts" / "indexes" / "global-mount.json").is_file()
@@ -956,6 +1750,213 @@ def test_cli_global_home_features_are_searchable_without_workspace(tmp_path, cap
     assert search_code == 0
     roots = {row["root"] for row in json.loads(search_output.out)}
     assert {"pins", "tasks", "mounts", "connectors"}.issubset(roots)
+
+
+def test_cli_github_stars_import_url_fetches_exports_and_indexes(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    home_root = tmp_path / "home"
+
+    def fake_fetch(self, username: str, *, page: int, per_page: int):
+        assert username == "octocat"
+        assert per_page == 100
+        if page == 1:
+            return [
+                {
+                    "full_name": "octopusgarage/alcove",
+                    "html_url": "https://github.com/OctopusGarage/alcove",
+                    "description": "Local-first personal knowledge core.",
+                    "language": "Python",
+                    "topics": ["knowledge-base"],
+                    "stargazers_count": 100,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(GitHubStarsConnector, "_fetch_starred_page", fake_fetch)
+
+    code = main(
+        [
+            "connector",
+            "--home",
+            str(home_root),
+            "github-stars",
+            "import-url",
+            "https://github.com/octocat?tab=stars",
+            "--tag",
+            "github-stars",
+            "--json",
+        ]
+    )
+    output = capsys.readouterr()
+
+    payload = json.loads(output.out)
+    assert code == 0
+    assert payload["username"] == "octocat"
+    assert payload["exported"] == 1
+    assert payload["scanned"] == 1
+    assert payload["item_count"] == 1
+    assert "home" not in payload
+    assert "items" not in payload
+    assert "export_file" not in payload
+    assert "index_path" not in payload
+    assert "debug" not in payload
+    assert payload["diff_summary"]["added_count"] == 1
+    assert "diff" not in payload
+    assert (home_root / "connectors" / "github-stars" / "index.json").is_file()
+    assert (
+        home_root / "connectors" / "github-stars" / "exports" / "octocat-starred.json"
+    ).is_file()
+
+
+def test_cli_connector_status_lists_registered_sources(tmp_path, capsys):
+    home_root = tmp_path / "home"
+    registry = ConnectorSourceRegistry(home=AlcoveHome.init(home_root))
+    registry.upsert_github_stars(
+        source_id="octocat",
+        source="https://github.com/octocat?tab=stars",
+        username="octocat",
+        tags=["github-stars"],
+        export_file=home_root / "connectors" / "github-stars" / "exports" / "stars.json",
+        index_path=home_root / "connectors" / "github-stars" / "index.json",
+        item_count=445,
+        checked_at="2026-07-07T00:00:00+00:00",
+        changed_at="2026-07-07T00:00:00+00:00",
+    )
+
+    code = main(["connector", "--home", str(home_root), "status", "--json"])
+    output = capsys.readouterr()
+
+    payload = json.loads(output.out)
+    assert code == 0
+    assert payload["count"] == 1
+    assert payload["sources"][0]["connector"] == "github-stars"
+    assert payload["sources"][0]["id"] == "octocat"
+    assert "storage_path" not in payload["sources"][0]
+
+
+def test_cli_connector_refresh_stale_refreshes_registered_github_stars(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    home_root = tmp_path / "home"
+    registry = ConnectorSourceRegistry(home=AlcoveHome.init(home_root))
+    registry.upsert_github_stars(
+        source_id="octocat",
+        source="https://github.com/octocat?tab=stars",
+        username="octocat",
+        tags=["github-stars"],
+        export_file=home_root / "connectors" / "github-stars" / "exports" / "stars.json",
+        index_path=home_root / "connectors" / "github-stars" / "index.json",
+        item_count=1,
+        checked_at="2026-07-07T00:00:00+00:00",
+        changed_at="2026-07-07T00:00:00+00:00",
+    )
+
+    def fake_fetch(self, username: str, *, page: int, per_page: int):
+        if page > 1:
+            return []
+        return [{"full_name": "octopusgarage/alcove", "html_url": "https://github.com/x/y"}]
+
+    monkeypatch.setattr(GitHubStarsConnector, "_fetch_starred_page", fake_fetch)
+
+    code = main(["connector", "--home", str(home_root), "refresh", "--stale", "--json"])
+    output = capsys.readouterr()
+
+    payload = json.loads(output.out)
+    assert code == 0
+    assert payload["refreshed"] == 1
+    assert payload["sources"][0]["id"] == "octocat"
+    assert payload["sources"][0]["diff_summary"]["added_count"] == 1
+    assert "home" not in payload
+    assert "diff" not in payload["sources"][0]
+    assert "export_file" not in payload["sources"][0]
+    assert "index_path" not in payload["sources"][0]
+
+
+def test_cli_github_stars_import_url_can_include_items(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    home_root = tmp_path / "home"
+
+    def fake_fetch(self, username: str, *, page: int, per_page: int):
+        if page > 1:
+            return []
+        return [
+            {
+                "full_name": "octopusgarage/alcove",
+                "html_url": "https://github.com/OctopusGarage/alcove",
+                "description": "Local-first personal knowledge core.",
+                "language": "Python",
+                "topics": ["knowledge-base"],
+                "stargazers_count": 100,
+            }
+        ]
+
+    monkeypatch.setattr(GitHubStarsConnector, "_fetch_starred_page", fake_fetch)
+
+    code = main(
+        [
+            "connector",
+            "--home",
+            str(home_root),
+            "github-stars",
+            "import-url",
+            "octocat",
+            "--include-items",
+            "--json",
+        ]
+    )
+    output = capsys.readouterr()
+
+    payload = json.loads(output.out)
+    assert code == 0
+    assert payload["item_count"] == 1
+    assert payload["items"][0]["title"] == "octopusgarage/alcove"
+
+
+def test_cli_github_stars_import_url_can_include_full_diff(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    home_root = tmp_path / "home"
+
+    def fake_fetch(self, username: str, *, page: int, per_page: int):
+        if page > 1:
+            return []
+        return [
+            {
+                "full_name": "octopusgarage/alcove",
+                "html_url": "https://github.com/OctopusGarage/alcove",
+            }
+        ]
+
+    monkeypatch.setattr(GitHubStarsConnector, "_fetch_starred_page", fake_fetch)
+
+    code = main(
+        [
+            "connector",
+            "--home",
+            str(home_root),
+            "github-stars",
+            "import-url",
+            "octocat",
+            "--include-diff",
+            "--json",
+        ]
+    )
+    output = capsys.readouterr()
+
+    payload = json.loads(output.out)
+    assert code == 0
+    assert payload["diff"]["added"] == ["octopusgarage/alcove"]
+    assert "diff_summary" not in payload
 
 
 def test_cli_global_pin_and_task_payloads_include_home_scope(tmp_path, capsys):
@@ -1129,7 +2130,7 @@ def test_cli_export_global_home_copies_user_state(tmp_path, capsys):
             "--home",
             str(home_root),
             "add",
-            "social_media_posts",
+            "research_notes",
             str(kb_root),
             "--json",
         ]
@@ -1159,10 +2160,15 @@ def test_cli_export_global_home_copies_user_state(tmp_path, capsys):
     payload = json.loads(captured.out)
     assert payload["status"] == "exported"
     assert (output_dir / "config.yml").is_file()
-    assert (output_dir / "knowledge-bases" / "social_media_posts.yml").is_file()
+    assert (output_dir / "knowledge-bases" / "research_notes.yml").is_file()
     assert (output_dir / "pins" / "exported-pin.md").is_file()
     assert (output_dir / "tasks" / "tasks.json").is_file()
     assert (output_dir / "manifest.json").is_file()
+    manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["summary"]["file_count"] >= 4
+    assert manifest["readback"]["status"] == "passed"
+    assert any(entry["name"] == "pins" and entry["sha256"] for entry in manifest["entry_details"])
+    assert payload["manifest_excerpt"]["entry_details"][0]["sha256"]
 
 
 def test_cli_export_kb_and_all_copy_managed_kb_without_legacy_dirs(tmp_path, capsys):
@@ -1174,12 +2180,12 @@ def test_cli_export_kb_and_all_copy_managed_kb_without_legacy_dirs(tmp_path, cap
     (kb_root / "knowledge" / "concepts" / "note.md").write_text("# Note\n", encoding="utf-8")
     (kb_root / "inbox" / "manual" / "draft").mkdir(parents=True)
     (kb_root / "inbox" / "manual" / "draft" / "note.md").write_text("# Draft\n", encoding="utf-8")
-    main(["kb", "--home", str(home_root), "add", "social_media_posts", str(kb_root), "--json"])
+    main(["kb", "--home", str(home_root), "add", "research_notes", str(kb_root), "--json"])
     capsys.readouterr()
 
     kb_output = tmp_path / "kb-backup"
     kb_code = main(
-        ["export", "--home", str(home_root), "kb", "social_media_posts", str(kb_output), "--json"]
+        ["export", "--home", str(home_root), "kb", "research_notes", str(kb_output), "--json"]
     )
     kb_capture = capsys.readouterr()
     all_output = tmp_path / "all-backup"
@@ -1198,10 +2204,17 @@ def test_cli_export_kb_and_all_copy_managed_kb_without_legacy_dirs(tmp_path, cap
     assert not (kb_output / "mounts").exists()
     assert all_code == 0
     assert all_payload["type"] == "all"
-    assert (all_output / "global" / "knowledge-bases" / "social_media_posts.yml").is_file()
+    assert (all_output / "global" / "knowledge-bases" / "research_notes.yml").is_file()
     assert (
-        all_output / "knowledge-bases" / "social_media_posts" / "knowledge" / "concepts" / "note.md"
+        all_output / "knowledge-bases" / "research_notes" / "knowledge" / "concepts" / "note.md"
     ).is_file()
+    kb_manifest = json.loads((kb_output / "manifest.json").read_text(encoding="utf-8"))
+    all_manifest = json.loads((all_output / "manifest.json").read_text(encoding="utf-8"))
+    assert kb_manifest["summary"]["file_count"] >= 3
+    assert kb_manifest["readback"]["status"] == "passed"
+    assert all_manifest["summary"]["file_count"] >= kb_manifest["summary"]["file_count"]
+    assert all_payload["manifest_excerpt"]["global"]["readback"]["status"] == "passed"
+    assert all_payload["manifest_excerpt"]["knowledge_bases"][0]["kb"] == "research_notes"
 
 
 def test_cli_link_source_promotes_connector_item(tmp_path, capsys):

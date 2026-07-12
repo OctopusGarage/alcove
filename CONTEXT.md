@@ -29,8 +29,8 @@ Alcove is a local-first personal information core for agent-assisted knowledge w
 - `Profile Installation Pack` owns generated agent entry artifacts; `ProfileInstaller` owns idempotent writes and legacy cleanup.
 - Export supports global-only, one registered managed KB, or all registered Alcove-owned data.
 
-## Current Local Default
+## Example Local Default
 
 - Default Alcove Home: `~/.alcove`
-- Current managed KB: `social_media_posts`
-- Current managed KB path: `~/programming/kingson4wu/entropy-nexus/social_media_posts`
+- Example managed KB: `research_notes`
+- Example managed KB path: `/path/to/research_notes`

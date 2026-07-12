@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash -lc 'repo=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; cd \"$repo\"; export ALCOVE_AI_EVAL_PROVIDER=\"${ALCOVE_AI_EVAL_PROVIDER:-claude}\"; scripts/agent-quality-gate.sh --surface claude --mode \"${ALCOVE_AGENT_GATE_MODE:-coach}\" --hook-json'",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

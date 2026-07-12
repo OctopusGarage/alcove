@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from alcove.application_capabilities import (
     _ExternalCapabilities,
-    _GlobalHomeCapabilities,
     _InboxCapabilities,
     _ManagedKnowledgeCapabilities,
     _SearchCapabilities,
     _SystemCapabilities,
 )
+from alcove.application_global_home import _GlobalHomeCapabilities
 from alcove.runtime import AlcoveRuntime
 
 

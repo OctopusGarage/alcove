@@ -42,7 +42,13 @@ node_modules/
 playwright-report/
 test-results/
 
+# Local agent/design scratch space
+.superpowers/
+.tmp/
+
 # Logs / local databases
 *.log
 *.sqlite
 *.sqlite3
+
+docs/superpowers/specs

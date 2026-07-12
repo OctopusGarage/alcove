@@ -4,8 +4,10 @@ from datetime import date
 import pytest
 
 from alcove.errors import AlcoveError
+from alcove.home import AlcoveHome
 from alcove.knowledge import KnowledgeModule, NoteSourceRequest
 from alcove.markdown import MarkdownDoc, MarkdownRepository
+from alcove.pins import AddPinRequest, PinsModule
 from alcove.search import SearchModule, SearchRequest
 from alcove.workspace import Workspace
 from alcove.connectors.github_stars import GitHubStarsConnector, GitHubStarsImportRequest
@@ -39,6 +41,58 @@ def test_search_finds_knowledge_doc_by_body_text_from_note_source(tmp_path):
         for row in rows
     )
     json.dumps(rows, ensure_ascii=False)
+
+
+def test_home_scoped_search_includes_registered_managed_knowledge_bases(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    kb = Workspace.init(tmp_path / "research_notes")
+    home.register_knowledge_base("research_notes", kb.root)
+    KnowledgeModule(kb).note_source(
+        NoteSourceRequest(
+            platform="web",
+            title="OKF Managed KB",
+            topic="ai-knowledge/knowledge-base",
+            resource="https://example.test/okf",
+            summary="OKF managed knowledge base search needle.",
+            tags=["okf"],
+        )
+    )
+
+    rows = SearchModule(home=home).search(SearchRequest(query="OKF", limit=10))
+
+    assert any(
+        {
+            "root": "knowledge",
+            "type": "Source",
+            "title": "OKF Managed KB",
+            "kb": "research_notes",
+            "path": "knowledge-bases/research_notes/sources/web/ai-knowledge/okf-managed-kb.md",
+        }.items()
+        <= row.items()
+        for row in rows
+    )
+
+
+def test_home_scoped_search_deduplicates_pin_summary_content(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    PinsModule(home=home).add(
+        AddPinRequest(
+            title="Repeated Pin",
+            summary="Use Alcove search as candidate discovery.",
+            content=(
+                "Use Alcove search as candidate discovery.\n"
+                "Then inspect OKF source refs and connector refs."
+            ),
+            kind="regular",
+            tags=["okf"],
+        )
+    )
+
+    rows = SearchModule(home=home).search(SearchRequest(query="candidate discovery", limit=10))
+
+    row = next(row for row in rows if row["root"] == "pins")
+    assert row["notes"].count("Use Alcove search as candidate discovery.") == 1
+    assert "Then inspect OKF source refs and connector refs." in row["notes"]
 
 
 def test_search_module_reports_invalid_taxonomy_domain_definition(tmp_path):
@@ -274,6 +328,8 @@ def test_search_filters_github_star_connector_type(tmp_path):
                     "full_name": "octopus/alcove",
                     "html_url": "https://github.com/octopus/alcove",
                     "description": "knowledge management",
+                    "language": "Python",
+                    "updated_at": "2026-07-10T00:00:00Z",
                 }
             ]
         ),
@@ -288,6 +344,16 @@ def test_search_filters_github_star_connector_type(tmp_path):
     )
 
     assert [row["title"] for row in rows] == ["octopus/alcove"]
+    assert rows[0]["display_id"] == "github-stars/octopus-alcove"
+    assert rows[0]["date"] == "2026-07-10"
+    assert rows[0]["source_id"] == "github-stars"
+    assert rows[0]["source_label"] == "GitHub Stars · github / Python"
+    assert rows[0]["origin_label"] == "GitHub Stars"
+    assert rows[0]["fetch_ref"] == "connectors/github-stars#octopus/alcove"
+    assert (
+        rows[0]["fetch_command"]
+        == "alcove connector fetch connectors/github-stars#octopus/alcove --json"
+    )
 
 
 def test_search_uses_path_stem_when_title_missing_and_skips_docs_without_path(tmp_path):
@@ -437,6 +503,105 @@ def test_search_filters_by_platform_status_confidence_and_date(tmp_path):
     )
 
     assert [row["title"] for row in results] == ["Matching"]
+
+
+def test_search_rows_include_lifecycle_dates_for_cleanup_decisions(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    repo = MarkdownRepository()
+    knowledge = workspace.paths().knowledge
+    repo.write_doc(
+        knowledge / "sources" / "web" / "cleanup.md",
+        MarkdownDoc(
+            frontmatter={
+                "type": "Source",
+                "title": "Cleanup Candidate",
+                "topic": "agent-harness",
+                "tags": ["cleanup"],
+                "platform": "web",
+                "status": "active",
+                "published_date": "2026-06-01",
+                "created_at": "2026-07-10T08:00:00+08:00",
+                "updated_at": "2026-07-11T09:00:00+08:00",
+            },
+            body="# Source\n\nCleanup decision needle.\n",
+        ),
+    )
+
+    rows = SearchModule(workspace).search(SearchRequest(query="needle"))
+
+    assert rows[0]["published_at"] == "2026-06-01"
+    assert rows[0]["collected_at"] == "2026-07-10T08:00:00+08:00"
+    assert rows[0]["updated_at"] == "2026-07-11T09:00:00+08:00"
+    assert rows[0]["deleted_at"] == ""
+
+
+def test_search_prefers_active_records_without_hiding_explicit_status_filters(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    repo = MarkdownRepository()
+    knowledge = workspace.paths().knowledge
+    for title, status in [
+        ("Review Candidate", "needs-review"),
+        ("Superseded Candidate", "superseded"),
+        ("Active Candidate", "active"),
+    ]:
+        repo.write_doc(
+            knowledge / "sources" / "web" / f"{title.lower().replace(' ', '-')}.md",
+            MarkdownDoc(
+                frontmatter={
+                    "type": "Source",
+                    "title": title,
+                    "topic": "agent-harness",
+                    "tags": ["search"],
+                    "platform": "web",
+                    "status": status,
+                },
+                body="# Source\n\nCandidate ranking needle.\n",
+            ),
+        )
+
+    default_results = SearchModule(workspace).search(SearchRequest(query="candidate"))
+    review_results = SearchModule(workspace).search(
+        SearchRequest(query="candidate", status="needs-review")
+    )
+
+    assert [row["title"] for row in default_results] == [
+        "Active Candidate",
+        "Review Candidate",
+        "Superseded Candidate",
+    ]
+    assert [row["title"] for row in review_results] == ["Review Candidate"]
+
+
+def test_search_hides_deleted_records_unless_status_is_explicit(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    repo = MarkdownRepository()
+    knowledge = workspace.paths().knowledge
+    for title, status in [
+        ("Active Candidate", "active"),
+        ("Deleted Candidate", "deleted"),
+    ]:
+        repo.write_doc(
+            knowledge / "sources" / "web" / f"{title.lower().replace(' ', '-')}.md",
+            MarkdownDoc(
+                frontmatter={
+                    "type": "Source",
+                    "title": title,
+                    "topic": "agent-harness",
+                    "tags": ["cleanup"],
+                    "platform": "web",
+                    "status": status,
+                },
+                body="# Source\n\nCleanup candidate needle.\n",
+            ),
+        )
+
+    default_results = SearchModule(workspace).search(SearchRequest(query="candidate"))
+    deleted_results = SearchModule(workspace).search(
+        SearchRequest(query="candidate", status="deleted")
+    )
+
+    assert [row["title"] for row in default_results] == ["Active Candidate"]
+    assert [row["title"] for row in deleted_results] == ["Deleted Candidate"]
 
 
 def test_tag_doctor_reports_normalized_tag_variants(tmp_path):

@@ -1,0 +1,1013 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Alcove — local-first memory for agent workflows</title>
+    <meta
+      name="description"
+      content="Alcove is a local-first personal information system for managed knowledge bases, pins, tasks, prompts, mounts, connectors, MCP access, and agent-readable memory."
+    />
+    <link rel="icon" href="assets/alcove-mark.svg" type="image/svg+xml" />
+    <link rel="canonical" href="https://octopusgarage.github.io/alcove/" />
+    <meta property="og:title" content="Alcove" />
+    <meta property="og:description" content="Local-first personal memory for agent workflows." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://octopusgarage.github.io/alcove/" />
+    <meta name="twitter:card" content="summary" />
+    <style>
+      :root {
+        --paper: #f4eddd;
+        --paper-2: #fbf6eb;
+        --card: #fffdf7;
+        --ink: #262720;
+        --ink-soft: #625c50;
+        --muted: #8a806f;
+        --rule: #ded2bb;
+        --rule-soft: #ebe1cf;
+        --olive: #2f332b;
+        --moss: #5f7f63;
+        --sage: #8eb8a0;
+        --gold: #b78a3a;
+        --brick: #a9503c;
+        --blue: #38577d;
+        --shadow: 0 24px 70px rgba(67, 48, 19, 0.16);
+        --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+        --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+          "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+        --mono: "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 18% 10%, rgba(142, 184, 160, 0.22), transparent 28rem),
+          radial-gradient(circle at 88% 8%, rgba(183, 138, 58, 0.18), transparent 23rem),
+          var(--paper);
+        color: var(--ink);
+        font-family: var(--sans);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        background-image: radial-gradient(rgba(72, 55, 25, 0.055) 1px, transparent 1px);
+        background-size: 5px 5px;
+        opacity: 0.6;
+      }
+
+      a {
+        color: var(--blue);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .wrap {
+        width: min(1120px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+
+      .topbar,
+      main,
+      footer {
+        position: relative;
+        z-index: 1;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        border-bottom: 1px solid rgba(222, 210, 187, 0.85);
+        background: rgba(244, 237, 221, 0.86);
+        backdrop-filter: blur(14px) saturate(140%);
+      }
+
+      .nav {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        min-height: 68px;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        color: var(--ink);
+        font-family: var(--serif);
+        font-size: 20px;
+        font-weight: 700;
+      }
+
+      .brand:hover {
+        text-decoration: none;
+      }
+
+      .brand img {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        box-shadow: 0 8px 20px rgba(47, 51, 43, 0.18);
+      }
+
+      .links {
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        margin-left: auto;
+      }
+
+      .links a {
+        color: var(--ink-soft);
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .links a:hover {
+        color: var(--ink);
+        text-decoration: none;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 42px;
+        padding: 10px 18px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 750;
+        transition:
+          transform 120ms ease,
+          box-shadow 160ms ease,
+          background 160ms ease;
+      }
+
+      .button:hover {
+        transform: translateY(-1px);
+        text-decoration: none;
+      }
+
+      .button.primary {
+        background: var(--olive);
+        color: var(--paper-2);
+        box-shadow: 0 3px 0 var(--gold);
+      }
+
+      .button.secondary {
+        background: var(--card);
+        border-color: var(--rule);
+        color: var(--ink);
+      }
+
+      .hero {
+        padding: 86px 0 48px;
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(360px, 0.88fr);
+        gap: 44px;
+        align-items: center;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 20px;
+        padding: 6px 12px;
+        border: 1px solid var(--rule);
+        border-radius: 999px;
+        background: rgba(255, 253, 247, 0.72);
+        color: var(--gold);
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .eyebrow::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--sage);
+        box-shadow: 0 0 0 4px rgba(142, 184, 160, 0.22);
+      }
+
+      h1,
+      h2,
+      h3,
+      .serif {
+        margin: 0;
+        font-family: var(--serif);
+        line-height: 1.08;
+      }
+
+      h1 {
+        max-width: 10.5ch;
+        font-size: clamp(48px, 7.5vw, 88px);
+        letter-spacing: -0.01em;
+      }
+
+      .lede {
+        max-width: 58ch;
+        margin: 24px 0 0;
+        color: var(--ink-soft);
+        font-size: clamp(17px, 2vw, 20px);
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 32px;
+      }
+
+      .note {
+        max-width: 55ch;
+        margin-top: 24px;
+        padding-left: 16px;
+        border-left: 3px solid var(--gold);
+        color: var(--ink-soft);
+        font-family: var(--serif);
+        font-size: 17px;
+        font-style: italic;
+      }
+
+      .topology {
+        position: relative;
+        min-height: 520px;
+        padding: 22px;
+        border: 1px solid var(--rule);
+        border-radius: 18px;
+        background:
+          linear-gradient(145deg, rgba(255, 253, 247, 0.92), rgba(245, 239, 226, 0.88)),
+          var(--card);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .topology::before {
+        content: "";
+        position: absolute;
+        inset: 22px;
+        border: 1px solid rgba(222, 210, 187, 0.72);
+        border-radius: 999px 999px 16px 16px;
+      }
+
+      .topology-title {
+        position: relative;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 28px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+      }
+
+      .node {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        gap: 4px;
+        width: max-content;
+        max-width: 220px;
+        padding: 14px 16px;
+        border: 1px solid var(--rule);
+        border-radius: 10px;
+        background: rgba(255, 253, 247, 0.94);
+        box-shadow: 0 12px 30px rgba(73, 54, 23, 0.12);
+      }
+
+      .node strong {
+        font-family: var(--serif);
+        font-size: 18px;
+      }
+
+      .node span {
+        color: var(--ink-soft);
+        font-size: 13px;
+      }
+
+      .node.home {
+        margin: 42px auto 34px;
+        padding: 20px 24px;
+        border-color: rgba(47, 51, 43, 0.45);
+        background: var(--olive);
+        color: var(--paper-2);
+        text-align: center;
+      }
+
+      .node.home span {
+        color: #d8d0c1;
+      }
+
+      .node.kb {
+        margin-left: 8px;
+      }
+
+      .node.agent {
+        margin: -30px 0 0 auto;
+        border-color: rgba(183, 138, 58, 0.55);
+      }
+
+      .node.global {
+        margin: 46px auto 0;
+        border-left: 5px solid var(--sage);
+      }
+
+      .node.external {
+        margin: -28px 10px 0 auto;
+        border-left: 5px solid var(--blue);
+      }
+
+      .rails {
+        position: absolute;
+        inset: 92px 46px 70px;
+        z-index: 0;
+        opacity: 0.72;
+      }
+
+      .rails path {
+        fill: none;
+        stroke: rgba(95, 127, 99, 0.48);
+        stroke-width: 2;
+        stroke-dasharray: 6 8;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1px;
+        margin-top: 58px;
+        border: 1px solid var(--rule);
+        border-radius: 14px;
+        background: var(--rule);
+        overflow: hidden;
+      }
+
+      .stat {
+        padding: 24px 16px;
+        background: rgba(255, 253, 247, 0.88);
+        text-align: center;
+      }
+
+      .stat b {
+        display: block;
+        color: var(--blue);
+        font-family: var(--serif);
+        font-size: clamp(28px, 4vw, 40px);
+        line-height: 1;
+      }
+
+      .stat span {
+        display: block;
+        margin-top: 8px;
+        color: var(--ink-soft);
+        font-size: 13px;
+      }
+
+      section {
+        padding: 70px 0;
+      }
+
+      .alt {
+        border-top: 1px solid var(--rule-soft);
+        border-bottom: 1px solid var(--rule-soft);
+        background: rgba(251, 246, 235, 0.76);
+      }
+
+      .section-head {
+        max-width: 690px;
+        margin: 0 auto 40px;
+        text-align: center;
+      }
+
+      .section-head h2 {
+        font-size: clamp(30px, 4vw, 46px);
+      }
+
+      .section-head p {
+        margin: 14px auto 0;
+        color: var(--ink-soft);
+        font-size: 17px;
+      }
+
+      .grid-3 {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 18px;
+      }
+
+      .grid-2 {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 20px;
+      }
+
+      .card {
+        min-height: 100%;
+        padding: 24px;
+        border: 1px solid var(--rule);
+        border-radius: 12px;
+        background: var(--card);
+      }
+
+      .card .kicker,
+      .lane .kicker {
+        display: block;
+        margin-bottom: 10px;
+        color: var(--gold);
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 850;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .card h3 {
+        font-size: 22px;
+      }
+
+      .card p,
+      .lane p {
+        margin: 10px 0 0;
+        color: var(--ink-soft);
+        font-size: 14.5px;
+      }
+
+      .contract {
+        display: grid;
+        grid-template-columns: 0.82fr 1.18fr;
+        gap: 20px;
+        align-items: stretch;
+      }
+
+      .dark-panel {
+        padding: 28px;
+        border-radius: 16px;
+        background: var(--olive);
+        color: #f2ebdc;
+        box-shadow: 0 18px 48px rgba(47, 51, 43, 0.18);
+      }
+
+      .dark-panel h3 {
+        font-size: 28px;
+      }
+
+      .dark-panel p {
+        color: #cfc7b8;
+      }
+
+      .ledger {
+        display: grid;
+        gap: 10px;
+        margin-top: 24px;
+      }
+
+      .ledger-row {
+        display: grid;
+        grid-template-columns: 100px 1fr;
+        gap: 14px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(244, 237, 221, 0.16);
+        color: #ded6c6;
+        font-size: 14px;
+      }
+
+      .ledger-row b {
+        color: var(--sage);
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .lane {
+        position: relative;
+        padding: 22px 22px 22px 28px;
+        border: 1px solid var(--rule);
+        border-radius: 12px;
+        background: var(--card);
+      }
+
+      .lane::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 18px;
+        bottom: 18px;
+        width: 5px;
+        border-radius: 999px;
+        background: var(--sage);
+      }
+
+      .lane:nth-child(2)::before {
+        background: var(--gold);
+      }
+
+      .lane:nth-child(3)::before {
+        background: var(--blue);
+      }
+
+      .lane:nth-child(4)::before {
+        background: var(--brick);
+      }
+
+      .evidence {
+        border: 1px solid rgba(222, 210, 187, 0.45);
+        border-radius: 16px;
+        background: #22231e;
+        color: #e9e2d3;
+        overflow: hidden;
+        box-shadow: var(--shadow);
+      }
+
+      .evidence-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 18px 22px;
+        border-bottom: 1px solid rgba(244, 237, 221, 0.12);
+        color: #bdb4a5;
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .terminal {
+        margin: 0;
+        padding: 24px;
+        overflow-x: auto;
+        font-family: var(--mono);
+        font-size: 14px;
+        line-height: 1.75;
+        white-space: pre;
+      }
+
+      .terminal .comment {
+        color: #928879;
+      }
+
+      .terminal .accent {
+        color: #8eb8a0;
+      }
+
+      .terminal .gold {
+        color: #d4a653;
+      }
+
+      .install {
+        max-width: 840px;
+        margin: 0 auto;
+      }
+
+      .code {
+        position: relative;
+        margin-top: 14px;
+        padding: 22px;
+        border-radius: 12px;
+        background: #22231e;
+        color: #e9e2d3;
+        overflow-x: auto;
+        font-family: var(--mono);
+        font-size: 14px;
+        line-height: 1.75;
+      }
+
+      .copy {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        border: 0;
+        border-radius: 6px;
+        background: #393a33;
+        color: #ded6c6;
+        cursor: pointer;
+        font-family: var(--sans);
+        font-size: 12px;
+        font-weight: 750;
+        padding: 6px 10px;
+      }
+
+      .copy:hover {
+        background: #48493f;
+      }
+
+      .final-cta {
+        padding: 68px 0;
+        text-align: center;
+      }
+
+      .final-cta h2 {
+        max-width: 13ch;
+        margin: 0 auto;
+        font-size: clamp(36px, 6vw, 64px);
+      }
+
+      .final-cta p {
+        max-width: 54ch;
+        margin: 18px auto 0;
+        color: var(--ink-soft);
+        font-size: 17px;
+      }
+
+      footer {
+        padding: 34px 0 50px;
+        border-top: 1px solid var(--rule);
+        background: rgba(251, 246, 235, 0.78);
+      }
+
+      .footer-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 20px;
+        flex-wrap: wrap;
+        color: var(--ink-soft);
+        font-size: 14px;
+      }
+
+      .footer-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+      }
+
+      @media (max-width: 920px) {
+        .hero-grid,
+        .contract,
+        .grid-2 {
+          grid-template-columns: 1fr;
+        }
+
+        .topology {
+          min-height: 480px;
+        }
+
+        .links a.optional {
+          display: none;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .wrap {
+          width: min(100% - 28px, 1120px);
+        }
+
+        .hero {
+          padding-top: 56px;
+        }
+
+        .links {
+          gap: 10px;
+        }
+
+        .links a:not(.github) {
+          display: none;
+        }
+
+        .stats,
+        .grid-3 {
+          grid-template-columns: 1fr;
+        }
+
+        .topology {
+          padding: 18px;
+        }
+
+        .node {
+          width: 100%;
+          max-width: none;
+          margin: 12px 0 !important;
+        }
+
+        .rails,
+        .topology::before {
+          display: none;
+        }
+
+        .ledger-row {
+          grid-template-columns: 1fr;
+          gap: 4px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition: none !important;
+        }
+      }
+    </style>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Alcove",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS, Linux",
+        "description": "A local-first personal information system for agent-readable memory.",
+        "url": "https://octopusgarage.github.io/alcove/",
+        "codeRepository": "https://github.com/OctopusGarage/alcove",
+        "license": "https://github.com/OctopusGarage/alcove/blob/main/LICENSE",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      }
+    </script>
+  </head>
+  <body>
+    <header class="topbar">
+      <nav class="wrap nav" aria-label="Primary navigation">
+        <a class="brand" href="#top" aria-label="Alcove home">
+          <img src="assets/alcove-mark.svg" alt="" />
+          Alcove
+        </a>
+        <div class="links">
+          <a class="optional" href="#model">Model</a>
+          <a class="optional" href="#evidence">Evidence</a>
+          <a class="optional" href="#install">Install</a>
+          <a class="github" href="https://github.com/OctopusGarage/alcove">GitHub ↗</a>
+        </div>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="wrap hero-grid">
+          <div>
+            <div class="eyebrow">Local-first agent memory</div>
+            <h1>A quiet operating room for personal knowledge.</h1>
+            <p class="lede">
+              Alcove keeps managed knowledge bases, pins, tasks, prompts, mounted folders,
+              external connectors, MCP access, and dashboard telemetry in one coherent local system.
+            </p>
+            <div class="hero-actions">
+              <a class="button primary" href="#install">Get started</a>
+              <a class="button secondary" href="https://github.com/OctopusGarage/alcove">View on GitHub</a>
+            </div>
+            <p class="note">
+              Capture can be swapped. Storage stays yours. Agents get one consistent way to search,
+              write, link, inspect, and export memory without mixing user data into the tool itself.
+            </p>
+          </div>
+
+          <div class="topology" aria-label="Alcove memory topology diagram">
+            <div class="topology-title">
+              <span>Memory topology</span>
+              <span>~/.alcove</span>
+            </div>
+            <svg class="rails" viewBox="0 0 420 360" aria-hidden="true">
+              <path d="M210 70 C90 95 70 165 80 260" />
+              <path d="M210 70 C330 96 350 162 338 260" />
+              <path d="M210 108 C210 164 210 208 210 292" />
+              <path d="M90 266 C178 316 262 316 338 266" />
+            </svg>
+            <div class="node home">
+              <strong>Alcove Home</strong>
+              <span>registry · indexes · usage · dashboard</span>
+            </div>
+            <div class="node kb">
+              <strong>Managed KBs</strong>
+              <span>inbox · OKF notes · archive · validation</span>
+            </div>
+            <div class="node agent">
+              <strong>Agent entries</strong>
+              <span>CLI · MCP · Codex · Claude Code</span>
+            </div>
+            <div class="node global">
+              <strong>Pins · Tasks · Prompts</strong>
+              <span>global memory that follows the user</span>
+            </div>
+            <div class="node external">
+              <strong>Mounts · Connectors</strong>
+              <span>GitHub stars · Chrome bookmarks · Apple Notes</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="wrap">
+          <div class="stats" aria-label="Alcove feature statistics">
+            <div class="stat"><b>3</b><span>entry modes</span></div>
+            <div class="stat"><b>7</b><span>memory surfaces</span></div>
+            <div class="stat"><b>OKF</b><span>managed notes</span></div>
+            <div class="stat"><b>MCP</b><span>agent access</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="model" class="alt">
+        <div class="wrap">
+          <div class="section-head">
+            <h2>One home. Many knowledge shapes.</h2>
+            <p>
+              Alcove separates product behavior from user data. Global state lives in Alcove Home;
+              managed knowledge bases live wherever the user chooses.
+            </p>
+          </div>
+          <div class="grid-3">
+            <article class="card">
+              <span class="kicker">Managed</span>
+              <h3>Knowledge bases</h3>
+              <p>
+                Inbox review, OKF notes, source archives, validation, gardening, and KB-scoped
+                workflows for content you actively manage.
+              </p>
+            </article>
+            <article class="card">
+              <span class="kicker">Global</span>
+              <h3>Pins, tasks, prompts</h3>
+              <p>
+                Small durable items that should be available from any project: references,
+                follow-ups, reusable instructions, and operational reminders.
+              </p>
+            </article>
+            <article class="card">
+              <span class="kicker">Indexed</span>
+              <h3>Mounts and connectors</h3>
+              <p>
+                Read-oriented external memory for local folders, GitHub stars, browser bookmarks,
+                Apple Notes, and future data sources.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap contract">
+          <div class="dark-panel">
+            <h3>Designed around boundaries, not a single app.</h3>
+            <p>
+              Alcove is intentionally split into storage contracts, entry profiles, capture adapters,
+              search surfaces, and export paths.
+            </p>
+            <div class="ledger">
+              <div class="ledger-row"><b>Home</b><span>Global registries, indexes, pins, tasks, prompts, usage snapshots.</span></div>
+              <div class="ledger-row"><b>KB root</b><span>User-chosen managed folders with inbox, archive, and OKF notes.</span></div>
+              <div class="ledger-row"><b>Adapter</b><span>Capture tools write bundles into inboxes without owning the knowledge model.</span></div>
+              <div class="ledger-row"><b>Agent</b><span>CLI and MCP expose the same operations to Codex, Claude Code, and local scripts.</span></div>
+            </div>
+          </div>
+          <div class="grid-2">
+            <article class="lane">
+              <span class="kicker">Capture</span>
+              <h3>Collector-agnostic inboxes</h3>
+              <p>Clipsmith is the default capture adapter, but Alcove only requires the inbox bundle contract.</p>
+            </article>
+            <article class="lane">
+              <span class="kicker">Search</span>
+              <h3>Home-wide lookup</h3>
+              <p>Managed KBs, global memory, mounts, and connectors participate in one search surface.</p>
+            </article>
+            <article class="lane">
+              <span class="kicker">Operate</span>
+              <h3>Agent-ready profiles</h3>
+              <p>Install thin project files and skills for hub workspaces, global MCP access, or KB-local work.</p>
+            </article>
+            <article class="lane">
+              <span class="kicker">Recover</span>
+              <h3>Exportable local state</h3>
+              <p>Global data and managed knowledge bases can be exported and backed up outside the runtime.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="evidence" class="alt">
+        <div class="wrap">
+          <div class="section-head">
+            <h2>The interface is small because the contract is explicit.</h2>
+            <p>
+              The same commands work from a hub workspace, an unrelated project, or inside a managed
+              knowledge base.
+            </p>
+          </div>
+          <div class="evidence">
+            <div class="evidence-head">
+              <span>Alcove session</span>
+              <span>CLI · MCP · local files</span>
+            </div>
+            <pre class="terminal"><span class="comment"># initialize global state and register a managed KB</span>
+<span class="accent">$</span> alcove home init
+<span class="accent">$</span> alcove kb add research_notes /path/to/research_notes
+
+<span class="comment"># use a local hub for daily personal knowledge work</span>
+<span class="accent">$</span> alcove hub init ~/AlcoveHub --default-kb research_notes
+
+<span class="comment"># make memory available from any project through MCP</span>
+<span class="accent">$</span> alcove global install
+<span class="accent">$</span> alcove search <span class="gold">"OKF"</span> --home ~/.alcove --json</pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="install">
+        <div class="wrap install">
+          <div class="section-head">
+            <h2>Start local. Stay portable.</h2>
+            <p>
+              Install the CLI, create Alcove Home, then choose the entry profile that matches how
+              you work.
+            </p>
+          </div>
+          <div class="code">
+            <button class="copy" data-copy="install-code">Copy</button>
+            <pre id="install-code">uv tool install git+https://github.com/OctopusGarage/alcove.git
+alcove home init
+alcove global install
+alcove dashboard --home ~/.alcove build
+alcove serve --dashboard --home ~/.alcove --port 8765</pre>
+          </div>
+          <div class="grid-3" style="margin-top: 20px">
+            <article class="card">
+              <span class="kicker">Hub</span>
+              <h3>Daily workspace</h3>
+              <p>Use a local project as the primary cockpit for broad personal knowledge work.</p>
+            </article>
+            <article class="card">
+              <span class="kicker">Global</span>
+              <h3>Lightweight MCP</h3>
+              <p>Query and write memory from unrelated repositories without installing heavy files.</p>
+            </article>
+            <article class="card">
+              <span class="kicker">KB-local</span>
+              <h3>Full workflow</h3>
+              <p>Install commands and skills inside a managed KB for inbox review and source archiving.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="final-cta alt">
+        <div class="wrap">
+          <h2>Make personal memory inspectable.</h2>
+          <p>
+            Alcove gives agents a stable way to work with knowledge without turning the tool itself
+            into the user data store.
+          </p>
+          <div class="hero-actions" style="justify-content: center">
+            <a class="button primary" href="https://github.com/OctopusGarage/alcove">Star on GitHub</a>
+            <a class="button secondary" href="https://github.com/OctopusGarage/alcove/blob/main/docs/usage.md">Read the guide</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap footer-row">
+        <span>MIT License · Built by OctopusGarage</span>
+        <div class="footer-links">
+          <a href="https://github.com/OctopusGarage/alcove">GitHub</a>
+          <a href="https://github.com/OctopusGarage/alcove/blob/main/docs/architecture.md">Architecture</a>
+          <a href="https://github.com/OctopusGarage/alcove/blob/main/docs/data-and-backup.md">Data and backup</a>
+          <a href="https://github.com/OctopusGarage/alcove/issues">Issues</a>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      for (const button of document.querySelectorAll("[data-copy]")) {
+        button.addEventListener("click", async () => {
+          const target = document.getElementById(button.dataset.copy);
+          if (!target) return;
+          await navigator.clipboard.writeText(target.textContent.trim());
+          const original = button.textContent;
+          button.textContent = "Copied";
+          window.setTimeout(() => {
+            button.textContent = original;
+          }, 1200);
+        });
+      }
+    </script>
+  </body>
+</html>

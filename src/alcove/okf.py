@@ -3,14 +3,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+import re
 
 from alcove.markdown import RESERVED_FILENAMES, MarkdownDoc, MarkdownRepository
 
 
 INFRASTRUCTURE_TYPES = {"Domain", "Index", "Log", "Tag", "Topic"}
+OKF_SCHEMA_BY_TYPE = {
+    "Source": "alcove/source/v1",
+    "Knowledge Concept": "alcove/knowledge-concept/v1",
+    "Question": "alcove/question/v1",
+    "Entity": "alcove/entity/v1",
+}
 OKF_REQUIRED_FIELDS = {
     "Source": (
         "type",
+        "schema",
         "title",
         "platform",
         "resource",
@@ -22,6 +30,7 @@ OKF_REQUIRED_FIELDS = {
     ),
     "Knowledge Concept": (
         "type",
+        "schema",
         "title",
         "domain",
         "topic",
@@ -32,6 +41,7 @@ OKF_REQUIRED_FIELDS = {
     ),
     "Question": (
         "type",
+        "schema",
         "question",
         "domain",
         "topic",
@@ -42,6 +52,7 @@ OKF_REQUIRED_FIELDS = {
     ),
     "Entity": (
         "type",
+        "schema",
         "title",
         "kind",
         "domain",
@@ -52,6 +63,10 @@ OKF_REQUIRED_FIELDS = {
         "created_at",
     ),
 }
+
+
+def okf_schema_for(doc_type: str) -> str:
+    return OKF_SCHEMA_BY_TYPE.get(doc_type, "")
 
 
 def require_okf_frontmatter(frontmatter: dict) -> None:
@@ -92,6 +107,9 @@ def frontmatter_date(frontmatter: dict) -> str:
         frontmatter.get("date")
         or frontmatter.get("published_date")
         or frontmatter.get("created_at")
+        or frontmatter.get("updated_at")
+        or frontmatter.get("date_added")
+        or frontmatter.get("date_modified")
         or frontmatter.get("timestamp")
         or ""
     )
@@ -246,6 +264,7 @@ class OkfDocumentFactory:
         tags: list[str],
         status: str,
         summary: str,
+        source_excerpt: str = "",
         confidence: float | None = None,
         supersedes: list[str] | None = None,
         superseded_by: str = "",
@@ -255,6 +274,7 @@ class OkfDocumentFactory:
     ) -> MarkdownDoc:
         frontmatter = {
             "type": "Source",
+            "schema": okf_schema_for("Source"),
             "title": title,
             "platform": platform,
             "resource": resource,
@@ -276,7 +296,12 @@ class OkfDocumentFactory:
         if legacy_path:
             frontmatter["legacy_path"] = legacy_path
         require_okf_frontmatter(frontmatter)
-        return MarkdownDoc(frontmatter=frontmatter, body=f"# {title}\n\n{summary}\n")
+        excerpt = f"\n\n## 原文摘录\n\n{source_excerpt}\n" if source_excerpt else ""
+        provenance = f"\n\n## 来源\n\n- `{legacy_path}`\n" if legacy_path else ""
+        return MarkdownDoc(
+            frontmatter=frontmatter,
+            body=f"# {title}\n\n{summary}{excerpt}{provenance}\n",
+        )
 
     def concept_doc(
         self,
@@ -297,6 +322,7 @@ class OkfDocumentFactory:
     ) -> MarkdownDoc:
         frontmatter = {
             "type": "Knowledge Concept",
+            "schema": okf_schema_for("Knowledge Concept"),
             "title": title,
             "domain": domain,
             "topic": topic,
@@ -338,6 +364,7 @@ class OkfDocumentFactory:
     ) -> MarkdownDoc:
         frontmatter = {
             "type": "Question",
+            "schema": okf_schema_for("Question"),
             "question": question,
             "domain": domain,
             "topic": topic,
@@ -371,6 +398,7 @@ class OkfDocumentFactory:
     ) -> MarkdownDoc:
         frontmatter = {
             "type": "Entity",
+            "schema": okf_schema_for("Entity"),
             "title": name,
             "kind": kind,
             "domain": domain,
@@ -403,14 +431,31 @@ class OkfDocumentFactory:
         notes = self._format_human_notes(human_notes)
         source_lines = "\n".join(f"- [{ref}]({ref})" for ref in source_refs)
         legacy_lines = "\n".join(f"- `{path}`" for path in legacy_paths if path)
-        return (
-            f"# {title}\n\n"
-            f"## 摘要\n\n{summary}\n\n"
-            f"## 要点\n\n{summary}\n\n"
-            f"{notes}"
-            f"## 关系\n\n{source_lines}\n\n"
-            f"## 来源\n\n{legacy_lines}\n"
-        )
+        sections = [f"# {title}", f"## 摘要\n\n{summary}"]
+        key_points = self._summary_key_points(summary)
+        if key_points:
+            sections.append("## 要点\n\n" + "\n".join(key_points))
+        if notes:
+            sections.append(notes.rstrip())
+        if source_lines:
+            sections.append(f"## 关系\n\n{source_lines}")
+        if legacy_lines:
+            sections.append(f"## 来源\n\n{legacy_lines}")
+        return "\n\n".join(sections).rstrip() + "\n"
+
+    def _summary_key_points(self, summary: str) -> list[str]:
+        points: list[str] = []
+        for line in summary.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if re.match(r"^([-*]|\d+[.)])\s+", stripped):
+                text = re.sub(r"^([-*]|\d+[.)])\s+", "", stripped).strip()
+                if text:
+                    points.append(f"- {text}")
+        if len(points) == 1 and points[0].removeprefix("- ").strip() == summary.strip():
+            return []
+        return points
 
     def _optional_lifecycle(
         self,
@@ -434,9 +479,14 @@ class OkfDocumentFactory:
         if not human_notes:
             return ""
         sections: list[str] = []
-        selected = human_notes.get("selected_takeaways") or []
-        if isinstance(selected, str):
-            selected = [selected]
+        raw_selected = human_notes.get("selected_takeaways") or []
+        selected: list[object]
+        if isinstance(raw_selected, str):
+            selected = [raw_selected]
+        elif isinstance(raw_selected, list):
+            selected = raw_selected
+        else:
+            selected = []
         selected_lines = "\n".join(f"- {item}" for item in selected if str(item).strip())
         if selected_lines:
             sections.append(f"### 选择的推荐项\n\n{selected_lines}")

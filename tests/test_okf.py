@@ -30,6 +30,30 @@ def test_okf_document_factory_outputs_frontmatter_that_satisfies_type_rules():
 
     require_okf_frontmatter(source.frontmatter)
     require_okf_frontmatter(concept.frontmatter)
+    assert source.frontmatter["schema"] == "alcove/source/v1"
+    assert concept.frontmatter["schema"] == "alcove/knowledge-concept/v1"
+    assert "## 摘要\n\nConcept summary." in concept.body
+    assert "## 要点\n\nConcept summary." not in concept.body
+    assert "## 来源" not in concept.body
+
+
+def test_concept_doc_keeps_structured_key_points_and_non_empty_source_sections():
+    factory = OkfDocumentFactory(now="2026-07-08T00:00:00+00:00")
+
+    concept = factory.concept_doc(
+        title="Concept",
+        domain="agent-engineering",
+        topic="agent-harness",
+        tags=["agent-harness"],
+        source_refs=["/sources/web/source.md"],
+        status="active",
+        summary="Summary.\n\n- First point\n- Second point",
+        legacy_paths=["archive/item"],
+    )
+
+    assert "## 要点\n\n- First point\n- Second point" in concept.body
+    assert "## 关系\n\n- [/sources/web/source.md](/sources/web/source.md)" in concept.body
+    assert "## 来源\n\n- `archive/item`" in concept.body
 
 
 def test_require_okf_frontmatter_reports_missing_required_fields():

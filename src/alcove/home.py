@@ -8,6 +8,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, ValidationError
 import yaml
 
+from alcove.paths import compact_user_path
+
 
 DEFAULT_HOME = "~/.alcove"
 
@@ -16,6 +18,9 @@ DEFAULT_HOME = "~/.alcove"
 class AlcoveHomePaths:
     root: Path
     config: Path
+    okf: Path
+    projects: Path
+    prompts: Path
     pins: Path
     tasks: Path
     mounts: Path
@@ -23,6 +28,7 @@ class AlcoveHomePaths:
     connectors: Path
     knowledge_bases: Path
     logs: Path
+    stats: Path
 
 
 @dataclass(frozen=True)
@@ -54,6 +60,8 @@ class AlcoveHome:
         root_path = root_path.resolve()
         paths = cls(root_path).paths()
         paths.root.mkdir(parents=True, exist_ok=True)
+        paths.projects.mkdir(exist_ok=True)
+        paths.prompts.mkdir(exist_ok=True)
         paths.pins.mkdir(exist_ok=True)
         paths.tasks.mkdir(exist_ok=True)
         paths.mounts.mkdir(exist_ok=True)
@@ -61,6 +69,8 @@ class AlcoveHome:
         paths.connectors.mkdir(exist_ok=True)
         paths.knowledge_bases.mkdir(exist_ok=True)
         paths.logs.mkdir(exist_ok=True)
+        paths.stats.mkdir(exist_ok=True)
+        (paths.stats / "daily").mkdir(exist_ok=True)
         if not paths.config.exists():
             paths.config.write_text(
                 yaml.safe_dump(
@@ -83,6 +93,9 @@ class AlcoveHome:
         return AlcoveHomePaths(
             root=self.root,
             config=self.root / "config.yml",
+            okf=self.root / "okf",
+            projects=self.root / "projects",
+            prompts=self.root / "prompts",
             pins=self.root / "pins",
             tasks=self.root / "tasks",
             mounts=self.root / "mounts",
@@ -90,6 +103,7 @@ class AlcoveHome:
             connectors=self.root / "connectors",
             knowledge_bases=self.root / "knowledge-bases",
             logs=self.root / "logs",
+            stats=self.root / "stats",
         )
 
     def load_config(self) -> dict[str, Any]:
@@ -107,7 +121,7 @@ class AlcoveHome:
         slug = _slug(name)
         kb_path = Path(path).expanduser().resolve()
         config_path = paths.knowledge_bases / f"{slug}.yml"
-        config = KnowledgeBaseConfig(version=1, name=slug, path=str(kb_path))
+        config = KnowledgeBaseConfig(version=1, name=slug, path=compact_user_path(kb_path))
         config_path.write_text(
             yaml.safe_dump(config.model_dump(), sort_keys=False),
             encoding="utf-8",

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
+  <title id="title">Alcove mark</title>
+  <desc id="desc">A nested alcove-shaped knowledge mark</desc>
+  <rect width="96" height="96" rx="22" fill="#2f332b"/>
+  <path d="M24 70V35.5C24 25.8 31.8 18 41.5 18h13C64.2 18 72 25.8 72 35.5V70" fill="none" stroke="#f5ecd8" stroke-width="8" stroke-linecap="round"/>
+  <path d="M36 70V40.5C36 36.4 39.4 33 43.5 33h9c4.1 0 7.5 3.4 7.5 7.5V70" fill="none" stroke="#d4a653" stroke-width="7" stroke-linecap="round"/>
+  <path d="M48 70V50" stroke="#8eb8a0" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="48" cy="44" r="4" fill="#f5ecd8"/>
+</svg>

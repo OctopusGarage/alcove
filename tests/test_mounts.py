@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from alcove.markdown import MarkdownRepository
 from alcove.mounts import AddMountRequest, MountsModule
 from alcove.search import SearchModule, SearchRequest
 from alcove.workspace import Workspace
@@ -38,8 +39,63 @@ def test_mount_scan_indexes_text_files_without_copying_content(tmp_path):
     assert report["scanned"] == 1
     assert report["skipped"] == 2
     assert report["items"][0]["title"] == "Agent Notes"
-    assert report["items"][0]["path"].endswith("note.md")
+    assert report["items"][0]["relative_path"] == "note.md"
+    assert "path" not in report["items"][0]
+    assert "file_size" not in report["items"][0]
+    assert "file_mtime_ns" not in report["items"][0]
+    assert "diagnostics" not in report["items"][0]
     assert not (workspace.paths().mounts / mount.id / "note.md").exists()
+
+    debug_report = module.scan(mount.id, include_diagnostics=True)
+    assert debug_report["items"][0]["diagnostics"]["file_size"] > 0
+    assert debug_report["items"][0]["diagnostics"]["file_mtime_ns"] > 0
+
+
+def test_mount_scan_writes_okf_markdown_index_for_agent_search(tmp_path):
+    workspace = Workspace.init(tmp_path / "workspace")
+    source = tmp_path / "source-docs"
+    source.mkdir()
+    (source / "note.md").write_text("# Agent Notes\n\nMount search needle.", encoding="utf-8")
+    module = MountsModule(workspace)
+    mount = module.add(AddMountRequest(path=str(source), name="Source Docs", tags=["agent"]))
+
+    module.scan(mount.id)
+
+    repo = MarkdownRepository()
+    mount_index = repo.read_doc(workspace.paths().mounts / "okf" / mount.id / "index.md")
+    item_paths = sorted((workspace.paths().mounts / "okf" / mount.id / "items").glob("*.md"))
+    item = repo.read_doc(item_paths[0])
+    assert mount_index.frontmatter["type"] == "Mount Index"
+    assert mount_index.frontmatter["schema"] == "okf/mount-index/v1"
+    assert mount_index.frontmatter["mount_id"] == mount.id
+    assert mount_index.frontmatter["item_count"] == 1
+    assert item.frontmatter["type"] == "Mounted Item"
+    assert item.frontmatter["schema"] == "okf/mounted-item/v1"
+    assert item.frontmatter["relative_path"] == "note.md"
+    assert "Mount search needle." in item.body
+
+
+def test_mount_scan_removes_stale_okf_items_when_source_file_is_deleted(tmp_path):
+    workspace = Workspace.init(tmp_path / "workspace")
+    source = tmp_path / "source-docs"
+    source.mkdir()
+    note = source / "note.md"
+    note.write_text("# Agent Notes\n\nMount search needle.", encoding="utf-8")
+    module = MountsModule(workspace)
+    mount = module.add(AddMountRequest(path=str(source), name="Source Docs"))
+    module.scan(mount.id)
+    item_dir = workspace.paths().mounts / "okf" / mount.id / "items"
+    assert len(list(item_dir.glob("*.md"))) == 1
+
+    note.unlink()
+    report = module.scan(mount.id)
+
+    assert report["scanned"] == 0
+    assert list(item_dir.glob("*.md")) == []
+    mount_index = MarkdownRepository().read_doc(
+        workspace.paths().mounts / "okf" / mount.id / "index.md"
+    )
+    assert mount_index.frontmatter["item_count"] == 0
 
 
 def test_mount_scan_reuses_unchanged_index_items(tmp_path):
@@ -99,6 +155,7 @@ def test_search_includes_mounted_items_after_scan(tmp_path):
         "root": "mounts",
         "type": "Mounted Item",
         "title": "Mounted Note",
+        "resource": "note.md",
         "tags": ["history"],
         "status": "active",
     }.items() <= rows[0].items()

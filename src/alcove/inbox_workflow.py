@@ -10,6 +10,9 @@ from alcove.markdown import normalize_slug
 from alcove.workspace import Workspace
 
 
+LOW_CONFIDENCE_REVIEW_THRESHOLD = 0.35
+
+
 class InboxPromotionWorkflow:
     def __init__(self, workspace: Workspace, knowledge: KnowledgeModule) -> None:
         self.workspace = workspace
@@ -34,6 +37,7 @@ class InboxPromotionWorkflow:
             request.supersede_similar,
         )
         try:
+            status = self._status_for_confidence(confidence["confidence"])
             result = self.knowledge.note_source(
                 NoteSourceRequest(
                     platform=post.platform,
@@ -41,13 +45,14 @@ class InboxPromotionWorkflow:
                     topic=request.topic,
                     resource=post.source or archive_reference,
                     summary=request.summary,
+                    source_excerpt=self._source_excerpt(post),
                     tags=tags,
                     published_date=post.date,
                     legacy_path=archive_reference,
                     create_concept=True,
                     human_notes=self._human_notes(request),
                     confidence=confidence["confidence"],
-                    status="active",
+                    status=status,
                     supersedes=supersedes,
                     last_verified=post.date,
                 )
@@ -86,6 +91,7 @@ class InboxPromotionWorkflow:
             supersede_similar,
         )
         try:
+            status = self._status_for_confidence(confidence["confidence"])
             result = self.knowledge.note_source(
                 NoteSourceRequest(
                     platform=post.platform,
@@ -93,12 +99,13 @@ class InboxPromotionWorkflow:
                     topic=topic,
                     resource=post.source or archive_reference,
                     summary=summary or post.content,
+                    source_excerpt=self._source_excerpt(post),
                     tags=resolved_tags,
                     published_date=post.date,
                     legacy_path=archive_reference,
                     create_concept=False,
                     confidence=confidence["confidence"],
-                    status="active",
+                    status=status,
                     supersedes=supersedes,
                     last_verified=post.date,
                 )
@@ -171,6 +178,17 @@ class InboxPromotionWorkflow:
             "signals": score.signals,
             "details": score.details,
         }
+
+    def _status_for_confidence(self, confidence: float) -> str:
+        if confidence < LOW_CONFIDENCE_REVIEW_THRESHOLD:
+            return "needs-review"
+        return "active"
+
+    def _source_excerpt(self, post: InboxPost, max_chars: int = 500) -> str:
+        text = (post.review_content or post.content or "").strip()
+        if len(text) <= max_chars:
+            return text
+        return text[: max_chars - 1].rstrip() + "…"
 
     def _similar_sources_to_supersede(
         self,

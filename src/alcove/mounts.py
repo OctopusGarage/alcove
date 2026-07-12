@@ -5,9 +5,11 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 
+from alcove.derived_okf import DerivedOkfDocument, DerivedOkfWriter, stable_derived_item_filename
 from alcove.external_index import ExternalIndexItemFactory, ExternalIndexStore
 from alcove.home import AlcoveHome
-from alcove.markdown import normalize_slug
+from alcove.markdown import MarkdownDoc, normalize_slug
+from alcove.paths import compact_user_path
 from alcove.runtime import AlcoveRuntime
 from alcove.taxonomy import load_taxonomy, normalize_tag
 from alcove.workspace import Workspace
@@ -16,6 +18,8 @@ from alcove.workspace import Workspace
 TEXT_EXTENSIONS = {".md", ".markdown", ".txt", ".rst"}
 SKIP_DIRS = {".git", ".hg", ".svn", ".venv", "node_modules", "__pycache__"}
 MAX_INDEXED_TEXT_BYTES = 1_000_000
+MOUNT_INDEX_SCHEMA = "okf/mount-index/v1"
+MOUNT_ITEM_SCHEMA = "okf/mounted-item/v1"
 
 
 def now_iso() -> str:
@@ -55,6 +59,8 @@ class MountsModule:
         self.store_path = self.mounts_root / "mounts.json"
         self.index_path = self.mounts_root / "index.json"
         self.index_store = ExternalIndexStore(self.mounts_root)
+        self.okf_root = self.mounts_root / "okf"
+        self.okf_writer = DerivedOkfWriter()
 
     def add(self, request: AddMountRequest) -> Mount:
         data = self._load_mounts()
@@ -72,7 +78,7 @@ class MountsModule:
             id=self._unique_id(name, [item["id"] for item in data["mounts"]]),
             name=name,
             type=mount_type,
-            path=str(source_path),
+            path=compact_user_path(source_path),
             tags=self._normalize_tags(request.tags),
             status="active",
             created_at=timestamp,
@@ -89,7 +95,7 @@ class MountsModule:
             if not status or item.get("status") == status
         ]
 
-    def scan(self, mount_id: str | None = None) -> dict:
+    def scan(self, mount_id: str | None = None, include_diagnostics: bool = False) -> dict:
         mounts = self.list()
         if mount_id:
             mounts = [mount for mount in mounts if mount.id == normalize_slug(mount_id)]
@@ -109,7 +115,9 @@ class MountsModule:
             "scanned": len(items),
             "skipped": skipped,
             "reused": reused,
-            "items": items,
+            "items": [
+                self._public_item(item, include_diagnostics=include_diagnostics) for item in items
+            ],
         }
 
     def index_items(self) -> list[dict]:
@@ -119,7 +127,7 @@ class MountsModule:
         return rows
 
     def _scan_mount(self, mount: Mount) -> tuple[list[dict], int, int]:
-        root = Path(mount.path)
+        root = Path(mount.path).expanduser()
         existing = self._existing_items_by_path(mount)
         items: list[dict] = []
         skipped = 0
@@ -144,7 +152,7 @@ class MountsModule:
                         **previous,
                         "mount_name": mount.name,
                         "mount_type": mount.type,
-                        "path": str(path),
+                        "path": compact_user_path(path),
                         "tags": mount.tags,
                         "status": mount.status,
                     }
@@ -190,6 +198,18 @@ class MountsModule:
             return False
         return item.get("file_size") == file_size and item.get("file_mtime_ns") == file_mtime_ns
 
+    def _public_item(self, item: dict, include_diagnostics: bool = False) -> dict:
+        public = dict(item)
+        public.pop("path", None)
+        diagnostics = {
+            key: public.pop(key)
+            for key in ("file_size", "file_mtime_ns")
+            if key in public and public.get(key) is not None
+        }
+        if include_diagnostics and diagnostics:
+            public["diagnostics"] = diagnostics
+        return public
+
     def _load_mounts(self) -> dict[str, list[dict]]:
         if not self.store_path.is_file():
             return {"mounts": []}
@@ -214,8 +234,110 @@ class MountsModule:
             ExternalIndexStore(self.mounts_root).write_mount_indexes(
                 {mount.id: by_mount.get(mount.id, []) for mount in mounts}
             )
+            self._write_okf_indexes(
+                {mount.id: by_mount.get(mount.id, []) for mount in mounts}, mounts
+            )
             return
         self.index_store.write_mount_index(items)
+        by_mount = {}
+        for item in items:
+            by_mount.setdefault(str(item.get("mount_id") or ""), []).append(item)
+        self._write_okf_indexes({mount.id: by_mount.get(mount.id, []) for mount in mounts}, mounts)
+
+    def _write_okf_indexes(
+        self, items_by_mount: dict[str, list[dict]], mounts: list[Mount]
+    ) -> None:
+        for mount in mounts:
+            items = items_by_mount.get(mount.id, [])
+            mount_dir = self.okf_root / mount.id
+            self.okf_writer.write_item_docs(
+                mount_dir / "items",
+                [
+                    DerivedOkfDocument(
+                        key=str(item.get("relative_path") or "item"),
+                        doc=self._okf_item_doc(mount, item),
+                    )
+                    for item in items
+                ],
+            )
+            self.okf_writer.write_doc(
+                mount_dir / "index.md", self._okf_mount_index_doc(mount, items)
+            )
+
+    def _okf_mount_index_doc(self, mount: Mount, items: list[dict]) -> MarkdownDoc:
+        body_lines = [
+            f"# {mount.name}",
+            "",
+            "## Mount",
+            "",
+            f"- ID: `{mount.id}`",
+            f"- Type: `{mount.type}`",
+            f"- Path: `{mount.path}`",
+            f"- Items: {len(items)}",
+            "",
+            "## Items",
+            "",
+        ]
+        for item in items:
+            title = str(item.get("title") or item.get("relative_path") or "")
+            relative_path = str(item.get("relative_path") or "")
+            body_lines.append(
+                f"- [{title}](items/{stable_derived_item_filename(relative_path)}) - `{relative_path}`"
+            )
+        return MarkdownDoc(
+            frontmatter={
+                "type": "Mount Index",
+                "schema": MOUNT_INDEX_SCHEMA,
+                "title": mount.name,
+                "mount_id": mount.id,
+                "mount_type": mount.type,
+                "resource": mount.path,
+                "tags": mount.tags,
+                "status": mount.status,
+                "item_count": len(items),
+                "generated_at": now_iso(),
+            },
+            body="\n".join(body_lines),
+        )
+
+    def _okf_item_doc(self, mount: Mount, item: dict) -> MarkdownDoc:
+        title = str(item.get("title") or item.get("relative_path") or "Mounted Item")
+        relative_path = str(item.get("relative_path") or "")
+        source_path = str(item.get("path") or "")
+        text = str(item.get("text") or "")
+        body = "\n".join(
+            [
+                f"# {title}",
+                "",
+                "## Source",
+                "",
+                f"- Mount: `{mount.id}`",
+                f"- Relative path: `{relative_path}`",
+                f"- Source path: `{source_path}`",
+                "",
+                "## Content",
+                "",
+                text,
+            ]
+        )
+        return MarkdownDoc(
+            frontmatter={
+                "type": "Mounted Item",
+                "schema": MOUNT_ITEM_SCHEMA,
+                "title": title,
+                "mount_id": mount.id,
+                "mount_name": mount.name,
+                "mount_type": mount.type,
+                "resource": source_path,
+                "relative_path": relative_path,
+                "tags": list(item.get("tags") or []),
+                "status": str(item.get("status") or "active"),
+                "indexed_at": str(item.get("indexed_at") or ""),
+                "file_size": item.get("file_size"),
+                "file_mtime_ns": item.get("file_mtime_ns"),
+            },
+            body=body,
+        )
 
     def _mount(self, item: dict) -> Mount:
         return Mount(

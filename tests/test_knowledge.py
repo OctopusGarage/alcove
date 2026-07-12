@@ -1,8 +1,10 @@
 from alcove.knowledge import (
     KnowledgeModule,
     NoteSourceRequest,
+    AddConceptRequest,
     AddQuestionRequest,
     AddEntityRequest,
+    ReviseKnowledgeRequest,
 )
 from alcove.markdown import MarkdownDoc, MarkdownRepository
 from alcove.taxonomy import load_taxonomy, normalize_tag, normalize_topic, split_domain_topic
@@ -392,3 +394,46 @@ def test_note_source_can_skip_concept_creation(tmp_path):
     assert not concept_path.exists()
     assert "- [Source] [Source Only](sources/web/agent-engineering/source-only.md)" in index.body
     assert "- [Knowledge Concept] [Source Only]" not in index.body
+
+
+def test_revise_concept_updates_summary_tags_sources_and_appends_discussion_note(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    module = KnowledgeModule(workspace)
+    result = module.add_concept(
+        AddConceptRequest(
+            topic="agent-engineering/agent-harness",
+            title="MCP Knowledge Entry",
+            summary="Old summary.",
+            tags=["mcp"],
+            source_refs=["/sources/chat/agent-engineering/original.md"],
+        )
+    )
+
+    revised = module.revise(
+        ReviseKnowledgeRequest(
+            path="concepts/agent-engineering/agent-harness/mcp-knowledge-entry.md",
+            summary="New summary from an AI discussion.",
+            append="补充：可以通过 MCP 从其他项目把讨论结果写入 Managed KB。",
+            tags=["Managed KB", "mcp"],
+            source_refs=["sources/chat/agent-engineering/ai-discussion.md"],
+            reason="AI 讨论后修订",
+        )
+    )
+
+    doc = MarkdownRepository().read_doc(result.path)
+    index = MarkdownRepository().read_doc(tmp_path / "knowledge" / "index.md")
+
+    assert revised.path == result.path
+    assert doc.frontmatter["tags"] == ["mcp", "managed-kb"]
+    assert doc.frontmatter["source_refs"] == [
+        "/sources/chat/agent-engineering/original.md",
+        "/sources/chat/agent-engineering/ai-discussion.md",
+    ]
+    assert doc.frontmatter["revision_count"] == 1
+    assert doc.frontmatter["revisions"][0]["reason"] == "AI 讨论后修订"
+    assert "updated_at" in doc.frontmatter
+    assert "New summary from an AI discussion." in doc.body
+    assert "Old summary." not in doc.body.split("## 要点")[0]
+    assert "## 修订记录" in doc.body
+    assert "补充：可以通过 MCP 从其他项目把讨论结果写入 Managed KB。" in doc.body
+    assert "- [Knowledge Concept] [MCP Knowledge Entry]" in index.body

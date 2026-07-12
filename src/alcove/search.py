@@ -51,8 +51,8 @@ class SearchModule:
 
     def tags(self) -> list[dict]:
         counts: dict[str, int] = {}
-        for doc in self._docs():
-            for tag in self._tags(doc.frontmatter.get("tags")):
+        for row in self._tag_source_rows():
+            for tag in self._tags(row.get("tags")):
                 counts[tag] = counts.get(tag, 0) + 1
         return [
             {"tag": tag, "count": count}
@@ -62,8 +62,8 @@ class SearchModule:
     def tag_doctor(self) -> list[dict]:
         variants_by_canonical: dict[str, set[str]] = {}
         counts: dict[str, int] = {}
-        for doc in self._docs():
-            for tag in self._tags(doc.frontmatter.get("tags")):
+        for row in self._tag_source_rows():
+            for tag in self._tags(row.get("tags")):
                 canonical = normalize_tag(tag, self.taxonomy)
                 variants_by_canonical.setdefault(canonical, set()).add(tag)
                 counts[canonical] = counts.get(canonical, 0) + 1
@@ -90,6 +90,9 @@ class SearchModule:
 
     def _tags(self, value: object) -> list[str]:
         return value_list(value)
+
+    def _tag_source_rows(self) -> list[dict]:
+        return self.search(SearchRequest(query="", limit=1_000_000))
 
     def _docs(self) -> list[MarkdownDoc]:
         if self.knowledge_root is None:

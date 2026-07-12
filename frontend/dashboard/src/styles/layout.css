@@ -1,0 +1,153 @@
+.shell {
+  min-height: 100vh;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: 206px minmax(0, 1fr) minmax(190px, auto);
+  gap: 16px;
+  align-items: center;
+  padding: 14px clamp(18px, 4vw, 46px);
+  border-bottom: 1px solid var(--line-strong);
+  background: rgba(255, 255, 251, 0.86);
+  backdrop-filter: blur(14px);
+}
+
+.brand {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 11px;
+  align-items: center;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.brand b {
+  display: block;
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.brand small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  background: var(--ink);
+  color: var(--sheet);
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 22px;
+}
+
+.topbar nav {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.nav-item {
+  display: block;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+
+.nav-item span {
+  display: block;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.nav-item small {
+  display: none;
+}
+
+.nav-item.active,
+.nav-item:hover {
+  border-color: var(--line);
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.snapshot-meta {
+  justify-self: end;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}
+
+.snapshot-meta b,
+.snapshot-meta code {
+  display: block;
+  color: var(--ink-soft);
+  word-break: break-word;
+}
+
+.snapshot-meta code {
+  margin-top: 3px;
+  font-family: "SF Mono", ui-monospace, monospace;
+}
+
+.main {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  padding: 26px clamp(18px, 4vw, 46px) 46px;
+}
+
+.fatal {
+  max-width: 720px;
+  margin: 12vh auto;
+  padding: 32px;
+}
+
+@media (max-width: 980px) {
+  .topbar {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .snapshot-meta {
+    justify-self: start;
+    text-align: left;
+  }
+
+  .topbar nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .nav-item {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .topbar nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .main {
+    padding: 18px;
+  }
+}

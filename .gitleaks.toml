@@ -3,3 +3,9 @@
 # credential is confirmed fake or revoked.
 [extend]
 useDefault = true
+
+[allowlist]
+description = "Local generated artifacts are ignored by git and may contain real connector exports."
+paths = [
+  '''^\.tmp/''',
+]

@@ -6,6 +6,8 @@ from pathlib import Path
 
 from alcove.agent_targets import resolve_agent_targets
 from alcove.home import AlcoveHome
+from alcove.mcp_toolsets import resolve_mcp_toolset
+from alcove.paths import compact_user_path
 from alcove.workspace import Workspace
 
 
@@ -14,10 +16,15 @@ class InstallerModule:
         self,
         workspace: Workspace | None = None,
         home: AlcoveHome | None = None,
+        mcp_toolset: str = "full",
+        default_kb: str = "",
     ) -> None:
         self.workspace = workspace
         self.home = home or AlcoveHome.init()
-        self.kb_name = self._registered_kb_name()
+        self.mcp_toolset = resolve_mcp_toolset(mcp_toolset)[0]
+        if default_kb:
+            self.home.get_knowledge_base(default_kb)
+        self.kb_name = default_kb or self._registered_kb_name()
 
     def install(self, targets: list[str], dry_run: bool = False) -> dict:
         resolved_targets = self._targets(targets)
@@ -30,7 +37,7 @@ class InstallerModule:
             if target == "codex":
                 files.append(self._write_codex())
             elif target == "claude":
-                files.append(self._write_claude())
+                files.extend(self._write_claude())
         return {**self._scope(), "files": files, "configs": configs}
 
     def status(self, targets: list[str]) -> dict:
@@ -55,11 +62,18 @@ class InstallerModule:
         return resolve_agent_targets(targets)
 
     def _mcp_config(self) -> dict:
-        args = ["serve", "--mcp", "--home", str(self.home.root)]
+        args = [
+            "serve",
+            "--mcp",
+            "--toolset",
+            self.mcp_toolset,
+            "--home",
+            compact_user_path(self.home.root),
+        ]
         if self.kb_name:
             args.extend(["--kb", self.kb_name])
         elif self.workspace is not None:
-            args.extend(["--workspace", str(self.workspace.root)])
+            args.extend(["--workspace", compact_user_path(self.workspace.root)])
         return {
             "command": "alcove",
             "args": args,
@@ -75,9 +89,9 @@ class InstallerModule:
         return ""
 
     def _scope(self) -> dict:
-        payload = {"home": str(self.home.root)}
+        payload = {"home": compact_user_path(self.home.root), "toolset": self.mcp_toolset}
         if self.workspace is not None:
-            payload["workspace"] = str(self.workspace.root)
+            payload["workspace"] = compact_user_path(self.workspace.root)
         if self.kb_name:
             payload["kb"] = self.kb_name
         return payload
@@ -104,8 +118,15 @@ class InstallerModule:
         path.write_text(content, encoding="utf-8")
         return {"target": "codex", "path": str(path), "action": action}
 
-    def _write_claude(self) -> dict:
-        path = self._claude_path()
+    def _write_claude(self) -> list[dict]:
+        records = [self._write_claude_json(self._claude_path(), config_kind="legacy")]
+        records.append(
+            self._write_claude_json(self._claude_settings_path(), config_kind="settings")
+        )
+        return records
+
+    def _write_claude_json(self, path: Path, *, config_kind: str) -> dict:
+        path.parent.mkdir(parents=True, exist_ok=True)
         existing = self._read_json(path)
         before = existing.get("mcpServers", {}).get("alcove")
         existing.setdefault("mcpServers", {})["alcove"] = self._mcp_config()
@@ -117,7 +138,7 @@ class InstallerModule:
             json.dumps(existing, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
-        return {"target": "claude", "path": str(path), "action": action}
+        return {"target": "claude", "path": str(path), "action": action, "kind": config_kind}
 
     def _codex_status(self) -> dict:
         path = self._codex_path()
@@ -131,11 +152,22 @@ class InstallerModule:
         }
 
     def _claude_status(self) -> dict:
-        path = self._claude_path()
+        legacy = self._claude_config_status(self._claude_path(), config_kind="legacy")
+        settings = self._claude_config_status(self._claude_settings_path(), config_kind="settings")
+        return {
+            "target": "claude",
+            "path": str(self._claude_path()),
+            "settings_path": str(self._claude_settings_path()),
+            "installed": legacy["installed"] and settings["installed"],
+            "workspace_match": legacy["workspace_match"] and settings["workspace_match"],
+            "configs": [legacy, settings],
+        }
+
+    def _claude_config_status(self, path: Path, *, config_kind: str) -> dict:
         data = self._read_json(path)
         server = data.get("mcpServers", {}).get("alcove")
         return {
-            "target": "claude",
+            "kind": config_kind,
             "path": str(path),
             "installed": isinstance(server, dict),
             "workspace_match": server == self._mcp_config(),
@@ -154,27 +186,65 @@ class InstallerModule:
         return {"target": "codex", "path": str(path), "action": "removed"}
 
     def _remove_claude(self, dry_run: bool = False) -> dict:
-        path = self._claude_path()
+        records = [
+            self._remove_claude_json(self._claude_path(), dry_run=dry_run, config_kind="legacy"),
+            self._remove_claude_json(
+                self._claude_settings_path(),
+                dry_run=dry_run,
+                config_kind="settings",
+            ),
+        ]
+        actions = {record["action"] for record in records}
+        if actions == {"not_found"}:
+            action = "not_found"
+        elif "removed" in actions:
+            action = "removed"
+        else:
+            action = "unchanged"
+        return {
+            "target": "claude",
+            "path": str(self._claude_path()),
+            "settings_path": str(self._claude_settings_path()),
+            "action": action,
+            "configs": records,
+        }
+
+    def _remove_claude_json(
+        self,
+        path: Path,
+        *,
+        dry_run: bool = False,
+        config_kind: str,
+    ) -> dict:
         data = self._read_json(path)
         servers = data.get("mcpServers")
         if not isinstance(servers, dict) or "alcove" not in servers:
-            return {"target": "claude", "path": str(path), "action": "not_found"}
+            return {
+                "target": "claude",
+                "path": str(path),
+                "action": "not_found",
+                "kind": config_kind,
+            }
         next_data = {
             **data,
             "mcpServers": {k: v for k, v in servers.items() if k != "alcove"},
         }
         if not dry_run:
+            path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(
                 json.dumps(next_data, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
-        return {"target": "claude", "path": str(path), "action": "removed"}
+        return {"target": "claude", "path": str(path), "action": "removed", "kind": config_kind}
 
     def _codex_path(self) -> Path:
         return Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))) / "config.toml"
 
     def _claude_path(self) -> Path:
         return Path.home() / ".claude.json"
+
+    def _claude_settings_path(self) -> Path:
+        return Path.home() / ".claude" / "settings.json"
 
     def _read_json(self, path: Path) -> dict:
         if not path.is_file():

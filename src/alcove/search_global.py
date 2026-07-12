@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from alcove.pins import PinsModule
+from alcove.projects import ProjectsModule
+from alcove.prompts import PromptsModule
 from alcove.runtime import AlcoveRuntime
 from alcove.search_query import SearchQueryPlan
 from alcove.search_rows import SearchRow, SearchRowBuilder
@@ -20,6 +22,24 @@ class GlobalHomeSearchAdapter:
         pins = PinsModule(self.runtime.workspace, home=self.runtime.home).list(status="")
         for pin in pins:
             row = self.rows.pin_item(pin)
+            if plan.matches_row(row):
+                yield row
+
+    def project_rows(self, plan: SearchQueryPlan) -> Iterator[SearchRow]:
+        if not plan.allows_type("Project"):
+            return
+        for project in ProjectsModule(self.runtime.workspace, home=self.runtime.home).list():
+            row = self.rows.project_item(project)
+            if plan.matches_row(row):
+                yield row
+
+    def prompt_rows(self, plan: SearchQueryPlan) -> Iterator[SearchRow]:
+        if not plan.allows_type("Prompt"):
+            return
+        for prompt in PromptsModule(self.runtime.workspace, home=self.runtime.home).list(
+            status=plan.status or "active"
+        ):
+            row = self.rows.prompt_item(prompt)
             if plan.matches_row(row):
                 yield row
 
