@@ -687,6 +687,7 @@ class HealthModule:
                 f"Expected OKF type {required_type}, found {doc_type or '<missing>'}.",
                 "Regenerate the module index.",
             )
+        self._check_governed_schema(doc, module, issues)
 
     def _read_doc(
         self,

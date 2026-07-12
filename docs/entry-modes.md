@@ -1,14 +1,16 @@
 # Alcove Entry Modes
 
-Alcove has three user-facing entry modes. They are intentionally different:
+Alcove has four user-facing runtime modes. They are intentionally different:
 the hub is an AI routing workspace, the global entry is a lightweight MCP
-bridge, and a managed KB entry is a focused capture and knowledge workflow.
+bridge, a managed KB entry is a focused capture and knowledge workflow, and the
+local service is deterministic background infrastructure.
 
 ```text
 Alcove Home (~/.alcove)
 ├── Hub workspace                 strong skill + CLI routing, broad daily work
 ├── Global MCP                    lightweight tools from unrelated projects
-└── Managed KB workspace          KB-scoped skills, inbox, OKF notes, capture
+├── Managed KB workspace          KB-scoped skills, inbox, OKF notes, capture
+└── Local service                 launchd dashboard + deterministic maintenance
 ```
 
 ## Design Principles
@@ -128,6 +130,95 @@ Install a wider global surface only when the user explicitly wants it:
 alcove global install --toolset kb --default-kb social_media_posts
 alcove global install --toolset full
 ```
+
+## Local Service
+
+The local service is the non-AI background layer. It can keep the dashboard
+available and run deterministic maintenance without requiring an open Codex or
+Claude Code session.
+
+```text
+Local Service
+├── dashboard LaunchAgent   -> alcove serve --dashboard --home ~/.alcove
+└── scheduler LaunchAgent   -> alcove service tick --home ~/.alcove
+```
+
+Recommended install:
+
+```sh
+alcove service install --dashboard --scheduler --load
+alcove service status
+```
+
+One maintenance tick runs:
+
+- due routine materialization,
+- stale connector refresh,
+- watched-source checks,
+- monitored blog checks,
+- scheduled radar runs,
+- global OKF catalog rebuild,
+- health check/fix,
+- usage rollup refresh and pruning,
+- dashboard snapshot rebuild.
+
+Background service work is deterministic by default. It should discover and
+record changes, not silently write synthesized knowledge notes. Watchers can add
+changed pages to a managed KB inbox for later interactive review. Blog monitor
+sources can discover new article URLs and optionally capture the article bundle
+into a configured KB inbox subdirectory.
+Radar definitions may optionally enable `ai_summary` and Telegram `notify`.
+That AI step runs after deterministic fetching/scoring/report generation, uses
+the radar-specific prompt from the definition, and falls back to the original
+report if the AI provider fails.
+
+Watchers:
+
+```sh
+alcove watch add "Example Blog" https://example.com/feed.xml --kind rss --kb social_media_posts
+alcove watch list --json
+alcove watch check --stale --json
+```
+
+Watcher data lives under `~/.alcove/watchers/`.
+
+Blog monitor:
+
+```sh
+alcove blog add "Anthropic Engineering" https://www.anthropic.com/engineering \
+  --id anthropic --discover playwright --link-pattern /engineering/ \
+  --kb social_media_posts --inbox-path inbox/anthropic --capture
+alcove blog add "OpenAI Engineering" https://openai.com/news/engineering/ \
+  --id openai --discover playwright --link-pattern /index/ \
+  --kb social_media_posts --inbox-path inbox/openai --capture
+alcove blog seed openai
+alcove blog check --stale --json
+```
+
+Blog monitor data lives under `~/.alcove/blog-monitor/`. Summary and notification
+are opt-in with `--summary` and `--notify` or the matching source config fields.
+Discovery or capture failures are recorded as failed runs, mark the source as
+`needs_attention`, and send a Telegram alert when notifications are enabled.
+The launchd scheduler does not auto-start Codex or Claude; agent-assisted
+diagnosis is a manual follow-up from the alert.
+
+For an immediate Hub request such as "check whether monitored blogs updated",
+use `alcove blog check --json`. Do not use `alcove service tick` for that
+request; tick is the scheduled maintenance path and may skip sources whose TTL
+has not expired. For a failure alert, run `alcove blog list --status '' --json`
+to inspect `last_error`, then retry the affected source with
+`alcove blog check <source-id> --json`.
+
+For immediate radar requests from the Hub:
+
+```sh
+alcove radar run tech-news --force --ai --notify --json
+alcove radar run tech-news --skip-fetch --force --ai --notify --json
+```
+
+Use the first command to refetch sources and analyze the new report. Use the
+second command when the user asks to analyze or resend the already fetched
+results without touching external sources.
 
 ## Managed KB Workspace
 

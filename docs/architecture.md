@@ -787,6 +787,14 @@ alcove global install                              install global-lite MCP
 alcove global install --default-kb <kb>            allow lite MCP manual-add into KB
 alcove global install --toolset full               install full MCP intentionally
 alcove global install --status                     inspect global-lite MCP
+alcove service install --dashboard --scheduler     install macOS launchd services
+alcove service tick                                run one deterministic maintenance tick
+alcove watch add <title> <url> --kind rss          add watched URL/feed source
+alcove watch check --stale                         check stale watcher sources
+alcove blog add <name> <url> --capture             monitor blog articles and capture new ones
+alcove blog seed <source-id>                       initialize seen article URLs
+alcove blog check --stale                          check stale blog sources
+alcove radar run <radar-id>                        run a configured radar report
 
 alcove inbox --kb <kb> ...                         managed KB via registry
 alcove inbox --kb <kb> manual-add ...              manual draft into KB inbox
@@ -967,6 +975,9 @@ Implemented
 ├── global-lite MCP install
 ├── managed KB profile install with inbox/social-post workflow wrappers
 ├── MCP coverage for the core CLI workflows
+├── launchd local service install/status/tick for dashboard and maintenance
+├── watcher sources under ~/.alcove/watchers/ with optional KB inbox handoff
+├── blog monitor sources under ~/.alcove/blog-monitor/ with optional Clipsmith capture
 └── AlcoveApplication facade narrowed to six capability groups
 ```
 

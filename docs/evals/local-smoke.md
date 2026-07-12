@@ -61,6 +61,7 @@ Run focused deeper smokes when the change touches their surfaces:
 ```sh
 scripts/smoke-mcp-matrix.sh
 scripts/smoke-dashboard-browser.sh
+scripts/smoke-radar-reports.sh
 scripts/smoke-export-restore.sh
 scripts/smoke-messy-inbox.sh
 ```
@@ -222,6 +223,9 @@ Codex or Claude model clients unless the opt-in environment variables are set.
 - `scripts/smoke-dashboard-browser.sh`: builds an isolated dashboard and checks
   desktop/mobile routes including Usage/data health, search results,
   screenshots, and console errors with Playwright when available.
+- `scripts/smoke-radar-reports.sh`: builds deterministic technology, world
+  news, stocks, and sports radar reports, then checks Markdown structure,
+  report HTML, desktop/mobile screenshots, and horizontal overflow.
 - `scripts/smoke-export-restore.sh`: exports an isolated home/KB, restores the
   data into a fresh home/workspace, re-registers the KB, and verifies search,
   list, doctor, and validate flows.

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from alcove import __version__
 from alcove.application import AlcoveApplication
+from alcove.blog_monitor import BlogMonitorModule
 from alcove.connectors.apple_notes import AppleNotesImportRequest, AppleNotesLocalImportRequest
 from alcove.connectors.chrome_bookmarks import (
     ChromeBookmarksImportRequest,
@@ -34,8 +35,10 @@ from alcove.prompts import AddPromptRequest
 from alcove.profile_installer import ProfileInstaller
 from alcove.runtime import AlcoveRuntime
 from alcove.search import SearchRequest
+from alcove.service import ServiceModule
 from alcove.tasks import AddIdeaRequest, AddRoutineRequest, AddTaskRequest
 from alcove.usage import UsageRecorder
+from alcove.watchers import WatcherModule
 from alcove.workspace import Workspace
 
 
@@ -146,6 +149,140 @@ def build_parser() -> argparse.ArgumentParser:
     usage_prune.add_argument("--days", type=int, default=90)
     usage_prune.add_argument("--now", default="")
     usage_prune.add_argument("--json", action="store_true")
+
+    service = sub.add_parser("service", help="Install and run Alcove local services")
+    service.add_argument("--home")
+    service_sub = service.add_subparsers(dest="service_command", required=True)
+    service_install = service_sub.add_parser("install", help="Install launchd services")
+    service_install.add_argument("--home")
+    service_install.add_argument("--dashboard", action="store_true")
+    service_install.add_argument("--scheduler", action="store_true")
+    service_install.add_argument("--host", default="127.0.0.1")
+    service_install.add_argument("--port", type=int, default=8765)
+    service_install.add_argument("--interval-minutes", type=int, default=30)
+    service_install.add_argument("--load", action="store_true")
+    service_install.add_argument("--json", action="store_true")
+    service_uninstall = service_sub.add_parser("uninstall", help="Uninstall launchd services")
+    service_uninstall.add_argument("--home")
+    service_uninstall.add_argument("--dashboard", action="store_true")
+    service_uninstall.add_argument("--scheduler", action="store_true")
+    service_uninstall.add_argument("--unload", action="store_true")
+    service_uninstall.add_argument("--json", action="store_true")
+    for name in ("status", "start", "stop", "restart"):
+        service_cmd = service_sub.add_parser(name, help=f"{name.title()} launchd services")
+        service_cmd.add_argument("--home")
+        service_cmd.add_argument("--dashboard", action="store_true")
+        service_cmd.add_argument("--scheduler", action="store_true")
+        service_cmd.add_argument("--json", action="store_true")
+    service_tick = service_sub.add_parser("tick", help="Run one deterministic maintenance tick")
+    service_tick.add_argument("--home")
+    service_tick.add_argument("--retention-days", type=int, default=90)
+    service_tick.add_argument("--skip-connectors", action="store_true")
+    service_tick.add_argument("--skip-watchers", action="store_true")
+    service_tick.add_argument("--skip-blogs", action="store_true")
+    service_tick.add_argument("--skip-radars", action="store_true")
+    service_tick.add_argument("--skip-health-fix", action="store_true")
+    service_tick.add_argument("--json", action="store_true")
+
+    watch = sub.add_parser("watch", help="Manage watched external update sources")
+    watch.add_argument("--home")
+    watch_sub = watch.add_subparsers(dest="watch_command", required=True)
+    watch_add = watch_sub.add_parser("add", help="Add a watched URL or feed")
+    watch_add.add_argument("--home")
+    watch_add.add_argument("title")
+    watch_add.add_argument("url")
+    watch_add.add_argument("--kind", default="page")
+    watch_add.add_argument("--kb", default="")
+    watch_add.add_argument("--tag", action="append", default=[])
+    watch_add.add_argument("--tags", default="")
+    watch_add.add_argument("--ttl-hours", type=int, default=24)
+    watch_add.add_argument("--json", action="store_true")
+    watch_list = watch_sub.add_parser("list", help="List watched sources")
+    watch_list.add_argument("--home")
+    watch_list.add_argument("--status", default="active")
+    watch_list.add_argument("--json", action="store_true")
+    watch_check = watch_sub.add_parser("check", help="Check watched sources")
+    watch_check.add_argument("--home")
+    watch_check.add_argument("source_id", nargs="?", default="")
+    watch_check.add_argument("--stale", action="store_true")
+    watch_check.add_argument("--json", action="store_true")
+
+    blog = sub.add_parser("blog", help="Monitor blogs and capture new articles")
+    blog.add_argument("--home")
+    blog_sub = blog.add_subparsers(dest="blog_command", required=True)
+    blog_add = blog_sub.add_parser("add", help="Add or update a monitored blog source")
+    blog_add.add_argument("--home", default=argparse.SUPPRESS)
+    blog_add.add_argument("name")
+    blog_add.add_argument("url")
+    blog_add.add_argument("--id", dest="source_id", default="")
+    blog_add.add_argument("--discover", default="requests")
+    blog_add.add_argument("--link-pattern", default="")
+    blog_add.add_argument("--days-back", type=int, default=30)
+    blog_add.add_argument("--capture", action="store_true")
+    blog_add.add_argument("--adapter", default="clipsmith")
+    blog_add.add_argument("--kb", default="")
+    blog_add.add_argument("--inbox-path", default="")
+    blog_add.add_argument("--summary", action="store_true")
+    blog_add.add_argument("--notify", action="store_true")
+    blog_add.add_argument("--tag", action="append", default=[])
+    blog_add.add_argument("--tags", default="")
+    blog_add.add_argument("--ttl-hours", type=int, default=24)
+    blog_add.add_argument("--json", action="store_true")
+    blog_list = blog_sub.add_parser("list", help="List monitored blog sources")
+    blog_list.add_argument("--home", default=argparse.SUPPRESS)
+    blog_list.add_argument("--status", default="active")
+    blog_list.add_argument("--json", action="store_true")
+    blog_seed = blog_sub.add_parser("seed", help="Initialize seen URLs without capture")
+    blog_seed.add_argument("--home", default=argparse.SUPPRESS)
+    blog_seed.add_argument("source_id", nargs="?", default="")
+    blog_seed.add_argument("--json", action="store_true")
+    blog_check = blog_sub.add_parser("check", help="Check monitored blogs for new articles")
+    blog_check.add_argument("--home", default=argparse.SUPPRESS)
+    blog_check.add_argument("source_id", nargs="?", default="")
+    blog_check.add_argument("--stale", action="store_true")
+    blog_check.add_argument("--no-capture", action="store_true")
+    blog_check.add_argument("--summary", action="store_true")
+    blog_check.add_argument("--notify", action="store_true")
+    blog_check.add_argument("--json", action="store_true")
+
+    radar = sub.add_parser("radar", help="Manage configurable information radars")
+    radar.add_argument("--home")
+    radar_sub = radar.add_subparsers(dest="radar_command", required=True)
+    radar_list = radar_sub.add_parser("list", help="List configured radar definitions")
+    radar_list.add_argument("--home", default=argparse.SUPPRESS)
+    radar_list.add_argument("--status", default="active")
+    radar_list.add_argument("--json", action="store_true")
+    radar_init = radar_sub.add_parser("init", help="Create a radar definition")
+    radar_init.add_argument("radar_id")
+    radar_init.add_argument("--home", default=argparse.SUPPRESS)
+    radar_init.add_argument("--from-preset", default="")
+    radar_init.add_argument("--force", action="store_true")
+    radar_init.add_argument("--json", action="store_true")
+    radar_run = radar_sub.add_parser("run", help="Run a radar definition")
+    radar_run.add_argument("radar_id")
+    radar_run.add_argument("--home", default=argparse.SUPPRESS)
+    radar_run.add_argument("--skip-fetch", action="store_true")
+    radar_run.add_argument("--force", action="store_true")
+    radar_run.add_argument("--ai", action="store_true")
+    radar_run.add_argument("--notify", action="store_true")
+    radar_run.add_argument("--json", action="store_true")
+    radar_status = radar_sub.add_parser("status", help="Show radar run status")
+    radar_status.add_argument("radar_id", nargs="?", default="")
+    radar_status.add_argument("--home", default=argparse.SUPPRESS)
+    radar_status.add_argument("--json", action="store_true")
+    radar_import = radar_sub.add_parser(
+        "import-social-radar", help="Import legacy Social Radar data"
+    )
+    radar_import.add_argument("source_home", nargs="?", default="~/.social_radar")
+    radar_import.add_argument("--home", default=argparse.SUPPRESS)
+    radar_import.add_argument("--force", action="store_true")
+    radar_import.add_argument("--json", action="store_true")
+    radar_preset = radar_sub.add_parser("preset", help="Work with packaged radar presets")
+    radar_preset.add_argument("--home", default=argparse.SUPPRESS)
+    radar_preset_sub = radar_preset.add_subparsers(dest="radar_preset_command", required=True)
+    radar_preset_list = radar_preset_sub.add_parser("list", help="List packaged radar presets")
+    radar_preset_list.add_argument("--home", default=argparse.SUPPRESS)
+    radar_preset_list.add_argument("--json", action="store_true")
 
     kb = sub.add_parser("kb", help="Register and list managed knowledge bases")
     kb.add_argument("--home")
@@ -1041,6 +1178,165 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(payload, ensure_ascii=False, indent=2))
             else:
                 print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "service":
+            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
+            service_module = ServiceModule(home)
+            dashboard = bool(getattr(args, "dashboard", False))
+            scheduler = bool(getattr(args, "scheduler", False))
+            if args.service_command == "install":
+                service_payload = service_module.install(
+                    dashboard=dashboard,
+                    scheduler=scheduler,
+                    host=args.host,
+                    port=args.port,
+                    interval_minutes=args.interval_minutes,
+                    load=args.load,
+                )
+            elif args.service_command == "uninstall":
+                service_payload = service_module.uninstall(
+                    dashboard=dashboard,
+                    scheduler=scheduler,
+                    unload=args.unload,
+                )
+            elif args.service_command == "status":
+                service_payload = service_module.status(dashboard=dashboard, scheduler=scheduler)
+            elif args.service_command == "start":
+                service_payload = service_module.start(dashboard=dashboard, scheduler=scheduler)
+            elif args.service_command == "stop":
+                service_payload = service_module.stop(dashboard=dashboard, scheduler=scheduler)
+            elif args.service_command == "restart":
+                service_module.stop(dashboard=dashboard, scheduler=scheduler)
+                service_payload = service_module.start(dashboard=dashboard, scheduler=scheduler)
+                service_payload["status"] = "restarted"
+            elif args.service_command == "tick":
+                service_payload = service_module.tick(
+                    retention_days=args.retention_days,
+                    refresh_connectors=not args.skip_connectors,
+                    check_watchers=not args.skip_watchers,
+                    check_blogs=not args.skip_blogs,
+                    check_radars=not args.skip_radars,
+                    fix_health=not args.skip_health_fix,
+                )
+            else:
+                return _argument_error(
+                    parser, "the following arguments are required: service_command"
+                )
+            if args.json:
+                print(json.dumps(service_payload, ensure_ascii=False, indent=2))
+            else:
+                print(json.dumps(service_payload, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "watch":
+            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
+            watcher_module = WatcherModule(home)
+            if args.watch_command == "add":
+                watch_payload = watcher_module.add(
+                    title=args.title,
+                    url=args.url,
+                    kind=args.kind,
+                    kb=args.kb,
+                    tags=_tags(args),
+                    ttl_hours=args.ttl_hours,
+                )
+            elif args.watch_command == "list":
+                watch_payload = watcher_module.list_sources(status=args.status)
+            elif args.watch_command == "check":
+                watch_payload = watcher_module.check(
+                    source_id=args.source_id, stale_only=args.stale
+                )
+            else:
+                return _argument_error(
+                    parser, "the following arguments are required: watch_command"
+                )
+            if args.json:
+                print(json.dumps(watch_payload, ensure_ascii=False, indent=2))
+            else:
+                print(json.dumps(watch_payload, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "blog":
+            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
+            blog_module = BlogMonitorModule(home)
+            if args.blog_command == "add":
+                blog_payload = blog_module.add(
+                    name=args.name,
+                    url=args.url,
+                    source_id=args.source_id,
+                    discover_method=args.discover,
+                    link_pattern=args.link_pattern,
+                    days_back=args.days_back,
+                    capture_enabled=args.capture,
+                    capture_adapter=args.adapter,
+                    kb=args.kb,
+                    inbox_path=args.inbox_path,
+                    summary_enabled=args.summary,
+                    notify_enabled=args.notify,
+                    tags=_tags(args),
+                    ttl_hours=args.ttl_hours,
+                )
+            elif args.blog_command == "list":
+                blog_payload = blog_module.list_sources(status=args.status)
+            elif args.blog_command == "seed":
+                blog_payload = blog_module.seed(source_id=args.source_id)
+            elif args.blog_command == "check":
+                blog_payload = blog_module.check(
+                    source_id=args.source_id,
+                    stale_only=args.stale,
+                    capture_override=False if args.no_capture else None,
+                    summary_override=True if args.summary else None,
+                    notify_override=True if args.notify else None,
+                )
+            else:
+                return _argument_error(parser, "the following arguments are required: blog_command")
+            if args.json:
+                print(json.dumps(blog_payload, ensure_ascii=False, indent=2))
+            else:
+                print(json.dumps(blog_payload, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "radar":
+            from alcove.radars import RadarModule
+
+            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
+            radar_module = RadarModule(home)
+            if args.radar_command == "list":
+                radar_payload = radar_module.list(status=args.status)
+            elif args.radar_command == "init":
+                if not args.from_preset:
+                    return _argument_error(
+                        parser, "--from-preset is required for radar init in this release"
+                    )
+                radar_payload = radar_module.init_from_preset(
+                    args.from_preset, args.radar_id, force=args.force
+                )
+            elif args.radar_command == "run":
+                radar_payload = radar_module.run(
+                    args.radar_id,
+                    skip_fetch=args.skip_fetch,
+                    force=args.force,
+                    ai=args.ai,
+                    notify=args.notify,
+                )
+            elif args.radar_command == "status":
+                radar_payload = radar_module.status(args.radar_id)
+            elif args.radar_command == "import-social-radar":
+                radar_payload = radar_module.import_social_radar(
+                    args.source_home,
+                    force=args.force,
+                )
+            elif args.radar_command == "preset":
+                if args.radar_preset_command != "list":
+                    return _argument_error(
+                        parser, "the following arguments are required: radar_preset_command"
+                    )
+                radar_payload = radar_module.preset_list()
+            else:
+                return _argument_error(
+                    parser, "the following arguments are required: radar_command"
+                )
+            if args.json:
+                print(json.dumps(radar_payload, ensure_ascii=False, indent=2))
+            else:
+                print(json.dumps(radar_payload, ensure_ascii=False, indent=2))
             return 0
         if args.command == "hub":
             home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
@@ -2188,7 +2484,7 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"{action['action']} | {action['path']}")
             return 0
         return _argument_error(parser, "the following arguments are required: command")
-    except (AlcoveError, FileNotFoundError, ValueError) as exc:
+    except (AlcoveError, FileExistsError, FileNotFoundError, ValueError) as exc:
         if "args" in locals() and bool(getattr(args, "json", False)):
             print(json.dumps(_json_error_payload(args, exc), ensure_ascii=False, indent=2))
         else:

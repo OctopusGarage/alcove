@@ -32,6 +32,8 @@ capture_json task-list alcove task --home "$home" list --json
 capture_json idea-list alcove idea --home "$home" list --json
 capture_json prompt-search alcove prompt --home "$home" search --json
 capture_json project-list alcove project --home "$home" list --json
+capture_json radar-list alcove radar --home "$home" list --json
+capture_json radar-status alcove radar --home "$home" status --json
 capture_json dashboard-build alcove dashboard --home "$home" build --skip-frontend-build --json
 capture_json search-smoke alcove search --home "$home" smoke --json
 
@@ -55,6 +57,8 @@ tasks = load("task-list")
 ideas = load("idea-list")
 prompts = load("prompt-search")
 projects = load("project-list")
+radar_list = load("radar-list")
+radar_status = load("radar-status")
 dashboard = load("dashboard-build")
 
 checks = [
@@ -68,6 +72,8 @@ checks = [
     ("idea_list_readable", isinstance(ideas, list), "idea list"),
     ("prompt_search_readable", isinstance(prompts, list), "prompt search"),
     ("project_list_readable", isinstance(projects, list), "project list"),
+    ("radar_list_readable", isinstance(radar_list.get("definitions"), list), "radar list"),
+    ("radar_status_readable", isinstance(radar_status.get("radars"), list), "radar status"),
     ("dashboard_built", dashboard.get("status") == "built", dashboard.get("index", "")),
     ("dashboard_snapshot_exists", (home / "dashboard" / "snapshot.json").is_file(), str(home / "dashboard" / "snapshot.json")),
 ]
@@ -84,6 +90,7 @@ report = {
         "ideas": len(ideas),
         "prompts": len(prompts),
         "projects": len(projects),
+        "radars": len(radar_list.get("definitions", [])),
     },
     "checks": [
         {"name": name, "status": "passed" if ok else "failed", "detail": detail}

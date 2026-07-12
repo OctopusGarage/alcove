@@ -85,6 +85,8 @@ Entry profiles:
 - `alcove global install`: lightweight MCP access from unrelated projects
   (`--toolset lite` by default).
 - `alcove kb install`: managed-KB workflow files, commands, and skills.
+- `alcove service install`: optional macOS launchd services for the dashboard
+  and deterministic maintenance ticks.
 
 ## Core Commands
 
@@ -128,6 +130,21 @@ alcove connector apple-notes import-local --tag apple-notes --json
 alcove connector status --json
 ```
 
+Configurable radars:
+
+```sh
+alcove radar preset list --json
+alcove radar init tech-news --from-preset tech-news --json
+alcove radar init world-news --from-preset world-news --json
+alcove radar init stocks --from-preset stocks --json
+alcove radar init sports-news --from-preset sports-news --json
+alcove radar list --json
+alcove radar run tech-news --json
+alcove radar run tech-news --force --ai --notify --json
+alcove radar run tech-news --skip-fetch --force --ai --notify --json
+alcove radar import-social-radar ~/.social_radar --json
+```
+
 MCP and dashboard:
 
 ```sh
@@ -136,6 +153,62 @@ alcove serve --mcp --kb research_notes
 alcove dashboard --home ~/.alcove build
 alcove serve --dashboard --home ~/.alcove --port 8765
 ```
+
+Local service and watchers:
+
+```sh
+alcove service install --dashboard --scheduler --load
+alcove service status
+alcove service tick --json
+alcove watch add "Example Blog" https://example.com/feed.xml --kind rss --kb research_notes
+alcove watch check --stale --json
+alcove blog add "Anthropic Engineering" https://www.anthropic.com/engineering \
+  --id anthropic --discover playwright --link-pattern /engineering/ \
+  --kb social_media_posts --inbox-path inbox/anthropic --capture --json
+alcove blog add "OpenAI Engineering" https://openai.com/news/engineering/ \
+  --id openai --discover playwright --link-pattern /index/ \
+  --kb social_media_posts --inbox-path inbox/openai --capture --json
+alcove blog seed openai --json
+alcove blog check --stale --json
+```
+
+The service layer keeps deterministic work outside AI-agent sessions: dashboard
+serving, stale connector refreshes, due routine materialization, OKF catalog
+rebuilds, usage rollups, health checks, scheduled radar runs, watched-source
+change detection, and blog article discovery. Blog sources can optionally capture new articles into a
+managed KB inbox through the configured capture adapter. AI summarization and
+notifications are opt-in. When `--notify` is enabled with Telegram environment
+variables configured, Alcove sends one message per new article with its title,
+link, and captured `summary.md` content when available.
+Discovery or capture failures are recorded under `~/.alcove/blog-monitor/`,
+mark the source as `needs_attention`, and send a Telegram failure alert when
+notifications are enabled.
+
+Radar AI analysis is opt-in. A radar definition can enable
+`ai_summary.enabled: true` and `notify.enabled: true` to run `codex exec` or
+`claude -p` after the deterministic report is written, then send notifications
+through configured sinks. `telegram` sends the core summary, top links, and the
+Markdown and HTML report files when available. `feishu` sends a custom-bot text
+message with the same summary and top links through a webhook; local report
+paths are not included in notification text. `tcb` delegates notification text
+and report attachments to a running `tmux-claude-bot` service through
+`tcb notify --attach`, which is the preferred Feishu/Lark attachment path. If AI
+fails, the notification falls back to the deterministic report. Manual Hub
+requests can force a fresh run with `--force --ai --notify`, or analyze already
+fetched data with `--skip-fetch --force --ai --notify`.
+
+Notification credentials can be provided through process environment variables
+or a local secret file at `~/.alcove/.env`:
+
+```sh
+ALCOVE_TELEGRAM_BOT_TOKEN=...
+ALCOVE_TELEGRAM_CHAT_ID=...
+ALCOVE_FEISHU_WEBHOOK_URL=...
+ALCOVE_FEISHU_SECRET=...
+```
+
+Alcove-specific values take precedence over generic `TELEGRAM_*` environment
+variables, so a stale shell variable cannot override `~/.alcove/.env`.
 
 Health:
 
@@ -187,6 +260,8 @@ Alcove does not manage backup scheduling or encryption keys.
 - [Entry Modes](docs/entry-modes.md): hub, global MCP, managed KB, and MCP
   toolsets.
 - [Modules](docs/modules.md): feature modules and storage contracts.
+- [Configurable Radars](docs/radars.md): generic information radar definitions,
+  source adapters, scheduling, and Social Radar migration.
 - [Alcove OKF Profile](docs/okf-profile.md): official OKF compatibility plus
   Alcove's stricter write/index rules.
 - [Read/Write Operating Model](docs/read-write-model.md): broad AI-led reads and

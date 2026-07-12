@@ -261,6 +261,134 @@ alcove dashboard --home ~/.alcove import-pins \
   --todo-file ~/Downloads/todo.txt
 ```
 
+## Local Service and Watchers
+
+Install macOS launchd services:
+
+```sh
+alcove service install --dashboard --scheduler --load
+alcove service status --json
+```
+
+Without `--dashboard` or `--scheduler`, `service install` targets both services.
+Use explicit flags to operate on only one service. The dashboard service runs
+`alcove serve --dashboard`; the scheduler runs `alcove service tick` at the
+configured interval.
+
+Manual maintenance tick:
+
+```sh
+alcove service tick --home ~/.alcove --json
+alcove service tick --home ~/.alcove --skip-radars --json
+```
+
+Each tick materializes due routines, refreshes stale connector sources, checks
+watchers and monitored blogs, runs enabled scheduled radars, rebuilds the global
+OKF catalog, runs health repair, refreshes usage rollups, prunes old usage
+events, and rebuilds the dashboard snapshot. This is deterministic maintenance;
+blog summary and notification are opt-in.
+
+Watch a site or feed:
+
+```sh
+alcove watch add "Example Blog" https://example.com/feed.xml \
+  --kind rss \
+  --kb research_notes \
+  --tag blog \
+  --json
+alcove watch check --stale --json
+```
+
+Watcher sources are stored in `~/.alcove/watchers/sources/*.yml`, and change
+events are appended to `~/.alcove/watchers/events.jsonl`. If a watcher is bound
+to `--kb <name>`, detected changes are added to that managed KB inbox as manual
+items for later review.
+
+Monitor blogs for new articles:
+
+```sh
+alcove blog add "Anthropic Engineering" https://www.anthropic.com/engineering \
+  --id anthropic \
+  --discover playwright \
+  --link-pattern /engineering/ \
+  --kb social_media_posts \
+  --inbox-path inbox/anthropic \
+  --capture \
+  --json
+
+alcove blog add "OpenAI Engineering" https://openai.com/news/engineering/ \
+  --id openai \
+  --discover playwright \
+  --link-pattern /index/ \
+  --kb social_media_posts \
+  --inbox-path inbox/openai \
+  --capture \
+  --json
+
+alcove blog seed openai --json
+alcove blog check --stale --json
+```
+
+Blog sources are stored in `~/.alcove/blog-monitor/sources/*.yml`. Seen URLs
+live in `~/.alcove/blog-monitor/seen/`. When capture is enabled, new article
+bundles are written into the configured managed KB inbox path, such as
+`social_media_posts/inbox/openai`. When notification is enabled and Telegram
+credentials are present, Alcove sends one message per new article with the
+article title, URL, and the captured inbox `summary.md` content when available.
+Use `--discover playwright` for monitored blog index pages. This keeps discovery
+consistent with Clipsmith's browser-based capture model, runs unattended through
+the scheduled service, and does not invoke Codex, Claude, or `claude -p`. If
+discovery or capture fails, the source is marked `needs_attention`, the failed
+run is recorded, and Telegram receives an actionable alert when notifications
+are enabled.
+For a user-triggered check from the Hub workspace, use `alcove blog check --json`
+or `alcove blog check <source-id> --json` to force an immediate run. `alcove
+service tick` is reserved for scheduled stale maintenance and may skip sources
+whose TTL has not expired.
+Telegram credentials can be provided by process environment variables or
+`~/.alcove/.env`:
+
+```sh
+ALCOVE_TELEGRAM_BOT_TOKEN=...
+ALCOVE_TELEGRAM_CHAT_ID=...
+```
+
+Credential priority is `ALCOVE_*` process environment, then `~/.alcove/.env`,
+then generic `TELEGRAM_*` process environment.
+
+## Configurable Radars
+
+Radars are generic user-defined briefings. Built-in presets are starter
+definitions; user-specific categories live under `~/.alcove/radars/definitions/`.
+
+```sh
+alcove radar preset list --json
+alcove radar init tech-news --from-preset tech-news --json
+alcove radar init world-news --from-preset world-news --json
+alcove radar list --json
+alcove radar run tech-news --json
+alcove radar run tech-news --force --ai --notify --json
+alcove radar run tech-news --skip-fetch --force --ai --notify --json
+alcove radar status tech-news --json
+```
+
+To migrate legacy Social Radar profiles, cache, and reports:
+
+```sh
+alcove radar import-social-radar ~/.social_radar --home ~/.alcove --json
+```
+
+Existing definitions are preserved unless `--force` is passed. The migration
+does not import `.env`, tokens, crontab backups, or old MCP configuration. See
+[radars.md](radars.md) for the storage contract and adapter model. Optional
+`ai_summary` post-processing writes `<date>.ai.md` and can send notifications
+through configured sinks. Telegram sends the Markdown and HTML report files when
+available. Feishu custom bot webhooks send a text message with the summary and
+top links; local report paths are not included in notification text. For
+Feishu/Lark attachments, use the `tcb` sink, which delegates report upload to a
+running `tmux-claude-bot` service through `tcb notify --attach`. The AI step
+analyzes the report without changing fetched items or deterministic scores.
+
 ## Export
 
 ```sh

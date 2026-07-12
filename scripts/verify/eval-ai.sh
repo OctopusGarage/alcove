@@ -29,6 +29,7 @@ if [[ "$skip_refresh" != "1" ]]; then
     "$agent_clients_dir" \
     "$mcp_matrix_dir" \
     "$dashboard_browser_dir" \
+    "$radar_reports_dir" \
     "$export_restore_dir" \
     "$messy_inbox_dir"
   mkdir -p \
@@ -38,6 +39,7 @@ if [[ "$skip_refresh" != "1" ]]; then
     "$agent_clients_dir" \
     "$mcp_matrix_dir" \
     "$dashboard_browser_dir" \
+    "$radar_reports_dir" \
     "$export_restore_dir" \
     "$messy_inbox_dir"
   run scripts/verify/check.sh > "$output_dir/check.log" 2>&1
@@ -53,6 +55,8 @@ if [[ "$skip_refresh" != "1" ]]; then
     scripts/verify/smoke-mcp-matrix.sh > "$output_dir/mcp-matrix.log" 2>&1
   run env ALCOVE_DASHBOARD_BROWSER_DIR="$dashboard_browser_dir" \
     scripts/verify/smoke-dashboard-browser.sh > "$output_dir/dashboard-browser.log" 2>&1
+  run env ALCOVE_RADAR_REPORTS_DIR="$radar_reports_dir" \
+    scripts/verify/smoke-radar-reports.sh > "$output_dir/radar-reports.log" 2>&1
   run env ALCOVE_EXPORT_RESTORE_DIR="$export_restore_dir" \
     scripts/verify/smoke-export-restore.sh > "$output_dir/export-restore.log" 2>&1
   run env ALCOVE_MESSY_INBOX_DIR="$messy_inbox_dir" \
@@ -67,6 +71,7 @@ run uv run python -m alcove.ai_eval \
   --agent-client-report "$agent_clients_dir/agent-client-smoke-report.json" \
   --mcp-matrix-report "$mcp_matrix_dir/mcp-matrix-report.json" \
   --dashboard-browser-report "$dashboard_browser_dir/dashboard-browser-report.json" \
+  --radar-reports-report "$radar_reports_dir/radar-reports-report.json" \
   --export-restore-report "$export_restore_dir/export-restore-report.json" \
   --messy-inbox-report "$messy_inbox_dir/messy-inbox-report.json" \
   --json > "$bundle_info"

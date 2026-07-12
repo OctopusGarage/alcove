@@ -17,6 +17,9 @@ Default global home:
 ├── tasks/                    tasks, ideas, routines
 ├── mounts/                   external folder indexes
 ├── connectors/               external connector indexes
+├── watchers/                 watched URL/feed sources and change events
+├── blog-monitor/             monitored blog sources and seen state
+├── radars/                   radar definitions, run cache, reports, and OKF indexes
 ├── dashboard/                derived dashboard snapshot/build output
 ├── stats/
 │   ├── summary.json          derived usage summary
@@ -24,6 +27,7 @@ Default global home:
 └── logs/
     ├── activity.jsonl        human-readable semantic activity
     ├── usage.jsonl           privacy-safe usage events
+    ├── service/              launchd stdout/stderr logs
     └── .usage_salt           local salt for query hashes
 ```
 
@@ -40,6 +44,34 @@ Managed KB roots live wherever the user chooses:
 
 Connector and mount indexes are Alcove-owned caches. Managed KB `archive/` and
 `knowledge/` are tracked user data.
+
+Watcher state is Alcove-owned operational data:
+
+```text
+~/.alcove/watchers/
+├── sources/*.yml             watched URL/feed configs and refresh state
+└── events.jsonl              detected change events
+```
+
+When a watcher is configured with `--kb <name>`, changed sources are copied into
+that managed KB's `inbox/manual/` for later AI-assisted review. The watcher
+event itself remains in `~/.alcove/watchers/events.jsonl`.
+
+Blog monitor state is Alcove-owned operational data:
+
+```text
+~/.alcove/blog-monitor/
+├── sources/*.yml             blog source configs and refresh policy
+├── seen/*.json               URLs already discovered for each source
+├── captures/<source-id>/     temporary/default Clipsmith web capture output
+├── runs/*.json               per-run audit records
+└── events.jsonl              discovered article events
+```
+
+If a blog source has capture enabled, new articles are captured through the
+configured adapter and written under the selected managed KB inbox path, such as
+`social_media_posts/inbox/openai`. The source article remains external; Alcove
+stores seen state, run logs, and capture routing metadata.
 
 Usage logs are local operational data. Search events store query length, result
 count, filters, surface, outcome, and a local salted query hash. Raw query text

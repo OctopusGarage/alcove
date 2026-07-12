@@ -89,6 +89,16 @@ def verify_suite_manifest() -> list[VerifySuite]:
             evidence_section="dashboard_browser",
         ),
         VerifySuite(
+            id="radar_reports",
+            command="scripts/verify/smoke-radar-reports.sh",
+            directory_name="radar-reports",
+            directory_var="radar_reports_dir",
+            report_file="radar-reports-report.json",
+            report_key="radar_reports_report",
+            env_var="ALCOVE_RADAR_REPORTS_DIR",
+            evidence_section="radar_reports",
+        ),
+        VerifySuite(
             id="export_restore",
             command="scripts/verify/smoke-export-restore.sh",
             directory_name="export-restore",

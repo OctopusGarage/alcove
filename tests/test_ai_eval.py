@@ -3,13 +3,52 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from alcove.ai_eval import EvalPacketBuilder, build_eval_bundle, build_eval_packet
+from alcove.ai_eval import (
+    EvalPacketBuilder,
+    _radar_reports_for_eval,
+    build_eval_bundle,
+    build_eval_packet,
+)
 from alcove.verify_suites import eval_report_paths, verify_suite_manifest
 
 
 def _write_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def test_radar_reports_for_eval_includes_ai_notification_contract() -> None:
+    payload = _radar_reports_for_eval(
+        {
+            "status": "passed",
+            "radars": ["tech-news", "stocks"],
+            "checks": [
+                {
+                    "name": "tech-news_ai_notify_contract",
+                    "status": "passed",
+                    "detail": '{"ai":{"status":"completed"},"notify":{"status":"sent"}}',
+                },
+                {
+                    "name": "stocks_ai_notify_contract",
+                    "status": "passed",
+                    "detail": '{"ai":{"status":"failed"},"message_excerpt":"AI summary failed; sending deterministic radar report."}',
+                },
+            ],
+        }
+    )
+
+    assert payload["ai_notification_contracts"] == [
+        {
+            "check": "tech-news_ai_notify_contract",
+            "status": "passed",
+            "detail": '{"ai":{"status":"completed"},"notify":{"status":"sent"}}',
+        },
+        {
+            "check": "stocks_ai_notify_contract",
+            "status": "passed",
+            "detail": '{"ai":{"status":"failed"},"message_excerpt":"AI summary failed; sending deterministic radar report."}',
+        },
+    ]
 
 
 def test_verify_suite_manifest_owns_eval_report_paths(tmp_path):
@@ -24,6 +63,7 @@ def test_verify_suite_manifest_owns_eval_report_paths(tmp_path):
         "agent_clients",
         "mcp_matrix",
         "dashboard_browser",
+        "radar_reports",
         "export_restore",
         "messy_inbox",
     ]
@@ -31,6 +71,9 @@ def test_verify_suite_manifest_owns_eval_report_paths(tmp_path):
     assert paths["mcp_matrix_report"] == tmp_path / "mcp-matrix" / "mcp-matrix-report.json"
     assert paths["dashboard_browser_report"] == (
         tmp_path / "dashboard-browser" / "dashboard-browser-report.json"
+    )
+    assert paths["radar_reports_report"] == (
+        tmp_path / "radar-reports" / "radar-reports-report.json"
     )
     assert paths["messy_inbox_report"] == tmp_path / "messy-inbox" / "messy-inbox-report.json"
 
@@ -70,6 +113,24 @@ def _write_minimal_packet_artifacts(
     _write_json(fixtures / "multilingual-todo-search.json", [])
     _write_json(fixtures / "intent-routing-examples.json", {"status": "passed", "examples": []})
     _write_json(fixtures / "connector-fetch.json", {})
+    _write_json(
+        fixtures / "blog-monitor-smoke.json",
+        {
+            "status": "passed",
+            "success": {"sources": [{"status": "changed", "notify": {"status": "sent"}}]},
+            "failure": {"sources": [{"status": "needs_attention", "stage": "discovery"}]},
+        },
+    )
+    _write_json(fixtures / "radar-list.json", {"definitions": [{"id": "sports-news"}]})
+    _write_json(
+        fixtures / "radar-run.json",
+        {"status": "completed", "id": "sports-news", "included": 1, "reports": {"md": "report.md"}},
+    )
+    _write_json(fixtures / "radar-status.json", {"radars": [{"id": "sports-news"}]})
+    _write_json(
+        fixtures / "radar-import-social-radar.json",
+        {"status": "imported", "count": 3, "radars": [{"id": "tech-news"}]},
+    )
     _write_json(fixtures / "link-source.json", {})
     _write_json(fixtures / "dashboard-build.json", {})
     _write_json(fixtures / "dashboard-render.json", {})
@@ -100,11 +161,44 @@ def _write_minimal_packet_artifacts(
     )
     _write_json(
         tmp_path / "mcp-matrix" / "mcp-matrix-report.json",
-        {"status": "passed", "called_tools": 0, "module_counts": {}, "checks": []},
+        {
+            "status": "passed",
+            "called_tools": 0,
+            "module_counts": {},
+            "checks": [],
+            "cli_only_workflows": {
+                "blog_monitor": {"commands": ["alcove blog check --json"]},
+                "radars": {"commands": ["alcove radar list --json"]},
+                "dashboard": {"commands": ["alcove dashboard build --json"]},
+            },
+        },
     )
     _write_json(
         tmp_path / "dashboard-browser" / "dashboard-browser-report.json",
         {"status": "passed", "routes_checked": 0, "checks": []},
+    )
+    _write_json(
+        tmp_path / "radar-reports" / "radar-reports-report.json",
+        {
+            "status": "passed",
+            "radars": ["tech-news", "world-news", "stocks", "sports-news"],
+            "checks": [
+                {"name": "tech-news_desktop_browser_shape", "status": "passed"},
+                {
+                    "name": "tech-news_brief",
+                    "status": "passed",
+                    "detail": "# Tech News\n\n## Brief\n\nUseful technical radar excerpt.",
+                },
+            ],
+            "visual_summaries": [
+                {
+                    "radar_id": "tech-news",
+                    "viewport": "desktop",
+                    "card_count": 4,
+                    "first_screen_excerpt": "Tech News radar briefing",
+                }
+            ],
+        },
     )
     _write_json(
         tmp_path / "export-restore" / "export-restore-report.json",
@@ -178,6 +272,11 @@ def _write_extended_smoke_reports(tmp_path: Path) -> dict[str, Path]:
                     "reason": "live GitHub smoke",
                 }
             ],
+            "cli_only_workflows": {
+                "blog_monitor": {"commands": ["alcove blog check --json"]},
+                "radars": {"commands": ["alcove radar list --json"]},
+                "dashboard": {"commands": ["alcove dashboard build --json"]},
+            },
             "samples": {
                 "inbox": {
                     "tool": "alcove_inbox_read",
@@ -230,6 +329,31 @@ def _write_extended_smoke_reports(tmp_path: Path) -> dict[str, Path]:
                 {"name": "mobile_search_results", "status": "passed"},
             ],
             "console_errors": [],
+        },
+    )
+    reports["radar_reports_report"] = tmp_path / "radar-reports" / "radar-reports-report.json"
+    _write_json(
+        reports["radar_reports_report"],
+        {
+            "status": "passed",
+            "radars": ["tech-news", "world-news", "stocks", "sports-news"],
+            "checks": [
+                {"name": "sports-news_mobile_no_horizontal_overflow", "status": "passed"},
+                {
+                    "name": "sports-news_brief",
+                    "status": "passed",
+                    "detail": "# Sports News\n\n## Brief\n\nUseful sports radar excerpt.",
+                },
+            ],
+            "visual_summaries": [
+                {
+                    "radar_id": "sports-news",
+                    "viewport": "mobile",
+                    "card_count": 3,
+                    "panel_count": 3,
+                    "first_screen_excerpt": "Sports News radar briefing",
+                }
+            ],
         },
     )
     _write_json(
@@ -405,6 +529,24 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
         },
     )
     _write_json(fixtures / "connector-fetch.json", {"item": {"title": "octopusgarage/alcove"}})
+    _write_json(
+        fixtures / "blog-monitor-smoke.json",
+        {
+            "status": "passed",
+            "success": {"sources": [{"status": "changed", "notify": {"status": "sent"}}]},
+            "failure": {"sources": [{"status": "needs_attention", "stage": "discovery"}]},
+        },
+    )
+    _write_json(fixtures / "radar-list.json", {"definitions": [{"id": "sports-news"}]})
+    _write_json(
+        fixtures / "radar-run.json",
+        {"status": "completed", "id": "sports-news", "included": 1, "reports": {"md": "report.md"}},
+    )
+    _write_json(fixtures / "radar-status.json", {"radars": [{"id": "sports-news"}]})
+    _write_json(
+        fixtures / "radar-import-social-radar.json",
+        {"status": "imported", "count": 3, "radars": [{"id": "tech-news"}]},
+    )
     _write_json(fixtures / "link-source.json", {"status": "linked"})
     _write_json(
         fixtures / "dashboard-build.json",
@@ -467,6 +609,29 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
     _write_json(
         tmp_path / "real-home" / "real-home-smoke-report.json",
         {"status": "passed", "summary": {"pins": 2, "tasks": 1}, "checks": []},
+    )
+    _write_json(
+        tmp_path / "radar-reports" / "radar-reports-report.json",
+        {
+            "status": "passed",
+            "radars": ["tech-news", "world-news", "stocks", "sports-news"],
+            "checks": [
+                {"name": "tech-news_desktop_browser_shape", "status": "passed"},
+                {
+                    "name": "tech-news_brief",
+                    "status": "passed",
+                    "detail": "# Tech News\n\n## Brief\n\nUseful technical radar excerpt.",
+                },
+            ],
+            "visual_summaries": [
+                {
+                    "radar_id": "tech-news",
+                    "viewport": "desktop",
+                    "card_count": 4,
+                    "first_screen_excerpt": "Tech News radar briefing",
+                }
+            ],
+        },
     )
     integrations = tmp_path / "real-integrations"
     _write_json(
@@ -590,11 +755,24 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
         "knowledge_okf",
         "global_memory",
         "external_indexes",
+        "blog_monitor",
+        "radars",
         "dashboard",
         "mcp_entry",
         "export_health",
         "agent_entries",
     }.issubset(module_ids)
+    assert any(
+        "alcove blog check" in question
+        for module in packet["modules"]
+        for question in module["ai_quality_questions"]
+    )
+    assert packet["evidence"]["smoke"]["blog_monitor"]["status"] == "passed"
+    assert any(
+        "alcove radar list" in question
+        for module in packet["modules"]
+        for question in module["ai_quality_questions"]
+    )
     assert any(
         "OCR" in question
         for module in packet["modules"]
@@ -674,6 +852,14 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
     assert "governed global write path" in descriptions["alcove_pin_update"]
     assert packet["evidence"]["smoke"]["dashboard_snapshot"]["knowledge"] == {"managed": []}
     assert packet["evidence"]["smoke"]["dashboard_render"]["status"] == "passed"
+    assert packet["evidence"]["radar_reports"]["status"] == "passed"
+    assert packet["evidence"]["radar_reports"]["radars"] == [
+        "tech-news",
+        "world-news",
+        "stocks",
+        "sports-news",
+    ]
+    assert packet["evidence"]["radar_reports"]["report_excerpts"][0]["check"].endswith("_brief")
     assert (
         packet["evidence"]["smoke"]["multilingual_knowledge_search"][0]["title"]
         == "常用收藏：OKF 知识库采集"
@@ -949,6 +1135,7 @@ def test_eval_packet_includes_extended_smoke_evidence(tmp_path):
     assert packet["evidence"]["mcp_matrix"]["external_coverage_rollup"] == [
         "alcove_connector_github_stars_import_url"
     ]
+    assert "radars" in packet["evidence"]["mcp_matrix"]["cli_only_workflows"]
     policy = packet["evidence"]["mcp_matrix"]["external_coverage_policy"]
     assert policy["status"] == "failed"
     assert policy["mode"] == "derived"
@@ -983,6 +1170,9 @@ def test_eval_packet_includes_extended_smoke_evidence(tmp_path):
         "mobile": {"total": 46, "passed": 46, "failed": 0},
     }
     assert packet["evidence"]["dashboard_browser"]["checks_truncated_count"] > 0
+    assert packet["evidence"]["radar_reports"]["status"] == "passed"
+    assert packet["evidence"]["radar_reports"]["visual_summaries"][0]["radar_id"] == "sports-news"
+    assert packet["evidence"]["radar_reports"]["report_excerpts"][0]["excerpt"]
     assert packet["evidence"]["export_restore"]["summary"]["kb_results"] == 1
     assert packet["evidence"]["messy_inbox"]["batch"]["count"] == 24
     assert packet["evidence"]["messy_inbox"]["items"][0]["content_truncated"] is True
@@ -995,6 +1185,7 @@ def test_eval_packet_includes_extended_smoke_evidence(tmp_path):
     assert "browser smoke" in module_questions["dashboard"]
     assert "export-restore" in module_questions["export_health"]
     assert "messy inbox" in module_questions["capture_inbox"]
+    assert "social radar migration" in module_questions["radars"]
 
 
 def test_build_eval_packet_marks_compacted_content_as_truncated(tmp_path):

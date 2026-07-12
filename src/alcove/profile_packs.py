@@ -138,6 +138,37 @@ Fallback routing table when project skills are unavailable:
 | Save stable reference, preference, command, shortcut | `alcove pin{home_part} search "query" --json` | `alcove pin{home_part} add/update ...` |
 | Save reusable prompt | `alcove prompt{home_part} search "query" --json` | `alcove prompt{home_part} save ...` |
 | Track todo, idea, routine, project, mount, connector | list/search the matching module first | use the matching `alcove task/idea/routine/project/mount/connector` command |
+| Check monitored blogs now | `alcove blog{home_part} list --status '' --json`, then `alcove blog{home_part} check --json` or `alcove blog{home_part} check <source-id> --json` | only add/update sources after explicit confirmation |
+| Run an information radar | `alcove radar{home_part} list --json`, then `alcove radar{home_part} status <radar-id> --json` | `alcove radar{home_part} run <radar-id> --json`, `--force --ai --notify`, or `--skip-fetch --force --ai --notify` after choosing an existing definition |
+
+Fallback blog monitor rules:
+
+- Use `alcove blog{home_part} check --json`, not `alcove service tick`, when the
+  user asks to actively check blogs now.
+- For a failure alert, run `alcove blog{home_part} list --status '' --json`,
+  inspect `last_error`, then retry with `alcove blog{home_part} check <source-id> --json`.
+- Scheduled checks are deterministic. Do not imply Codex or Claude runs in the
+  background; if the user wants interpretation, summarize from captured
+  `post.md` / `summary.md` or run the check with summary enabled.
+
+Fallback radar rules:
+
+- Use `alcove radar{home_part} list --json` first. Radar IDs are user data and
+  must not be assumed.
+- Use `alcove radar{home_part} status <radar-id> --json` to inspect latest
+  reports and source health before rerunning.
+- Use `alcove radar{home_part} run <radar-id> --json` for a normal active refresh.
+- Use `alcove radar{home_part} run <radar-id> --force --ai --notify --json`
+  when the user asks to rerun, refresh now, summarize with AI, and send a
+  configured notification.
+- Use `alcove radar{home_part} run <radar-id> --skip-fetch --force --ai --notify --json`
+  when the user asks to analyze or resend already fetched results without
+  touching external sources.
+- Radar runs fetch and score deterministically first. Optional `ai_summary` is
+  post-report analysis only; it does not rewrite fetched items or scores.
+- Scheduled radar runs start Codex or Claude only when the radar definition
+  explicitly enables `ai_summary`. If AI fails, Alcove should still notify with
+  the deterministic report when notification is enabled.
 
 Common commands:
 
@@ -150,6 +181,14 @@ alcove pin{home_part} search "" --kind regular --json
 alcove prompt{home_part} search "" --json
 alcove project{home_part} list --json
 alcove task{home_part} list --json
+alcove blog{home_part} list --status '' --json
+alcove blog{home_part} check --json
+alcove blog{home_part} check <source-id> --json
+alcove radar{home_part} list --json
+alcove radar{home_part} status <radar-id> --json
+alcove radar{home_part} run <radar-id> --json
+alcove radar{home_part} run <radar-id> --force --ai --notify --json
+alcove radar{home_part} run <radar-id> --skip-fetch --force --ai --notify --json
 ```
 {ALCOVE_SECTION_END}
 """
@@ -176,7 +215,10 @@ def _hub_skill(default_kb: str, home_part: str) -> str:
         "- local repo/path shortcut: `project`.\n"
         "- todo, reminder, routine, follow-up: `task` or `idea`.\n"
         "- external folder or historical repo to search read-only: `mount`.\n"
-        "- exported/protocol data source such as Apple Notes or GitHub Stars: `connector`.\n\n"
+        "- exported/protocol data source such as Apple Notes or GitHub Stars: `connector`.\n"
+        "- blog monitoring, scheduled article checks, failure alerts, or phrases such as\n"
+        "  监控博客更新 / 检查博客文章有没有更新: `blog monitor`.\n"
+        "- information radar, daily briefing, 技术雷达, 新闻雷达, 股票雷达, 体育资讯: `radar`.\n\n"
         "## Fallback Routing Without Skills\n\n"
         "| Intent | Read path | Governed write path |\n"
         "| --- | --- | --- |\n"
@@ -185,7 +227,32 @@ def _hub_skill(default_kb: str, home_part: str) -> str:
         f"| Save copied article or discussion note | search first for duplicates and choose target KB | `alcove inbox{home_part} --kb <kb-name> manual-add ...` or `alcove knowledge ...` |\n"
         f'| Save stable reference, preference, command, shortcut | `alcove pin{home_part} search "query" --json` | `alcove pin{home_part} add/update ...` |\n'
         f'| Save reusable prompt | `alcove prompt{home_part} search "query" --json` | `alcove prompt{home_part} save ...` |\n'
-        "| Track todo, idea, routine, project, mount, connector | list/search the matching module first | use the matching `alcove task/idea/routine/project/mount/connector` command |\n\n"
+        "| Track todo, idea, routine, project, mount, connector | list/search the matching module first | use the matching `alcove task/idea/routine/project/mount/connector` command |\n"
+        f"| Check monitored blogs now | `alcove blog{home_part} list --status '' --json`, then `alcove blog{home_part} check --json` or `alcove blog{home_part} check <source-id> --json` | only add/update sources after explicit confirmation |\n"
+        f"| Run an information radar | `alcove radar{home_part} list --json`, then `alcove radar{home_part} status <radar-id> --json` | `alcove radar{home_part} run <radar-id> --json`, `--force --ai --notify`, or `--skip-fetch --force --ai --notify` after choosing an existing definition |\n\n"
+        "## Blog Monitor Protocol\n\n"
+        "- Use `alcove blog check`, not `alcove service tick`, when the user asks to\n"
+        "  actively check blogs now. `service tick` is a stale maintenance path and may\n"
+        "  skip sources whose TTL has not expired.\n"
+        "- For a failure alert or `needs_attention` source, first run\n"
+        f"  `alcove blog{home_part} list --status '' --json`, inspect `last_error`, then run\n"
+        f"  `alcove blog{home_part} check <source-id> --json` to retry that source immediately.\n"
+        "- If the check captures new articles, summarize the returned `new_articles`,\n"
+        "  capture paths, and notification status. If it still fails, report the stage,\n"
+        "  source id, and latest error, then inspect the run/event files only as\n"
+        "  diagnostic evidence.\n"
+        "- Scheduled monitoring is deterministic and should not depend on the current\n"
+        "  chat agent. If the user asks for an AI summary, synthesize it in chat from\n"
+        f"  captured `post.md` / `summary.md`, or run `alcove blog{home_part} check --summary --json`\n"
+        "  when they explicitly want the configured model summary path.\n\n"
+        "## Radar Protocol\n\n"
+        "- Use `alcove radar list --json` first; radar IDs are user data and must not be assumed.\n"
+        f"- Use `alcove radar{home_part} status <radar-id> --json` to inspect latest reports and source health before rerunning.\n"
+        f"- Use `alcove radar{home_part} run <radar-id> --json` for a normal active refresh.\n"
+        f"- Use `alcove radar{home_part} run <radar-id> --force --ai --notify --json` when the user asks to rerun, refresh now, summarize with AI, and send configured notifications.\n"
+        f"- Use `alcove radar{home_part} run <radar-id> --skip-fetch --force --ai --notify --json` when the user asks to analyze or resend already fetched results without touching external sources.\n"
+        "- Radar runs fetch and score deterministically first. Optional `ai_summary` is post-report analysis only; it does not rewrite fetched items or scores.\n"
+        "- Scheduled radar runs start Codex or Claude only when the radar definition explicitly enables `ai_summary`. If AI fails, Alcove should still notify with the deterministic report when notification is enabled.\n\n"
         "## Retrieval Model\n\n"
         "- For read-only questions, start with Alcove MCP/CLI search to discover candidates.\n"
         "- Treat search results as leads, not final truth.\n"
@@ -218,6 +285,14 @@ def _hub_skill(default_kb: str, home_part: str) -> str:
         f'alcove task{home_part} add "Task" --notes "..." --json\n'
         f"alcove mount{home_part} add /path/to/folder --name name --json\n"
         f'alcove connector{home_part} fetch "connectors/<id>#<path>" --json\n'
+        f"alcove blog{home_part} list --status '' --json\n"
+        f"alcove blog{home_part} check --json\n"
+        f"alcove blog{home_part} check openai --json\n"
+        f"alcove radar{home_part} list --json\n"
+        f"alcove radar{home_part} status <radar-id> --json\n"
+        f"alcove radar{home_part} run <radar-id> --json\n"
+        f"alcove radar{home_part} run <radar-id> --force --ai --notify --json\n"
+        f"alcove radar{home_part} run <radar-id> --skip-fetch --force --ai --notify --json\n"
         f"alcove export{home_part} global /path/to/backup --json\n"
         "```\n\n"
         "## Safety\n\n"

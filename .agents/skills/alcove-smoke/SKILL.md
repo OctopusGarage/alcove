@@ -53,6 +53,7 @@ Focused deep smokes:
 ```bash
 scripts/smoke-mcp-matrix.sh
 scripts/smoke-dashboard-browser.sh
+scripts/smoke-radar-reports.sh
 scripts/smoke-export-restore.sh
 scripts/smoke-messy-inbox.sh
 ```
@@ -111,6 +112,8 @@ ALCOVE_AI_EVAL_PROVIDER=none scripts/eval-ai.sh
   mounts, connectors, pins, prompts, or catalog generation changed.
 - Use `scripts/smoke-dashboard-browser.sh` when dashboard frontend, snapshot,
   route, or search behavior changed.
+- Use `scripts/smoke-radar-reports.sh` when radar presets, scoring, report
+  content, or report HTML/CSS changed.
 - Use `scripts/smoke-export-restore.sh` when export, backup, home/KB registry,
   or migration behavior changed.
 - Use `scripts/smoke-messy-inbox.sh` when inbox reading, capture bundles,

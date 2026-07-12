@@ -295,6 +295,48 @@ def test_dashboard_activity_hides_internal_log_paths_and_build_events(tmp_path):
     assert all(row.get("detail") not in {"index", "regular", "todo"} for row in activity)
 
 
+def test_dashboard_activity_prefers_explicit_actions_over_derived_file_updates(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    TasksModule(home=home).task_add(AddTaskRequest(title="Follow up", notes="Callout."))
+    UsageRecorder(home).record_activity(
+        area="task",
+        action="task.add",
+        summary="Added task: Follow up",
+        metadata={"id": "follow-up"},
+    )
+
+    activity = DashboardModule(home=home).snapshot()["activity"]
+
+    assert any(row["name"] == "Added task: Follow up" for row in activity)
+    assert all(row["name"] != "Planner updated" for row in activity)
+
+
+def test_dashboard_activity_hides_unconfirmed_knowledge_delete_previews(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    recorder = UsageRecorder(home)
+    recorder.record_activity(
+        area="knowledge",
+        action="knowledge.delete",
+        summary="Preview delete: sources/web/stale.md",
+        metadata={"path": "sources/web/stale.md", "confirmed": "False"},
+    )
+    recorder.record_activity(
+        area="knowledge",
+        action="knowledge.delete",
+        summary="Deleted knowledge: sources/web/stale.md",
+        metadata={"path": "sources/web/stale.md", "title": "Stale Source", "confirmed": "True"},
+    )
+
+    activity = DashboardModule(home=home).snapshot()["activity"]
+
+    assert any(
+        row["name"] == "Deleted knowledge: Stale Source" and row["detail"] == "sources/web/stale.md"
+        for row in activity
+    )
+    assert all(row["name"] != "Deleted knowledge: sources/web/stale.md" for row in activity)
+    assert all(not row["name"].startswith("Preview delete:") for row in activity)
+
+
 def test_dashboard_snapshot_includes_usage_summary_without_noisy_activity(tmp_path):
     home = AlcoveHome.init(tmp_path / "home")
     module = DashboardModule(home=home)

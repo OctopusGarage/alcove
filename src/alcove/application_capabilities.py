@@ -567,12 +567,17 @@ class _ManagedKnowledgeCapabilities(_Capability):
 
     def knowledge_revise_payload(self, request: ReviseKnowledgeRequest) -> dict[str, Any]:
         workspace = self.runtime.require_workspace()
-        result = KnowledgeModule(workspace).revise(request)
+        module = KnowledgeModule(workspace)
+        result = module.revise(request)
+        doc = module.repository.read_doc(result.path)
+        title = str(
+            doc.frontmatter.get("title") or doc.frontmatter.get("question") or result.path.stem
+        )
         self._record_action(
             area="knowledge",
             action="knowledge.revise",
-            summary=f"Revised knowledge: {request.path}",
-            metadata={"path": request.path},
+            summary=f"Revised knowledge: {title}",
+            metadata={"path": request.path, "title": title},
         )
         return self.runtime.scope_payload({"status": "revised", "path": str(result.path)})
 
@@ -585,11 +590,12 @@ class _ManagedKnowledgeCapabilities(_Capability):
     ) -> dict[str, Any]:
         workspace = self.runtime.require_workspace()
         payload = KnowledgeModule(workspace).delete(path, confirm=confirm, reason=reason)
+        title = str(payload.get("title") or path)
         self._record_action(
             area="knowledge",
             action="knowledge.delete",
-            summary=f"Deleted knowledge: {path}" if confirm else f"Preview delete: {path}",
-            metadata={"path": path, "confirmed": str(confirm)},
+            summary=f"Deleted knowledge: {title}" if confirm else f"Preview delete: {title}",
+            metadata={"path": path, "title": title, "confirmed": str(confirm)},
         )
         return self.runtime.scope_payload(payload)
 

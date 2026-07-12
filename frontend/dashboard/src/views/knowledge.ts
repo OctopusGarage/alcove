@@ -58,12 +58,12 @@ export function renderKnowledge(snapshot: DashboardSnapshot): string {
     <header class="page-head">
       <p class="eyebrow">Knowledge system</p>
       <h1>Knowledge</h1>
-      <p>Shows three knowledge-source families: managed KBs for inbox, OKF notes, and archives; mounts for read-only directory indexes; connectors for protocol-backed indexes such as Apple Notes and GitHub Stars.</p>
+      <p>Review managed KB inboxes, indexed external folders, and connector freshness before starting deeper local knowledge investigation.</p>
     </header>
     <section class="relationship">
-      <div><b>Managed KBs</b><span>1:N / custom directories / full Alcove workflow</span></div>
-      <div><b>Mounts</b><span>1:N / external read-only directories / OKF index</span></div>
-      <div><b>Connectors</b><span>1:N / protocol data sources / OKF index and incremental refresh</span></div>
+      <div><b>Managed KBs</b><span>Writable knowledge roots with inbox, archive, notes, and OKF indexes.</span></div>
+      <div><b>Mounts</b><span>Read-only local folders indexed for AI-led search and follow-up reading.</span></div>
+      <div><b>Connectors</b><span>Protocol-based sources with refreshable indexes and lazy fetch details.</span></div>
     </section>
     <section class="module-list" data-filter-list data-filter-limit="24">
       ${moduleToolbar("Search knowledge sources")}

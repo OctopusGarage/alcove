@@ -300,6 +300,178 @@ assert_json "connector fetch" "$fixtures/connector-fetch.json" "payload['item'][
 alcove search --home "$home" "smoke bookmark" --json > "$fixtures/chrome-bookmarks-search.json"
 assert_json "chrome bookmarks search" "$fixtures/chrome-bookmarks-search.json" "payload[0]['type'] == 'Chrome Bookmark'"
 
+radar_fixture="$fixtures/radar-items.json"
+write_json "$radar_fixture" '[
+  {
+    "title": "Sports analytics smoke radar",
+    "url": "https://example.test/sports-radar",
+    "summary": "NBA tactical analysis for radar smoke.",
+    "tags": ["NBA", "analytics"]
+  }
+]'
+run uv run python - "$home" "$radar_fixture" <<'PY'
+import sys
+from pathlib import Path
+
+from alcove.home import AlcoveHome
+from alcove.radars import RadarDefinition, RadarModule, RadarSource
+
+home = AlcoveHome.init(Path(sys.argv[1]))
+fixture = Path(sys.argv[2])
+RadarModule(home).upsert_definition(
+    RadarDefinition(
+        id="sports-news",
+        name="Sports News",
+        sources=[
+            RadarSource(
+                id="fixture",
+                adapter="fixture",
+                params={"path": str(fixture)},
+            )
+        ],
+        profile={"interest_tags": ["NBA", "analytics"], "min_score_threshold": 0.5},
+        report={"formats": ["md"]},
+    )
+)
+PY
+alcove radar --home "$home" list --json > "$fixtures/radar-list.json"
+assert_json "radar list" "$fixtures/radar-list.json" "any(row['id'] == 'sports-news' for row in payload['definitions'])"
+alcove radar --home "$home" run sports-news --json > "$fixtures/radar-run.json"
+assert_json "radar run" "$fixtures/radar-run.json" "payload['status'] == 'completed' and payload['included'] == 1 and payload['reports']['md']"
+alcove radar --home "$home" status sports-news --json > "$fixtures/radar-status.json"
+assert_json "radar status" "$fixtures/radar-status.json" "payload['radars'][0]['id'] == 'sports-news' and payload['radars'][0]['last_run']"
+
+legacy_social="$fixtures/social-radar"
+mkdir -p "$legacy_social/config" "$legacy_social/data/radar" "$legacy_social/data/news_radar" "$legacy_social/data/stock_radar" "$legacy_social/reports/news" "$legacy_social/reports/stock"
+write_json "$legacy_social/config/preference_profile.json" '{"interest_tags":["LLM"],"min_score_threshold":0.5}'
+write_json "$legacy_social/config/news_preference_profile.json" '{"regions":["global"],"min_score_threshold":0.5,"api_key":"must-not-migrate"}'
+write_json "$legacy_social/config/stock_preference_profile.json" '{"watched_symbols":["NVDA"],"min_score_threshold":0.5}'
+printf 'TELEGRAM_BOT_TOKEN=must-not-migrate\n' > "$legacy_social/.env"
+write_json "$legacy_social/data/radar/all_2026-07-11.json" '{"items":[{"source":"hn","title":"LLM radar migration","url":"https://example.test/radar-migration","report_score":0.9,"included_in_report":true,"tags":["LLM"],"fetched_at":"2026-07-11"}]}'
+write_json "$legacy_social/data/news_radar/all_2026-07-11.json" '{"items":[]}'
+write_json "$legacy_social/data/stock_radar/all_2026-07-11.json" '{"items":[{"symbol":"NVDA","title":"NVDA migration"}]}'
+printf '<html>legacy tech</html>\n' > "$legacy_social/reports/2026-07-11.html"
+printf '# legacy news\n' > "$legacy_social/reports/news/2026-07-11.md"
+printf '# legacy stocks\n' > "$legacy_social/reports/stock/2026-07-11.md"
+alcove radar --home "$home" import-social-radar "$legacy_social" --json > "$fixtures/radar-import-social-radar.json"
+assert_json "radar import social radar" "$fixtures/radar-import-social-radar.json" \
+  "payload['status'] == 'imported' and payload['count'] == 3 and any(row['id'] == 'stocks' for row in payload['radars'])"
+
+run uv run python - "$home" "$kb" "$fixtures" <<'PY'
+import json
+import sys
+from pathlib import Path
+from types import MethodType
+
+from alcove.blog_monitor import BlogMonitorModule
+from alcove.home import AlcoveHome
+from alcove.markdown import normalize_slug
+
+home = AlcoveHome.init(Path(sys.argv[1]))
+kb = Path(sys.argv[2])
+fixtures = Path(sys.argv[3])
+module = BlogMonitorModule(home)
+page = (fixtures / "blog-monitor.html").resolve()
+
+
+def write_page(links):
+    anchors = "\n".join(f'<a href="{href}">{title}</a>' for href, title in links)
+    page.write_text(f"<html><body>{anchors}</body></html>", encoding="utf-8")
+
+
+write_page([("https://example.test/blog/one", "First Blog Article")])
+module.add(
+    name="Blog Smoke Success",
+    url=page.as_uri(),
+    source_id="blog-success",
+    link_pattern="/blog/",
+    capture_enabled=True,
+    kb="research_notes",
+    inbox_path="inbox/blog-smoke",
+    notify_enabled=True,
+)
+module.seed(source_id="blog-success")
+write_page(
+    [
+        ("https://example.test/blog/one", "First Blog Article"),
+        ("https://example.test/blog/two", "Second Blog Article"),
+    ]
+)
+
+
+def fake_capture(self, source, article):
+    target = kb / source.capture.inbox_path / normalize_slug(article.title)
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "summary.md").write_text(
+        "# Summary\n\nSecond article summary for blog monitor smoke.\n",
+        encoding="utf-8",
+    )
+    return {
+        "status": "captured",
+        "adapter": "fixture",
+        "inbox_path": str(target),
+        "summary_file": str(target / "summary.md"),
+    }
+
+
+def fake_send(self, *, token, chat_id, text):
+    return {
+        "status": "sent",
+        "http_status": 200,
+        "attempts": 1,
+        "text_excerpt": text[:180],
+    }
+
+
+module._capture_article = MethodType(fake_capture, module)
+module._send_telegram_message = MethodType(fake_send, module)
+(home.root / ".env").write_text(
+    "ALCOVE_TELEGRAM_BOT_TOKEN=smoke-token\nALCOVE_TELEGRAM_CHAT_ID=smoke-chat\n",
+    encoding="utf-8",
+)
+success = module.check(source_id="blog-success", now="2026-07-12T00:00:00+00:00")
+
+module.add(
+    name="Blog Smoke Failure",
+    url=page.as_uri(),
+    source_id="blog-failure",
+    link_pattern="/blog/",
+    notify_enabled=True,
+)
+original_discover = module._discover
+
+
+def fake_discover(self, source):
+    if source.id == "blog-failure":
+        raise RuntimeError("fixture discovery failed")
+    return original_discover(source)
+
+
+module._discover = MethodType(fake_discover, module)
+failure = module.check(source_id="blog-failure", now="2026-07-12T00:05:00+00:00")
+
+payload = {
+    "status": "passed",
+    "success": success,
+    "failure": failure,
+    "events": [
+        json.loads(line)
+        for line in (home.root / "blog-monitor/events.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ],
+    "run_files": sorted(
+        str(path.relative_to(home.root))
+        for path in (home.root / "blog-monitor/runs").glob("*.json")
+    ),
+}
+(fixtures / "blog-monitor-smoke.json").write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+PY
+assert_json "blog monitor success and failure" "$fixtures/blog-monitor-smoke.json" \
+  "payload['success']['sources'][0]['status'] == 'changed' and payload['success']['captured'] == 1 and payload['success']['sources'][0]['notify']['status'] == 'sent' and payload['failure']['errors'] == 1 and payload['failure']['sources'][0]['stage'] == 'discovery'"
+
 alcove okf --home "$home" catalog build --json > "$fixtures/okf-catalog.json"
 assert_json "okf catalog" "$fixtures/okf-catalog.json" \
   "payload['status'] == 'built' and 'search-map.md' in payload['files'] and Path(payload['root'], 'index.md').is_file()"

@@ -56,6 +56,7 @@ from alcove.knowledge import AddConceptRequest, KnowledgeModule
 from alcove.pins import AddPinRequest, PinsModule
 from alcove.projects import AddProjectRequest, ProjectsModule
 from alcove.prompts import AddPromptRequest, PromptsModule
+from alcove.radars import RadarDefinition, RadarModule, RadarSource
 from alcove.tasks import AddIdeaRequest, AddRoutineRequest, AddTaskRequest, TasksModule
 from alcove.workspace import Workspace
 
@@ -67,6 +68,7 @@ prompts = PromptsModule(home=home)
 tasks = TasksModule(home=home)
 projects = ProjectsModule(home=home)
 knowledge = KnowledgeModule(workspace)
+radars = RadarModule(home)
 
 for index in range(80):
     pins.add(
@@ -144,6 +146,21 @@ for index in range(10):
             note=f"Dense dashboard project shortcut {index:02d}.",
         )
     )
+
+radars.upsert_definition(
+    RadarDefinition(
+        id="dashboard-radar",
+        name="Dashboard Radar",
+        sources=[
+            RadarSource(
+                id="dashboard-fixture",
+                adapter="fixture",
+                params={"path": str(Path(sys.argv[2]).parent / "dashboard-radar.json")},
+            )
+        ],
+        tags=["dashboard", "radar"],
+    )
+)
 PY
 alcove dashboard --home "$home" build --json > "$fixtures/dashboard-build.json"
 
@@ -264,7 +281,7 @@ viewports = [
     ("desktop", 1440, 1000),
     ("mobile", 390, 844),
 ]
-routes = ["/", "/pins", "/knowledge", "/planner", "/library", "/activity", "/usage"]
+routes = ["/", "/pins", "/knowledge", "/planner", "/library", "/activity", "/radars", "/usage"]
 large_dataset = {
     "pins": snapshot["summary"]["counts"]["pins"],
     "tasks_total": snapshot["summary"]["counts"]["tasks_total"],
@@ -472,6 +489,31 @@ with serve(dashboard_root) as base_url:
                         and "dense-project-00" in body,
                         body[:500],
                     )
+                if route == "/radars":
+                    visual_summaries.append(
+                        visual_summary(page, viewport=label, route=route)
+                    )
+                    add_check(
+                        checks,
+                        f"{label}_radars_module_filter",
+                        page.locator("[data-filter-input]").count() == 1,
+                        body[:300],
+                    )
+                    add_check(
+                        checks,
+                        f"{label}_radars_semantic_items",
+                        "Information Radars" in body
+                        and "Dashboard Radar" in body
+                        and "dashboard-radar" in body
+                        and "1 sources" in body,
+                        body[:500],
+                    )
+                    add_check(
+                        checks,
+                        f"{label}_radars_no_object_string",
+                        "[object Object]" not in body,
+                        body[:500],
+                    )
             page.goto(base_url, wait_until="networkidle")
             visual_summaries.append(visual_summary(page, viewport=label, route="/"))
             home_body = page.locator("body").inner_text()
@@ -488,7 +530,7 @@ with serve(dashboard_root) as base_url:
                 f"{label}_home_precise_index_labels",
                 "searchable" in home_body_lower
                 and "indexed records" in home_body_lower
-                and "source families" in home_body_lower
+                and "source coverage" in home_body_lower
                 and "managed kb" in home_body_lower
                 and "mount" in home_body_lower
                 and "connector" in home_body_lower

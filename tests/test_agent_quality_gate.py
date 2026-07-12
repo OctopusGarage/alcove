@@ -65,6 +65,25 @@ def test_dashboard_changes_require_browser_smoke_and_ai_eval() -> None:
     assert "ai_review" in command_ids
 
 
+def test_radar_changes_require_report_smoke_and_ai_eval() -> None:
+    plan = build_gate_plan(
+        changed_files=(
+            "src/alcove/radars/reporting.py",
+            "src/alcove/radars/presets/tech-news.yml",
+        ),
+        mode="coach",
+        surface="codex",
+    )
+
+    command_ids = [command.id for command in plan.commands]
+    assert "radars" in plan.risk_areas
+    assert plan.requires_ai_eval is True
+    assert "radar_reports" in command_ids
+    assert "real_home" in command_ids
+    assert "ai_packet" in command_ids
+    assert "ai_review" in command_ids
+
+
 def test_memory_write_changes_get_deterministic_gate_without_ai_eval() -> None:
     plan = build_gate_plan(
         changed_files=("src/alcove/pins.py", "tests/test_tasks.py"),

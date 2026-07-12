@@ -1,0 +1,86 @@
+schema: alcove/radar-definition/v1
+id: tech-news
+name: Tech News
+status: active
+schedule:
+  enabled: true
+  ttl_hours: 24
+sources:
+  - id: hackernews
+    adapter: hackernews
+    enabled: true
+    limit: 30
+  - id: github-trending
+    adapter: github-trending
+    enabled: true
+    limit: 25
+  - id: techcrunch
+    adapter: rss
+    enabled: true
+    limit: 20
+    params:
+      url: https://techcrunch.com/feed/
+  - id: the-verge
+    adapter: rss
+    enabled: true
+    limit: 20
+    params:
+      url: https://www.theverge.com/rss/index.xml
+  - id: wired
+    adapter: rss
+    enabled: true
+    limit: 15
+    params:
+      url: https://www.wired.com/feed/rss
+  - id: devto
+    adapter: rss
+    enabled: true
+    limit: 20
+    params:
+      url: https://dev.to/feed
+  - id: lobsters
+    adapter: rss
+    enabled: true
+    limit: 20
+    params:
+      url: https://lobste.rs/rss
+profile:
+  languages: [en, zh]
+  interest_tags: [LLM, AI, AI agent, coding agent, agentic, MCP, open source, developer tools, developer tooling, infrastructure, productivity, security, database, cloud]
+  blocked_keywords: [sponsored, advertisement, coupon, giveaway, ICE, Homeland Security, Donald Trump, federal agents, immigration]
+  min_score_threshold: 0.55
+  max_age_days: 14
+scoring:
+  mode: hybrid
+  ai_provider: claude
+  ai_enabled_for_service: false
+  source_weights:
+    techcrunch: 0.1
+    wired: 0.08
+    the-verge: 0.06
+    hackernews: 0.05
+    lobsters: 0.05
+    github-trending: 0.03
+    devto: 0.0
+  source_caps:
+    devto: 0.72
+report:
+  language: zh
+  style: concise-briefing
+  formats: [md, html]
+  max_items: 14
+  max_per_source: 3
+ai_summary:
+  enabled: false
+  provider: codex
+  timeout_seconds: 180
+  max_input_chars: 12000
+  prompt: >
+    用中文分析这份技术雷达报告，输出适合 Telegram 的核心摘要。
+    聚焦 AI、工程基础设施、开发者工具和安全信号；区分真正值得跟进的趋势和普通噪音。
+notify:
+  enabled: false
+  channel: telegram
+  include_ai_summary: true
+  include_top_links: true
+tags: [preset, technology]

@@ -91,9 +91,14 @@ export interface DashboardSnapshot {
   knowledge_bases: Array<Record<string, unknown>>;
   connectors: Array<Record<string, unknown>>;
   mounts: Array<Record<string, unknown>>;
+  radars: Array<Record<string, unknown>>;
+  blog_monitor: {
+    sources: Array<Record<string, unknown>>;
+  };
   sources: {
     connectors: Array<Record<string, unknown>>;
     mounts: Array<Record<string, unknown>>;
+    blogs: Array<Record<string, unknown>>;
   };
   prompts: Array<Record<string, unknown>>;
   projects: Array<Record<string, unknown>>;

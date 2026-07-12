@@ -14,6 +14,11 @@ OKF_SCHEMA_BY_TYPE = {
     "Knowledge Concept": "alcove/knowledge-concept/v1",
     "Question": "alcove/question/v1",
     "Entity": "alcove/entity/v1",
+    "Mount Index": "okf/mount-index/v1",
+    "Mounted Item": "okf/mounted-item/v1",
+    "Connector Index": "okf/connector-index/v1",
+    "Connector Source": "okf/connector-source/v1",
+    "Connector Item": "okf/connector-item/v1",
 }
 OKF_REQUIRED_FIELDS = {
     "Source": (

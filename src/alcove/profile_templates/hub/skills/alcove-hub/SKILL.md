@@ -21,6 +21,9 @@ This is the high-level router for Alcove. Decide the storage target before writi
 - todo, reminder, routine, follow-up: `task` or `idea`.
 - external folder or historical repo to search read-only: `mount`.
 - exported/protocol data source such as Apple Notes or GitHub Stars: `connector`.
+- blog monitoring, scheduled article checks, failure alerts, or phrases such as
+  监控博客更新 / 检查博客文章有没有更新: `blog monitor`.
+- information radar, daily briefing, 技术雷达, 新闻雷达, 股票雷达, 体育资讯: `radar`.
 
 ## Fallback Routing Without Skills
 
@@ -32,6 +35,35 @@ This is the high-level router for Alcove. Decide the storage target before writi
 | Save stable reference, preference, command, shortcut | `alcove pin search "query" --json` | `alcove pin add/update ...` |
 | Save reusable prompt | `alcove prompt search "query" --json` | `alcove prompt save ...` |
 | Track todo, idea, routine, project, mount, connector | list/search the matching module first | use the matching `alcove task/idea/routine/project/mount/connector` command |
+| Check monitored blogs now | `alcove blog list --status '' --json`, then `alcove blog check --json` or `alcove blog check <source-id> --json` | only add/update sources after explicit confirmation |
+| Run an information radar | `alcove radar list --json`, then `alcove radar status <radar-id> --json` | `alcove radar run <radar-id> --json`, `--force --ai --notify`, or `--skip-fetch --force --ai --notify` after choosing an existing definition |
+
+## Blog Monitor Protocol
+
+- Use `alcove blog check`, not `alcove service tick`, when the user asks to
+  actively check blogs now. `service tick` is a stale maintenance path and may
+  skip sources whose TTL has not expired.
+- For a failure alert or `needs_attention` source, first run
+  `alcove blog list --status '' --json`, inspect `last_error`, then run
+  `alcove blog check <source-id> --json` to retry that source immediately.
+- If the check captures new articles, summarize the returned `new_articles`,
+  capture paths, and notification status. If it still fails, report the stage,
+  source id, and latest error, then inspect the run/event files only as
+  diagnostic evidence.
+- Scheduled monitoring is deterministic and should not depend on the current
+  chat agent. If the user asks for an AI summary, synthesize it in chat from
+  captured `post.md` / `summary.md`, or run `alcove blog check --summary --json`
+  when they explicitly want the configured model summary path.
+
+## Radar Protocol
+
+- Use `alcove radar list --json` first; radar IDs are user data and must not be assumed.
+- Use `alcove radar status <radar-id> --json` to inspect latest reports and source health before rerunning.
+- Use `alcove radar run <radar-id> --json` for a normal active refresh.
+- Use `alcove radar run <radar-id> --force --ai --notify --json` when the user asks to rerun, refresh now, summarize with AI, and send configured notifications.
+- Use `alcove radar run <radar-id> --skip-fetch --force --ai --notify --json` when the user asks to analyze or resend already fetched results without touching external sources.
+- Radar runs fetch and score deterministically first. Optional `ai_summary` is post-report analysis only; it does not rewrite fetched items or scores.
+- Scheduled radar runs start Codex or Claude only when the radar definition explicitly enables `ai_summary`. If AI fails, Alcove should still notify with the deterministic report when notification is enabled.
 
 ## Retrieval Model
 
@@ -72,6 +104,14 @@ alcove project add alias /path/to/project --note "..." --json
 alcove task add "Task" --notes "..." --json
 alcove mount add /path/to/folder --name name --json
 alcove connector fetch "connectors/<id>#<path>" --json
+alcove blog list --status '' --json
+alcove blog check --json
+alcove blog check openai --json
+alcove radar list --json
+alcove radar status <radar-id> --json
+alcove radar run <radar-id> --json
+alcove radar run <radar-id> --force --ai --notify --json
+alcove radar run <radar-id> --skip-fetch --force --ai --notify --json
 alcove export global /path/to/backup --json
 ```
 

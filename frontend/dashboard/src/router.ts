@@ -4,6 +4,7 @@ import { renderHome } from "./views/home";
 import { renderKnowledge } from "./views/knowledge";
 import { renderLibrary } from "./views/library";
 import { renderPins } from "./views/pins";
+import { renderRadars } from "./views/radars";
 import { renderTasks } from "./views/tasks";
 import { renderUsage } from "./views/usage";
 
@@ -14,6 +15,7 @@ export type Route =
   | "/planner"
   | "/library"
   | "/activity"
+  | "/radars"
   | "/usage";
 
 export const routes: Array<{ path: Route; label: string; description: string }> = [
@@ -23,6 +25,7 @@ export const routes: Array<{ path: Route; label: string; description: string }> 
   { path: "/planner", label: "Planner", description: "Tasks, ideas, routines" },
   { path: "/library", label: "Library", description: "Prompts and project shortcuts" },
   { path: "/activity", label: "Activity", description: "Usage trail and file changes" },
+  { path: "/radars", label: "Radars", description: "Scheduled information discovery" },
   { path: "/usage", label: "Usage", description: "Search health and entry points" },
 ];
 
@@ -59,6 +62,9 @@ export function renderRoute(snapshot: DashboardSnapshot, route: Route): string {
   }
   if (route === "/activity") {
     return renderActivity(snapshot);
+  }
+  if (route === "/radars") {
+    return renderRadars(snapshot);
   }
   if (route === "/usage") {
     return renderUsage(snapshot);

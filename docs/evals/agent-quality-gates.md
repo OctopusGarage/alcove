@@ -97,6 +97,7 @@ Additional focused checks are selected by file area:
 - Agent entry/profile changes: `scripts/smoke-agent-clients.sh`
 - MCP/CLI/search changes: `scripts/smoke-mcp-matrix.sh`
 - Dashboard changes: `scripts/smoke-dashboard-browser.sh`
+- Radar preset/scoring/report changes: `scripts/smoke-radar-reports.sh`
 - Export, backup, registry, or migration changes:
   `scripts/smoke-export-restore.sh`
 - Inbox/capture/OCR review changes: `scripts/smoke-messy-inbox.sh`

@@ -1,0 +1,81 @@
+schema: alcove/radar-definition/v1
+id: world-news
+name: World News
+status: active
+schedule:
+  enabled: true
+  ttl_hours: 24
+sources:
+  - id: google-news-en
+    adapter: rss
+    enabled: true
+    limit: 20
+    params:
+      url: https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en
+      summary_mode: first-list-item
+  - id: google-news-zh
+    adapter: rss
+    enabled: true
+    limit: 20
+    params:
+      url: https://news.google.com/rss?hl=zh-CN&gl=CN&ceid=CN:zh-CN
+      summary_mode: first-list-item
+  - id: bbc-world
+    adapter: rss
+    enabled: true
+    limit: 20
+    params:
+      url: http://feeds.bbci.co.uk/news/world/rss.xml
+  - id: cnn-world
+    adapter: rss
+    enabled: true
+    limit: 20
+    params:
+      url: http://rss.cnn.com/rss/edition_world.rss
+  - id: al-jazeera
+    adapter: rss
+    enabled: true
+    limit: 20
+    params:
+      url: https://www.aljazeera.com/xml/rss/all.xml
+profile:
+  languages: [en, zh]
+  regions: [global, US, CN, EU]
+  interest_tags: [economy, politics, climate, energy, diplomacy, migration, humanitarian, health, election, war, conflict, security]
+  blocked_keywords: [sponsored, native ad, propaganda, celebrity]
+  min_score_threshold: 0.55
+  max_age_days: 7
+scoring:
+  mode: hybrid
+  ai_provider: claude
+  ai_enabled_for_service: false
+  source_weights:
+    bbc-world: 0.1
+    al-jazeera: 0.1
+    cnn-world: 0.08
+    google-news-en: 0.03
+    google-news-zh: 0.03
+  source_caps:
+    google-news-en: 0.58
+    google-news-zh: 0.58
+report:
+  language: zh
+  style: world-news-briefing
+  formats: [md, html]
+  max_items: 12
+  max_per_source: 3
+ai_summary:
+  enabled: false
+  provider: codex
+  timeout_seconds: 180
+  max_input_chars: 12000
+  prompt: >
+    用中文分析这份世界新闻雷达报告，输出适合 Telegram 的核心摘要。
+    按主题归并相关事件，突出地缘政治、经济、能源、安全和公共健康影响；
+    避免把普通标题波动夸大成趋势。
+notify:
+  enabled: false
+  channel: telegram
+  include_ai_summary: true
+  include_top_links: true
+tags: [preset, news]

@@ -45,6 +45,7 @@ def build_eval_packet(
     agent_client_report: Path | None = None,
     mcp_matrix_report: Path | None = None,
     dashboard_browser_report: Path | None = None,
+    radar_reports_report: Path | None = None,
     export_restore_report: Path | None = None,
     messy_inbox_report: Path | None = None,
 ) -> dict[str, Any]:
@@ -55,6 +56,7 @@ def build_eval_packet(
         agent_client_report=agent_client_report,
         mcp_matrix_report=mcp_matrix_report,
         dashboard_browser_report=dashboard_browser_report,
+        radar_reports_report=radar_reports_report,
         export_restore_report=export_restore_report,
         messy_inbox_report=messy_inbox_report,
     ).build()
@@ -68,6 +70,7 @@ class EvalPacketBuilder:
     agent_client_report: Path | None = None
     mcp_matrix_report: Path | None = None
     dashboard_browser_report: Path | None = None
+    radar_reports_report: Path | None = None
     export_restore_report: Path | None = None
     messy_inbox_report: Path | None = None
 
@@ -79,6 +82,7 @@ class EvalPacketBuilder:
             agent_client_report=self.agent_client_report,
             mcp_matrix_report=self.mcp_matrix_report,
             dashboard_browser_report=self.dashboard_browser_report,
+            radar_reports_report=self.radar_reports_report,
             export_restore_report=self.export_restore_report,
             messy_inbox_report=self.messy_inbox_report,
         )
@@ -92,6 +96,7 @@ def _build_eval_packet(
     agent_client_report: Path | None = None,
     mcp_matrix_report: Path | None = None,
     dashboard_browser_report: Path | None = None,
+    radar_reports_report: Path | None = None,
     export_restore_report: Path | None = None,
     messy_inbox_report: Path | None = None,
 ) -> dict[str, Any]:
@@ -139,6 +144,13 @@ def _build_eval_packet(
             smoke_fixtures / "intent-routing-examples.json", warnings
         ),
         "connector_fetch": _read_json(smoke_fixtures / "connector-fetch.json", warnings),
+        "blog_monitor": _read_json(smoke_fixtures / "blog-monitor-smoke.json", warnings),
+        "radar_list": _read_json(smoke_fixtures / "radar-list.json", warnings),
+        "radar_run": _read_json(smoke_fixtures / "radar-run.json", warnings),
+        "radar_status": _read_json(smoke_fixtures / "radar-status.json", warnings),
+        "radar_import_social_radar": _read_json(
+            smoke_fixtures / "radar-import-social-radar.json", warnings
+        ),
         "link_source": _read_json(smoke_fixtures / "link-source.json", warnings),
         "dashboard_build": _read_json(smoke_fixtures / "dashboard-build.json", warnings),
         "dashboard_render": _read_json(smoke_fixtures / "dashboard-render.json", warnings),
@@ -192,6 +204,10 @@ def _build_eval_packet(
         dashboard_browser_report or default_reports["dashboard_browser_report"],
         warnings,
     )
+    radar_reports = _read_json(
+        radar_reports_report or default_reports["radar_reports_report"],
+        warnings,
+    )
     export_restore = _read_json(
         export_restore_report or default_reports["export_restore_report"],
         warnings,
@@ -243,6 +259,7 @@ def _build_eval_packet(
             "agent_client_smoke": compact_packet(agent_client_smoke),
             "mcp_matrix": compact_packet(mcp_matrix),
             "dashboard_browser": compact_packet(dashboard_browser_for_eval(dashboard_browser)),
+            "radar_reports": compact_packet(_radar_reports_for_eval(radar_reports)),
             "export_restore": compact_packet(export_restore),
             "messy_inbox": compact_packet(messy_inbox),
             "agent_entries": compact_packet(
@@ -414,6 +431,51 @@ def _agent_entry_kb_root(smoke_root: Path, warnings: list[str]) -> Path:
     return smoke_root / "research_notes"
 
 
+def _radar_reports_for_eval(report: Any) -> dict[str, Any]:
+    if not isinstance(report, dict):
+        return {"status": "missing", "reason": "radar report smoke artifact is not a mapping"}
+    checks_value = report.get("checks")
+    checks: list[Any] = checks_value if isinstance(checks_value, list) else []
+    visual_summaries_value = report.get("visual_summaries")
+    visual_summaries: list[Any] = (
+        visual_summaries_value if isinstance(visual_summaries_value, list) else []
+    )
+    failed = [
+        check
+        for check in checks
+        if isinstance(check, dict) and str(check.get("status") or "") == "failed"
+    ]
+    report_excerpts = []
+    ai_notification_contracts = []
+    for check in checks:
+        if not isinstance(check, dict) or str(check.get("status") or "") != "passed":
+            continue
+        name = str(check.get("name") or "")
+        detail = str(check.get("detail") or "")
+        if not detail:
+            continue
+        if name.endswith("_ai_notify_contract"):
+            ai_notification_contracts.append(
+                {
+                    "check": name,
+                    "status": str(check.get("status") or ""),
+                    "detail": detail[:1600],
+                }
+            )
+        if name.endswith("_brief") or name.endswith("_enough_signals"):
+            report_excerpts.append({"check": name, "excerpt": detail[:1600]})
+    return {
+        "status": report.get("status"),
+        "radars": report.get("radars"),
+        "failed_checks": failed[:10],
+        "check_count": len(checks),
+        "report_excerpts": report_excerpts[:8],
+        "ai_notification_contracts": ai_notification_contracts[:8],
+        "visual_summaries": visual_summaries[:12],
+        "screenshots": report.get("screenshots"),
+    }
+
+
 def build_eval_bundle(
     *,
     output_dir: Path,
@@ -423,6 +485,7 @@ def build_eval_bundle(
     agent_client_report: Path | None = None,
     mcp_matrix_report: Path | None = None,
     dashboard_browser_report: Path | None = None,
+    radar_reports_report: Path | None = None,
     export_restore_report: Path | None = None,
     messy_inbox_report: Path | None = None,
 ) -> EvalBundle:
@@ -434,6 +497,7 @@ def build_eval_bundle(
         agent_client_report=agent_client_report,
         mcp_matrix_report=mcp_matrix_report,
         dashboard_browser_report=dashboard_browser_report,
+        radar_reports_report=radar_reports_report,
         export_restore_report=export_restore_report,
         messy_inbox_report=messy_inbox_report,
     )
@@ -491,6 +555,28 @@ def _modules() -> list[dict[str, Any]]:
                 "Can an agent decide when to lazy-fetch or link a connector/mount item?",
                 "Do connector and mount flows support AI-led follow-up from a search hit into fetched or local evidence before synthesis?",
                 "Are connector permission, network, or malformed-export failures represented as controlled, diagnosable errors?",
+            ],
+        },
+        {
+            "id": "blog_monitor",
+            "scope": "Scheduled Playwright blog discovery, Clipsmith capture, Telegram notifications, failure attention state, and Hub-triggered manual checks.",
+            "ai_quality_questions": [
+                "Can a Hub agent route 'check whether monitored blogs updated' to `alcove blog check` rather than stale `service tick`?",
+                "Does the failure alert path give enough source id, stage, and error context for an agent-assisted retry?",
+                "Are captured article paths, summary files, and notification status clear enough for user-facing reporting?",
+                "Is the distinction clear between deterministic scheduled summaries and optional AI/chat summaries?",
+            ],
+        },
+        {
+            "id": "radars",
+            "scope": "Generic user-configured information radars, packaged presets, source adapters, reports, service scheduling, and Social Radar migration.",
+            "ai_quality_questions": [
+                "Are radar categories represented as user definitions rather than hard-coded product modules?",
+                "Can an agent discover available radars with `alcove radar list`, then run the user-selected radar without assuming fixed IDs?",
+                "Do reports and run status expose enough included counts, source errors, and artifact paths for follow-up review?",
+                "Does Social Radar migration preserve historical cache/report evidence while avoiding secrets and old environment data?",
+                "Are scheduled radar runs deterministic by default, with optional AI summary and Telegram notification enabled only by explicit definition config or manual flags?",
+                "Do radar AI prompts stay radar-specific, and does notification fall back to the deterministic report when AI summary fails?",
             ],
         },
         {
@@ -699,6 +785,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--agent-client-report")
     parser.add_argument("--mcp-matrix-report")
     parser.add_argument("--dashboard-browser-report")
+    parser.add_argument("--radar-reports-report")
     parser.add_argument("--export-restore-report")
     parser.add_argument("--messy-inbox-report")
     parser.add_argument("--json", action="store_true")
@@ -713,6 +800,7 @@ def main(argv: list[str] | None = None) -> int:
         dashboard_browser_report=Path(args.dashboard_browser_report)
         if args.dashboard_browser_report
         else None,
+        radar_reports_report=Path(args.radar_reports_report) if args.radar_reports_report else None,
         export_restore_report=Path(args.export_restore_report)
         if args.export_restore_report
         else None,

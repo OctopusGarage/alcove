@@ -8,6 +8,8 @@ the system design.
 - [Usage Guide](usage.md): common CLI/MCP workflows.
 - [Entry Modes](entry-modes.md): hub, global MCP, managed KB, and MCP toolsets.
 - [Modules](modules.md): feature modules and storage contracts.
+- [Configurable Radars](radars.md): generic information radar definitions,
+  source adapters, scheduled runs, and Social Radar migration.
 - [Data and Backup](data-and-backup.md): data locations, export, sync, encryption.
 - [Local Smoke / Agent Eval](evals/local-smoke.md): verification and repair workflows.
 - [Agent Quality Gates](evals/agent-quality-gates.md): Codex/Claude hook

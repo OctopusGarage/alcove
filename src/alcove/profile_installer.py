@@ -358,6 +358,9 @@ class ProfileInstaller:
         action = "updated" if path.is_file() else "created"
         if path.is_file() and existing == content:
             action = "unchanged"
+        if path.is_symlink():
+            path.unlink()
+            action = "updated"
         path.write_text(content, encoding="utf-8")
         return {"path": str(path), "action": action}
 
@@ -377,6 +380,9 @@ class ProfileInstaller:
         action = "updated" if path.is_file() else "created"
         if path.is_file() and path.read_text(encoding="utf-8") == content:
             action = "unchanged"
+        if path.is_symlink():
+            path.unlink()
+            action = "updated"
         path.write_text(content, encoding="utf-8")
         return {"path": str(path), "action": action}
 
@@ -388,6 +394,9 @@ class ProfileInstaller:
         action = "updated" if path.is_file() else "created"
         if path.is_file() and path.read_text(encoding="utf-8") == normalized:
             action = "unchanged"
+        if path.is_symlink():
+            path.unlink()
+            action = "updated"
         path.write_text(normalized, encoding="utf-8")
         return {"path": str(path), "action": action}
 

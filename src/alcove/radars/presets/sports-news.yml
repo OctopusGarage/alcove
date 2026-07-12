@@ -1,0 +1,75 @@
+schema: alcove/radar-definition/v1
+id: sports-news
+name: Sports News
+status: active
+schedule:
+  enabled: true
+  ttl_hours: 24
+sources:
+  - id: espn-top
+    adapter: rss
+    enabled: true
+    limit: 25
+    params:
+      url: https://www.espn.com/espn/rss/news
+  - id: bbc-sport
+    adapter: rss
+    enabled: true
+    limit: 25
+    params:
+      url: https://feeds.bbci.co.uk/sport/rss.xml
+  - id: sky-sports
+    adapter: rss
+    enabled: true
+    limit: 25
+    params:
+      url: https://www.skysports.com/rss/12040
+  - id: formula-one
+    adapter: rss
+    enabled: true
+    limit: 20
+    params:
+      url: https://www.formula1.com/en/latest/all.xml
+  - id: guardian-sport
+    adapter: rss
+    enabled: true
+    limit: 20
+    params:
+      url: https://www.theguardian.com/sport/rss
+profile:
+  languages: [en, zh]
+  interest_tags: [NBA, NFL, football, soccer, Formula 1, F1, tennis, injuries, transfer, playoffs, championship, record]
+  blocked_keywords: [sponsored, advertisement, betting odds, gambling, fantasy tips]
+  content_type_preference: [match report, injury update, transfer news, analysis, standings]
+  min_score_threshold: 0.55
+  max_age_days: 14
+scoring:
+  mode: deterministic
+  ai_provider: claude
+  ai_enabled_for_service: false
+  source_weights:
+    bbc-sport: 0.08
+    espn-top: 0.08
+    sky-sports: 0.08
+    formula-one: 0.06
+    guardian-sport: 0.06
+report:
+  language: zh
+  style: sports-briefing
+  formats: [md, html]
+  max_items: 12
+  max_per_source: 4
+ai_summary:
+  enabled: false
+  provider: codex
+  timeout_seconds: 180
+  max_input_chars: 12000
+  prompt: >
+    用中文分析这份体育雷达报告，输出适合 Telegram 的核心摘要。
+    聚焦赛果、伤病、转会、排名变化和后续值得关注的故事线；过滤博彩和泛娱乐噪音。
+notify:
+  enabled: false
+  channel: telegram
+  include_ai_summary: true
+  include_top_links: true
+tags: [preset, sports]

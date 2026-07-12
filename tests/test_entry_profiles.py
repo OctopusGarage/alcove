@@ -127,6 +127,11 @@ def test_cli_hub_init_creates_project_local_entry_files(tmp_path, capsys):
     assert "alcove kb" in claude_entry
     assert "--kb <kb-name>" in claude_entry
     assert "If that skill is unavailable" in claude_entry
+    assert "Check monitored blogs now" in claude_entry
+    assert "alcove blog" in claude_entry
+    assert "Run an information radar" in claude_entry
+    assert "alcove radar" in claude_entry
+    assert "Radar IDs are user data" in claude_entry
     hub_skill = (hub / ".agents" / "skills" / "alcove-hub" / "SKILL.md").read_text(encoding="utf-8")
     assert "Intent Routing" in hub_skill
     assert "ambiguous record" in hub_skill
@@ -148,6 +153,17 @@ def test_cli_hub_init_creates_project_local_entry_files(tmp_path, capsys):
     assert "Verify through the user's intended entry point" in hub_skill
     assert "Save Completion Response" in hub_skill
     assert "`source_refs` are internal OKF/source references" in hub_skill
+    assert "blog monitor" in hub_skill
+    assert "alcove blog" in hub_skill
+    assert "check --json" in hub_skill
+    assert "Use `alcove blog check`, not `alcove service tick`" in hub_skill
+    assert "information radar" in hub_skill
+    assert "Radar Protocol" in hub_skill
+    assert "alcove radar" in hub_skill
+    assert "radar IDs are user data" in hub_skill
+    assert "fetch and score deterministically first" in hub_skill
+    assert "--skip-fetch --force --ai --notify" in hub_skill
+    assert "Optional `ai_summary` is post-report analysis only" in hub_skill
 
 
 def test_cli_hub_init_can_link_project_skills_in_development_mode(
@@ -235,6 +251,40 @@ def test_cli_kb_install_can_link_skills_and_claude_commands_in_development_mode(
     assert code == 0
     linked_records = [item for item in status["files"] if item["kind"] in {"skill", "artifact"}]
     assert any(item["is_symlink"] and item.get("source_match") for item in linked_records)
+
+
+def test_cli_kb_copy_install_replaces_previous_linked_skills_and_commands(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    home = tmp_path / ".alcove"
+    kb_root = tmp_path / "research_notes"
+    monkeypatch.setenv("ALCOVE_HOME", str(home))
+    Workspace.init(kb_root)
+    main(["kb", "add", "research_notes", str(kb_root), "--json"])
+    capsys.readouterr()
+
+    link_code = main(["kb", "install", "research_notes", "--link", "--json"])
+    capsys.readouterr()
+    assert link_code == 0
+
+    copy_code = main(["kb", "install", "research_notes", "--json"])
+    output = capsys.readouterr()
+
+    payload = json.loads(output.out)
+    copied_paths = [
+        kb_root / ".agents" / "skills" / "alcove-kb" / "SKILL.md",
+        kb_root / ".agents" / "skills" / "notes-search" / "SKILL.md",
+        kb_root / ".agents" / "skills" / "social_post_manager" / "SKILL.md",
+        kb_root / ".claude" / "skills" / "alcove-kb" / "SKILL.md",
+        kb_root / ".claude" / "commands" / "inbox-peek.md",
+        kb_root / ".claude" / "commands" / "into-kb.md",
+    ]
+    assert copy_code == 0
+    assert payload["mode"] == "copy"
+    assert all(path.is_file() for path in copied_paths)
+    assert not any(path.is_symlink() for path in copied_paths)
 
 
 def test_cli_linked_profile_install_rejects_explicit_non_default_home(

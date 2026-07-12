@@ -165,3 +165,97 @@ agent can take the next local maintenance step without guessing.
 
 The Activity page stays low-noise. Dashboard route changes and search events are
 aggregated on the Usage page instead of being shown as recent activity entries.
+
+## Local Service and Watchers
+
+The local service is the deterministic background layer for macOS. It is
+installed as launchd LaunchAgents and does not run background AI.
+
+```text
+launchd
+├── com.octopusgarage.alcove.dashboard
+│   └── alcove serve --dashboard --home ~/.alcove
+└── com.octopusgarage.alcove.scheduler
+    └── alcove service tick --home ~/.alcove
+```
+
+`service tick` runs scheduled maintenance:
+
+- materialize due routines,
+- refresh stale connector sources,
+- check watched URL/feed sources,
+- check monitored blog sources,
+- run enabled scheduled radars,
+- rebuild the global OKF catalog,
+- run health repair,
+- refresh and prune usage rollups,
+- rebuild the dashboard snapshot.
+
+Watchers live under `~/.alcove/watchers/`. Each source is a YAML config with
+refresh state, and changes are appended to `events.jsonl`. If a watcher is
+bound to a managed KB, changed content is added to that KB's inbox as a manual
+item for later review.
+
+Blog monitor lives under `~/.alcove/blog-monitor/`. It is higher-level than
+watchers: each source discovers article URLs, compares them with seen state, and
+can optionally capture new articles into a managed KB inbox subdirectory.
+
+```text
+~/.alcove/blog-monitor/
+├── sources/*.yml
+├── seen/*.json
+├── captures/<source-id>/
+├── runs/*.json
+└── events.jsonl
+```
+
+Default capture uses Clipsmith when the `clipsmith-web` skill and `clipsmith`
+CLI are available. Other capture adapters can be added later if they implement
+the same result contract. Summary and notification are disabled unless the
+source or command explicitly enables them.
+Blog index pages should use `discover.method: playwright`, which renders the
+page with the Playwright runtime available through the Clipsmith web skill and
+keeps discovery aligned with Clipsmith's browser-based capture model. Discovery
+and capture failures move the source to `needs_attention`, write a failed run,
+and optionally send a Telegram alert. The scheduler never starts Codex or
+Claude automatically; agent-assisted repair is a manual follow-up.
+
+## Configurable Radars
+
+Radars are generic user-defined information briefings under `~/.alcove/radars/`.
+Alcove owns the engine, storage contract, adapters, reports, scheduled
+maintenance hook, dashboard projection, and migration tool. Specific categories
+such as tech news, world news, stocks, sports, or personal hobby feeds are user
+definitions, not hard-coded product modules.
+
+```text
+~/.alcove/radars/
+├── definitions/*.yml
+├── cache/<radar-id>/<date>/{raw.json,scored.json,legacy.json}
+├── runs/<radar-id>/<date>/run.json
+├── reports/<radar-id>/<date>.{md,html}
+├── reports/<radar-id>/<date>.ai.md
+├── okf/<radar-id>/index.md
+└── events.jsonl
+```
+
+Built-in `tech-news` and `world-news` presets are starter definitions. Users can
+create or edit any number of additional radar definitions. Current adapters
+include fixture JSON, RSS/Atom, generic HTML, Hacker News, and GitHub Trending.
+
+```sh
+alcove radar preset list --json
+alcove radar init tech-news --from-preset tech-news --json
+alcove radar run tech-news --json
+alcove radar run tech-news --force --ai --notify --json
+alcove radar run tech-news --skip-fetch --force --ai --notify --json
+alcove radar import-social-radar ~/.social_radar --json
+```
+
+`service tick` runs scheduled radar definitions only when `schedule.enabled` is
+true. Scheduled runs are deterministic by default. They invoke `codex exec` or
+`claude -p` only when the definition explicitly enables `ai_summary`. If AI
+fails and notifications are enabled, Alcove sends the deterministic report
+instead. Notification sinks currently support Telegram and Feishu custom bot
+webhooks. See [radars.md](radars.md) for the full contract and Social Radar
+migration behavior.

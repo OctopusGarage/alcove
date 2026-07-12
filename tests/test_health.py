@@ -6,6 +6,7 @@ from alcove.cli import main
 from alcove.health import HealthModule
 from alcove.home import AlcoveHome
 from alcove.markdown import MarkdownDoc, MarkdownRepository
+from alcove.mounts import AddMountRequest, MountsModule
 from alcove.pins import AddPinRequest, PinsModule
 from alcove.prompts import AddPromptRequest, PromptsModule
 from alcove.workspace import Workspace
@@ -95,6 +96,47 @@ def test_health_flags_invalid_governed_okf_schema(tmp_path):
 
     assert report["status"] == "warnings"
     assert any(issue["kind"] == "invalid_okf_schema" for issue in report["issues"])
+
+
+def test_health_flags_invalid_mount_okf_schema(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    source = tmp_path / "source-docs"
+    source.mkdir()
+    (source / "note.md").write_text("# Agent Notes\n\nMount search needle.", encoding="utf-8")
+    mounts = MountsModule(home=home)
+    mount = mounts.add(AddMountRequest(path=str(source), name="Source Docs"))
+    mounts.scan(mount.id)
+
+    repo = MarkdownRepository()
+    mount_index_path = home.paths().mounts / "okf" / mount.id / "index.md"
+    mount_index = repo.read_doc(mount_index_path)
+    repo.write_doc(
+        mount_index_path,
+        MarkdownDoc(
+            frontmatter={**mount_index.frontmatter, "schema": "wrong/schema"},
+            body=mount_index.body,
+        ),
+    )
+    item_path = next((home.paths().mounts / "okf" / mount.id / "items").glob("*.md"))
+    item = repo.read_doc(item_path)
+    repo.write_doc(
+        item_path,
+        MarkdownDoc(
+            frontmatter={**item.frontmatter, "schema": "wrong/schema"},
+            body=item.body,
+        ),
+    )
+
+    report = HealthModule(home=home).check()
+
+    assert report["status"] == "warnings"
+    invalid_paths = {
+        issue["path"]
+        for issue in report["issues"]
+        if issue["module"] == "mounts" and issue["kind"] == "invalid_okf_schema"
+    }
+    assert str(mount_index_path) in invalid_paths
+    assert str(item_path) in invalid_paths
 
 
 def test_health_fix_repairs_missing_governed_okf_schema(tmp_path):

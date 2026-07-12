@@ -29,8 +29,9 @@ describe("dashboard home", () => {
     expect(html).toContain("1 featured theme pins");
     expect(html).toContain("Searchable");
     expect(html).toContain("indexed records");
-    expect(html).toContain("Source Families");
-    expect(html).toContain("1 managed KB / 1 mount / 3 connectors");
+    expect(html).toContain("Source Coverage");
+    expect(html).toContain("5 types");
+    expect(html).toContain("Managed KBs: 1; Mounts: 1; Connectors: 3");
     expect(html).not.toContain("Indexed");
     expect(html).not.toContain("Themes to Practice");
   });
@@ -91,7 +92,9 @@ function snapshot(input: {
     knowledge_bases: [],
     connectors: [],
     mounts: [],
-    sources: { connectors: [], mounts: [] },
+    radars: [],
+    blog_monitor: { sources: [] },
+    sources: { connectors: [], mounts: [], blogs: [] },
     prompts: [],
     projects: [],
     activity: [],

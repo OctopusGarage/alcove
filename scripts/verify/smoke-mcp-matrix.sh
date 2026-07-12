@@ -723,6 +723,34 @@ async def main() -> None:
             "reason": "Requires live GitHub/network; covered by real integrations smoke.",
         },
     ]
+    cli_only_workflows = {
+        "blog_monitor": {
+            "reason": "Blog monitoring is a scheduled/Hub CLI workflow, not a global MCP mutation surface.",
+            "commands": [
+                "alcove blog list --status '' --json",
+                "alcove blog check --json",
+                "alcove blog check <source-id> --json",
+            ],
+            "covered_by": ["isolated smoke blog-monitor-smoke.json", "Hub entry skill routing"],
+        },
+        "radars": {
+            "reason": "Radar definitions and runs are user-selected CLI workflows; MCP search can discover generated reports.",
+            "commands": [
+                "alcove radar list --json",
+                "alcove radar status <radar-id> --json",
+                "alcove radar run <radar-id> --json",
+            ],
+            "covered_by": ["isolated smoke radar-list/run/status", "Hub entry skill routing"],
+        },
+        "dashboard": {
+            "reason": "Dashboard is served over local HTTP and validated by browser smoke, not MCP calls.",
+            "commands": [
+                "alcove dashboard build --json",
+                "alcove serve --dashboard --home ~/.alcove",
+            ],
+            "covered_by": ["dashboard browser smoke", "real-home dashboard build"],
+        },
+    }
     called_tools = {str(check.get("tool") or "") for check in checks}
     external_tools = {str(item["tool"]) for item in external_coverage}
     uncovered_tools = sorted(set(tool_names) - called_tools - external_tools)
@@ -777,6 +805,7 @@ async def main() -> None:
         "toolset_checks": toolset_checks,
         "artifacts": str(report_path.parent),
         "covered_by_external_smoke": external_coverage,
+        "cli_only_workflows": cli_only_workflows,
         "external_coverage_policy": {
             "status": "enforced",
             "direct_call_exceptions": sorted(external_tools),

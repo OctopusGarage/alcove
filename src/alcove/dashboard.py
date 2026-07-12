@@ -10,6 +10,7 @@ import shutil
 import subprocess
 from typing import Any
 
+from alcove.blog_monitor import BlogMonitorModule
 from alcove.connector_display import connector_display_name
 from alcove.connector_sources import ConnectorSourceRegistry
 from alcove.external_index import ExternalIndexStore, ExternalItemReference
@@ -22,6 +23,7 @@ from alcove.pins_import import PinsMarkdownImportModule
 from alcove.pins import Pin, PinsModule
 from alcove.projects import ProjectsModule
 from alcove.prompts import PromptsModule
+from alcove.radars import RadarModule
 from alcove.tasks import TasksModule
 from alcove.usage import UsageRecorder
 
@@ -568,6 +570,8 @@ class DashboardModule:
         mount_rows = mounts.list(status="")
         mount_items = mounts.index_items()
         connector_rows = self._connector_rows()
+        radar_rows = RadarModule(self.home).dashboard_rows()
+        blog_rows = self._blog_rows()
         kb_rows = self.home.list_knowledge_bases()
         knowledge_rows = self._knowledge_base_rows(kb_rows)
         usage_summary = UsageRecorder(self.home).summary()
@@ -601,6 +605,10 @@ class DashboardModule:
             "mount_items": len(mount_items),
             "connectors": len(connector_rows),
             "connector_items": sum(row["count"] for row in connector_rows),
+            "radars": len(radar_rows),
+            "radars_active": len([row for row in radar_rows if row["status"] == "active"]),
+            "blog_sources": len(blog_rows),
+            "blog_sources_active": len([row for row in blog_rows if row["status"] == "active"]),
             "knowledge_bases": len(kb_rows),
             "knowledge_items": sum(row["item_count"] for row in knowledge_rows),
             "activity_events": len(activity),
@@ -650,9 +658,12 @@ class DashboardModule:
             "knowledge": {"managed": knowledge_rows},
             "connectors": connector_rows,
             "mounts": mount_snapshot_rows,
+            "radars": radar_rows,
+            "blog_monitor": {"sources": blog_rows},
             "sources": {
                 "connectors": connector_rows,
                 "mounts": mount_snapshot_rows,
+                "blogs": blog_rows,
             },
             "prompts": [
                 {
@@ -878,7 +889,21 @@ class DashboardModule:
                 "subtitle": "Recent events and file changes",
                 "href": "/activity",
                 "metric": counts["activity_events"],
-                "detail": "Events and inferred changes",
+                "detail": (
+                    f"Events and inferred changes; "
+                    f"{counts['blog_sources_active']} active blog monitors"
+                ),
+            },
+            {
+                "id": "radars",
+                "title": "Radars",
+                "subtitle": "Scheduled information discovery",
+                "href": "/radars",
+                "metric": counts["radars"],
+                "detail": (
+                    f"{self._count_phrase(counts['radars'], 'radar')}; "
+                    f"{counts['radars_active']} active"
+                ),
             },
             {
                 "id": "usage",
@@ -893,6 +918,30 @@ class DashboardModule:
     def _count_phrase(self, count: int, singular: str, plural: str | None = None) -> str:
         label = singular if count == 1 else plural or f"{singular}s"
         return f"{count} {label}"
+
+    def _blog_rows(self) -> list[dict[str, Any]]:
+        sources = BlogMonitorModule(self.home).list_sources(status="").get("sources", [])
+        rows = []
+        for source in sources if isinstance(sources, list) else []:
+            if not isinstance(source, dict):
+                continue
+            capture = source.get("capture") if isinstance(source.get("capture"), dict) else {}
+            schedule = source.get("schedule") if isinstance(source.get("schedule"), dict) else {}
+            rows.append(
+                {
+                    "id": str(source.get("id") or ""),
+                    "name": str(source.get("name") or ""),
+                    "url": str(source.get("url") or ""),
+                    "status": str(source.get("status") or ""),
+                    "checked_at": dashboard_time_iso(str(source.get("checked_at") or "")),
+                    "changed_at": dashboard_time_iso(str(source.get("changed_at") or "")),
+                    "capture_enabled": bool(capture.get("enabled")),
+                    "kb": str(capture.get("kb") or ""),
+                    "inbox_path": str(capture.get("inbox_path") or ""),
+                    "ttl_hours": int(schedule.get("ttl_hours") or 0),
+                }
+            )
+        return rows
 
     def _connector_rows(self) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
@@ -1345,6 +1394,7 @@ class DashboardModule:
         ]:
             paths.extend(self.home.root.glob(pattern))
         rows = self._event_rows()
+        event_times_by_area = self._event_times_by_area(rows)
         for path in paths:
             if not path.is_file():
                 continue
@@ -1354,6 +1404,8 @@ class DashboardModule:
             raw_updated_at = datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat(
                 timespec="seconds"
             )
+            if self._is_derived_activity_update(area, raw_updated_at, event_times_by_area):
+                continue
             rows.append(
                 {
                     "type": "update",
@@ -1387,6 +1439,43 @@ class DashboardModule:
         if relative.parts[0] in {"connectors", "mounts"}:
             return True
         return False
+
+    def _event_times_by_area(self, rows: list[dict[str, Any]]) -> dict[str, list[datetime]]:
+        event_times: dict[str, list[datetime]] = {}
+        for row in rows:
+            if row.get("type") != "action":
+                continue
+            area = str(row.get("area") or "")
+            raw_updated_at = str(row.get("raw_updated_at") or "")
+            try:
+                event_time = datetime.fromisoformat(raw_updated_at)
+            except ValueError:
+                continue
+            event_times.setdefault(area, []).append(event_time)
+        return event_times
+
+    def _is_derived_activity_update(
+        self,
+        file_area: str,
+        raw_updated_at: str,
+        event_times_by_area: dict[str, list[datetime]],
+    ) -> bool:
+        event_area = {
+            "pins": "pin",
+            "prompts": "prompt",
+            "projects": "project",
+            "tasks": "task",
+        }.get(file_area)
+        if not event_area:
+            return False
+        try:
+            file_time = datetime.fromisoformat(raw_updated_at)
+        except ValueError:
+            return False
+        return any(
+            abs((file_time - event_time).total_seconds()) <= 300
+            for event_time in event_times_by_area.get(event_area, [])
+        )
 
     def _activity_name(self, path: Path) -> str:
         relative = path.relative_to(self.home.root)
@@ -1563,13 +1652,17 @@ class DashboardModule:
                 "dashboard.search",
             }:
                 continue
+            if event.get("action") == "knowledge.delete":
+                metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+                if str(metadata.get("confirmed") or "").casefold() != "true":
+                    continue
             if not event.get("visible", True):
                 continue
             raw_updated_at = str(event.get("updated_at") or "")
             rows.append(
                 {
                     "type": "action",
-                    "name": str(event.get("summary") or event.get("action") or "event"),
+                    "name": self._event_name(event),
                     "area": str(event.get("area") or "activity"),
                     "detail": self._event_detail(event),
                     "updated_at": dashboard_time_iso(raw_updated_at),
@@ -1577,6 +1670,16 @@ class DashboardModule:
                 }
             )
         return rows
+
+    def _event_name(self, event: dict[str, Any]) -> str:
+        action = str(event.get("action") or "")
+        metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+        title = str(metadata.get("title") or "").strip()
+        if action == "knowledge.delete" and title:
+            return f"Deleted knowledge: {title}"
+        if action == "knowledge.revise" and title:
+            return f"Revised knowledge: {title}"
+        return str(event.get("summary") or action or "event")
 
     def _event_detail(self, event: dict[str, Any]) -> str:
         action = str(event.get("action") or "")
@@ -1587,6 +1690,9 @@ class DashboardModule:
             regular_count = regular.get("imported", 0) if isinstance(regular, dict) else 0
             todo_count = todo.get("imported", 0) if isinstance(todo, dict) else 0
             return f"{regular_count} regular themes, {todo_count} todo themes"
+        if action in {"knowledge.delete", "knowledge.revise"}:
+            path = str(metadata.get("path") or "").strip()
+            return path or str(event.get("summary") or action or "event")
         return str(event.get("summary") or action or "event")
 
     def _search_index(self, snapshot: dict[str, Any]) -> list[dict[str, str]]:
@@ -1693,6 +1799,24 @@ class DashboardModule:
                     "title": str(module["title"]),
                     "text": f"{module['subtitle']} {module['detail']}",
                     "href": str(module["href"]),
+                }
+            )
+        for radar in snapshot.get("radars", []):
+            rows.append(
+                {
+                    "type": "radar",
+                    "title": str(radar.get("name") or radar.get("id") or ""),
+                    "text": " ".join(
+                        [
+                            str(radar.get("id") or ""),
+                            str(radar.get("status") or ""),
+                            "scheduled" if radar.get("schedule_enabled") else "manual",
+                            f"{radar.get('source_count', 0)} sources",
+                            str(radar.get("report_label") or ""),
+                            " ".join(radar.get("tags") or []),
+                        ]
+                    ),
+                    "href": "/radars",
                 }
             )
         for kb in snapshot.get("knowledge", {}).get("managed", []):

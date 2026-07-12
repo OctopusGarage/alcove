@@ -71,6 +71,9 @@ smoke scripts and validated by tests:
   examples: long content, warnings, OCR, truncation, and missing summaries.
 - `scripts/verify/smoke-dashboard-browser.sh` freezes browser-facing examples
   across desktop and mobile routes.
+- `scripts/verify/smoke-radar-reports.sh` freezes four radar report examples
+  across technology, world news, stocks, and sports, including Markdown
+  structure and desktop/mobile browser presentation.
 - `src/alcove/ai_eval.py` composes those artifacts into
   `.tmp/ai-eval/ai-eval-packet.json` and `.tmp/ai-eval/ai-eval-prompt.md`.
 - `docs/evals/ai-review.schema.json` constrains reviewer output.

@@ -25,7 +25,7 @@ export function renderHome(snapshot: DashboardSnapshot): string {
         ${ledgerCell("Pin Records", counts.pins ?? 0, `${counts.theme_pins ?? 0} featured theme pins`)}
         ${ledgerCell("Tasks", counts.pending_tasks ?? 0, "pending tasks")}
         ${ledgerCell("Searchable", indexedTotal(counts), "indexed records")}
-        ${ledgerCell("Source Families", sourceTotal(counts), sourceFamilyDetail(counts))}
+        ${ledgerCell("Source Coverage", countPhrase(sourceTotal(counts), "type"), sourceFamilyDetail(counts))}
       </div>
     </section>
 
@@ -82,10 +82,10 @@ function sourceTotal(counts: Record<string, number>): number {
 
 function sourceFamilyDetail(counts: Record<string, number>): string {
   return [
-    countPhrase(Number(counts.knowledge_bases || 0), "managed KB"),
-    countPhrase(Number(counts.mounts || 0), "mount"),
-    countPhrase(Number(counts.connectors || 0), "connector"),
-  ].join(" / ");
+    `Managed KBs: ${Number(counts.knowledge_bases || 0)}`,
+    `Mounts: ${Number(counts.mounts || 0)}`,
+    `Connectors: ${Number(counts.connectors || 0)}`,
+  ].join("; ");
 }
 
 function countPhrase(count: number, singular: string): string {

@@ -1,0 +1,73 @@
+schema: alcove/radar-definition/v1
+id: stocks
+name: Stocks
+status: active
+schedule:
+  enabled: true
+  ttl_hours: 24
+sources:
+  - id: marketwatch-top
+    adapter: rss
+    enabled: true
+    limit: 25
+    params:
+      url: https://feeds.content.dowjones.io/public/rss/mw_topstories
+  - id: wsj-markets
+    adapter: rss
+    enabled: true
+    limit: 25
+    params:
+      url: https://feeds.a.dj.com/rss/RSSMarketsMain.xml
+  - id: investing-news
+    adapter: rss
+    enabled: true
+    limit: 25
+    params:
+      url: https://www.investing.com/rss/news.rss
+  - id: investing-stocks
+    adapter: rss
+    enabled: true
+    limit: 25
+    params:
+      url: https://www.investing.com/rss/stock.rss
+profile:
+  languages: [en, zh]
+  watched_symbols: [AAPL, MSFT, NVDA, AMD, TSLA, META, GOOGL, AMZN, BTC, ETH]
+  sectors: [AI, semiconductors, cloud, software, consumer internet, energy, rates, inflation]
+  interest_tags: [earnings, guidance, market, stocks, bond yields, dollar, commodities, ETF, risk, macro]
+  blocked_keywords: [sponsored, advertisement, coupon, gambling, alimony, social security, retirement savings]
+  min_score_threshold: 0.55
+  max_age_days: 7
+scoring:
+  mode: deterministic
+  ai_provider: claude
+  ai_enabled_for_service: false
+  source_weights:
+    marketwatch-top: 0.1
+    wsj-markets: 0.1
+    investing-news: 0.05
+    investing-stocks: 0.05
+  source_caps:
+    investing-news: 0.82
+    investing-stocks: 0.82
+report:
+  language: zh
+  style: market-briefing
+  formats: [md, html]
+  max_items: 12
+  max_per_source: 4
+ai_summary:
+  enabled: false
+  provider: codex
+  timeout_seconds: 180
+  max_input_chars: 12000
+  prompt: >
+    用中文分析这份市场雷达报告，输出适合 Telegram 的核心摘要。
+    聚焦宏观风险、行业主线、个股催化和需要忽略的噪音；不要编造价格，
+    不要给出确定性投资建议。
+notify:
+  enabled: false
+  channel: telegram
+  include_ai_summary: true
+  include_top_links: true
+tags: [preset, finance, markets]
