@@ -176,7 +176,8 @@ def test_public_docs_changes_do_not_force_pages_sync() -> None:
     assert "docs_alignment" not in command_ids
 
 
-def test_strict_mode_executes_commands_in_plan_order(tmp_path: Path) -> None:
+def test_strict_mode_executes_commands_in_plan_order(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("ALCOVE_AGENT_QUALITY_GATE_RUNNING", raising=False)
     plan = build_gate_plan(
         changed_files=("src/alcove/ai_eval.py",),
         mode="strict",
@@ -192,6 +193,16 @@ def test_strict_mode_executes_commands_in_plan_order(tmp_path: Path) -> None:
     assert execute_plan(plan, repo_root=tmp_path, runner=runner) == 0
     assert seen == [command.id for command in plan.commands]
     assert hook_response(plan, exit_code=0)["continue"] is True
+
+
+def test_project_hooks_default_to_strict_mode() -> None:
+    codex_config = Path(".codex/config.toml").read_text(encoding="utf-8")
+    claude_settings = Path(".claude/settings.json").read_text(encoding="utf-8")
+
+    assert "${ALCOVE_AGENT_GATE_MODE:-strict}" in codex_config
+    assert "${ALCOVE_AGENT_GATE_MODE:-strict}" in claude_settings
+    assert "${ALCOVE_AGENT_GATE_MODE:-coach}" not in codex_config
+    assert "${ALCOVE_AGENT_GATE_MODE:-coach}" not in claude_settings
 
 
 def test_strict_hook_response_blocks_on_failure() -> None:

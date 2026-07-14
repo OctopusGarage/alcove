@@ -28,10 +28,10 @@ scripts/check.sh
 ## Agent Quality Gate
 
 - Claude Code project hooks are configured in `.claude/settings.json`.
-- The `Stop` hook runs `scripts/agent-quality-gate.sh` in coach mode by default.
-- Coach mode reports required smoke/eval commands without blocking the turn.
-- Set `ALCOVE_AGENT_GATE_MODE=strict` to execute and enforce the selected
-  checks automatically.
+- The `Stop` hook runs `scripts/agent-quality-gate.sh` in strict mode by
+  default, executing and enforcing the selected checks automatically.
+- Set `ALCOVE_AGENT_GATE_MODE=coach` to report required smoke/eval commands
+  without blocking the turn.
 - See `docs/evals/agent-quality-gates.md` before changing hook, command,
   subagent, skill, AI eval, MCP routing, search, inbox, dashboard, or
   verification behavior.

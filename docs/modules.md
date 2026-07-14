@@ -46,7 +46,7 @@ Storage ownership summary:
 ├── agent workspace registry       hub and lightweight business workspaces
 ├── derived/search state           mounts, connectors, dashboard, stats
 ├── operational state              service logs, watcher/blog/radar runs
-├── publisher state                definitions, renders, target note ids
+├── publisher state                definitions, dirty triggers, renders, target note ids
 └── managed KB registry            pointers to user-chosen KB roots
 
 <managed-kb-root>
@@ -334,6 +334,7 @@ launchd
 - check monitored blog sources,
 - run enabled scheduled radars,
 - run due user automation jobs,
+- run due or dirty publishers,
 - refresh mounted knowledge indexes when their two-day maintenance window is due,
 - rebuild the global OKF catalog,
 - run health repair,

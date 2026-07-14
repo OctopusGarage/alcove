@@ -17,8 +17,9 @@ Agent quality gates are intentionally layered and scoped:
    updated only when the global overview would otherwise drift.
 4. Entry-mode impact checks keep Hub, managed-KB, global MCP, CLI, service, and
    dashboard behavior from drifting when new features are added.
-5. Hooks run in coach mode by default so everyday agent work is not blocked by
-   expensive evals. Strict mode is available for release work or risky changes.
+5. Hooks run in strict mode by default so verification-sensitive changes execute
+   and enforce their selected checks automatically. Coach mode is available as
+   an explicit override when an operator wants an advisory plan without blocking.
    When strict mode fails, the hook returns a `decision: "block"` response so
    Codex or Claude Code continues with the failure reason instead of silently
    finishing the turn.
@@ -47,22 +48,22 @@ Claude Code project hook:
 .claude/settings.json
 ```
 
-Both hooks run on `Stop` and call the same gate script. They default to coach
+Both hooks run on `Stop` and call the same gate script. They default to strict
 mode:
-
-```sh
-ALCOVE_AGENT_GATE_MODE=coach
-```
-
-Coach mode returns a hook message with the required commands but does not block
-the agent. To enforce the gate automatically:
 
 ```sh
 ALCOVE_AGENT_GATE_MODE=strict
 ```
 
 Strict mode runs the required checks and returns a blocking hook response if a
-check fails. The hook sets a recursion guard so nested model-review calls do not
+check fails. To get an advisory plan without blocking the agent:
+
+```sh
+ALCOVE_AGENT_GATE_MODE=coach
+```
+
+Coach mode returns a hook message with the required commands but does not block
+the agent. The hook sets a recursion guard so nested model-review calls do not
 re-enter the gate.
 
 See [Agent AI Eval Guardrails](agent-ai-eval-guardrails.md) for the source
@@ -111,9 +112,10 @@ Check a specific diff, as CI does:
 scripts/check-docs-drift.sh src/alcove/agent_workspaces.py docs/workspaces.md
 ```
 
-Project Health runs this in coach mode and emits a GitHub Actions warning
-instead of failing the build. Local strict runs of `scripts/check-docs-drift.sh`
-still exit non-zero when a user-visible source change lacks related docs.
+Project hooks run the gate in strict mode by default. Project Health can still
+run this as an advisory check and emit a GitHub Actions warning instead of
+failing the build. Local strict runs of `scripts/check-docs-drift.sh` still exit
+non-zero when a user-visible source change lacks related docs.
 
 ## Entry-Mode Impact Guard
 
@@ -231,7 +233,8 @@ scripts/agent-quality-gate.sh \
 
 ## Contract
 
-- Default hook behavior must stay coach mode unless the caller opts into strict.
+- Default project hook behavior must stay strict unless the caller explicitly
+  opts into coach mode.
 - Hook output must be valid JSON when `--hook-json` is used.
 - Strict hook failures must return `decision: "block"` with an actionable
   `reason`, allowing Codex/Claude to continue the repair loop from the failed

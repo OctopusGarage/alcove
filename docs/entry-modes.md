@@ -243,6 +243,11 @@ alcove global install
 alcove global install --default-kb social_media_posts
 ```
 
+It also initializes the default Apple Notes publisher and installs the scheduler
+LaunchAgent. The generated Notes remain readable mirrors; background publishing
+runs when the scheduler's `alcove service tick` determines the publisher is due
+by TTL or by an Alcove write marking a mirrored source dirty.
+
 `lite` keeps the exposed MCP surface small:
 
 - command hints for CLI-only workflows such as blog monitoring, radars,

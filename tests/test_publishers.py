@@ -5,6 +5,7 @@ import json
 import pytest
 import yaml
 
+from alcove.application import AlcoveApplication
 from alcove.cli import main
 from alcove.home import AlcoveHome
 from alcove.pins import AddPinRequest, PinsModule
@@ -18,6 +19,7 @@ from alcove.publishers import (
     _markdown_as_html,
     render_pins_digest,
 )
+from alcove.runtime import AlcoveRuntime
 from alcove.service import ServiceModule
 from alcove.tasks import AddIdeaRequest, AddRoutineRequest, AddTaskRequest, TasksModule
 
@@ -119,6 +121,33 @@ def test_default_apple_notes_publisher_writes_pin_notes_and_skips_unchanged(tmp_
     assert (home.root / "publishers/renders/pins_regular.md").is_file()
     assert (home.root / "publishers/renders/planner_digest.md").is_file()
     assert list((home.root / "publishers/runs").glob("*apple-notes.json"))
+
+
+def test_alcove_memory_write_triggers_due_publisher_before_ttl(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    target = FakeAppleNotesTarget()
+    module = PublisherModule(home, target_factory=lambda _definition: target)
+    module.init_apple_notes(root_folder="iCloud/Alcove")
+    module.run_due(timestamp="2026-07-12T08:00:00+00:00")
+    target.replacements.clear()
+
+    not_due = module.run_due(timestamp="2026-07-12T09:00:00+00:00")
+    app = AlcoveApplication(AlcoveRuntime.resolve(home=home.root))
+    app.global_home.pin_add_payload(
+        AddPinRequest(title="Event Triggered Pin", content="Dirty publisher source.")
+    )
+    dirty_run = module.run_due(timestamp="2026-07-12T09:01:00+00:00")
+    after_clean = module.run_due(timestamp="2026-07-12T09:02:00+00:00")
+
+    assert not_due["ran"] == 0
+    assert not_due["publishers"][0]["reason"] == "not_due"
+    assert dirty_run["ran"] == 1
+    assert dirty_run["updated"] == 1
+    assert dirty_run["publishers"][0]["due_reason"] == "dirty"
+    assert dirty_run["publishers"][0]["dirty_sources"] == ["pins"]
+    assert any("Event Triggered Pin" in item["body"] for item in target.replacements)
+    assert after_clean["ran"] == 0
+    assert after_clean["publishers"][0]["reason"] == "not_due"
 
 
 def test_apple_notes_init_merges_missing_default_targets_without_overwriting(tmp_path):

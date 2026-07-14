@@ -119,6 +119,7 @@ Publisher state is Alcove-owned operational data:
 ~/.alcove/publishers/
 ├── definitions/*.yml          publisher definitions
 ├── state/*.yml                external target identity and content hashes
+├── dirty.yml                  source-change triggers for next scheduler tick
 ├── renders/*.md               latest rendered outbound documents
 ├── runs/*.json                per-run audit records
 └── events.jsonl               publisher run events
@@ -134,6 +135,12 @@ pins, todo pins, planner digest, prompt library, and project registry. Pin note
 content is preserved in full and formatted with outlines and section spacing.
 High-volume knowledge bases, connector indexes, mount indexes, radar archives,
 and operational logs remain in Alcove rather than being copied into Notes.
+
+Publisher runs are TTL-based and event-triggered. The default Apple Notes
+definition is due after 24 hours, and Alcove writes to mirrored sources mark the
+publisher dirty in `publishers/dirty.yml`. The next `alcove service tick` runs
+the dirty publisher even before TTL expiry, compares content hashes, updates
+changed Notes, and clears the dirty marker after a successful run.
 
 Usage logs are local operational data. Search events store query length, result
 count, filters, surface, outcome, and a local salted query hash. Raw query text

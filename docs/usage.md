@@ -81,6 +81,9 @@ alcove kb install research_notes --status --json
 - `alcove global install`: lightweight MCP access from unrelated projects.
   It writes a `lite` MCP toolset by default; add `--default-kb <kb>` when
   global chats should be able to save pasted notes into a managed KB inbox.
+  It also initializes the default Apple Notes publisher and installs the
+  scheduler LaunchAgent so due publisher runs happen in the background through
+  `alcove service tick`.
 - `alcove kb install`: managed-KB workflow files, Claude slash commands, and
   Claude/Codex skills for inbox review, notes search, social post processing,
   and Clipsmith capture handoff.
@@ -262,6 +265,10 @@ Initialize the default Apple Notes publisher:
 alcove publish init apple-notes --home ~/.alcove --root-folder "iCloud/Alcove" --json
 ```
 
+`alcove global install` performs this initialization by default and installs
+the scheduler LaunchAgent for background due-publisher runs. Use the explicit
+`publish init` command to repair or customize the publisher definition.
+
 This creates five generated notes:
 
 ```text
@@ -307,6 +314,10 @@ connectors, radar archives, automations, logs, and usage records should stay in
 Alcove and be accessed through dashboard, search, CLI, or MCP.
 
 The local scheduler also runs due publishers during `alcove service tick`.
+Default publisher definitions have a 24-hour TTL, but Alcove writes to mirrored
+sources such as pins, tasks, prompts, and projects mark the Apple Notes
+publisher dirty. The next scheduler tick can re-export that changed source
+before the TTL expires, then clears the dirty marker after a successful run.
 Use `alcove service tick --skip-publishers --json` to skip this part of a manual
 maintenance run.
 

@@ -3,9 +3,18 @@ from __future__ import annotations
 from typing import Any
 
 from alcove.capability_payloads import CapabilityPayloadPresenter
+from alcove.publisher_dirty import mark_publisher_source_dirty
 from alcove.runtime import AlcoveRuntime
 from alcove.usage import UsageRecorder
 from alcove.write_contracts import write_contract
+
+
+_PUBLISHER_SOURCES_BY_WRITE_AREA = {
+    "pin": "pins",
+    "prompt": "prompts",
+    "project": "projects",
+    "task": "tasks",
+}
 
 
 class _Capability:
@@ -48,6 +57,7 @@ class _Capability:
     ) -> dict[str, Any]:
         if "write_contract" in payload:
             return payload
+        self._mark_publisher_dirty(area=area, confirmation_required=confirmation_required)
         return {
             **payload,
             "write_contract": write_contract(
@@ -59,3 +69,14 @@ class _Capability:
                 post_write_checks=post_write_checks,
             ),
         }
+
+    def _mark_publisher_dirty(self, *, area: str, confirmation_required: bool) -> None:
+        if confirmation_required or self.runtime.home is None:
+            return
+        source = _PUBLISHER_SOURCES_BY_WRITE_AREA.get(area)
+        if source is None:
+            return
+        try:
+            mark_publisher_source_dirty(self.runtime.home, source)
+        except OSError:
+            return

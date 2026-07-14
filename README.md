@@ -178,7 +178,7 @@ Entry profiles:
 | --- | --- |
 | Hub workspace | Main AI workspace for broad personal knowledge work. |
 | Business workspace | Lightweight family/work/travel-style agent scene under the Hub concept. |
-| Global MCP | Lightweight search/save access from unrelated projects. |
+| Global MCP | Lightweight search/save access from unrelated projects plus default background Apple Notes publishing. |
 | Managed KB workspace | Focused capture, inbox review, and OKF note workflows. |
 | Local service | launchd dashboard server and deterministic scheduler ticks. |
 
@@ -256,9 +256,17 @@ alcove blog check --stale --json
 ```sh
 alcove dashboard --home ~/.alcove build
 alcove serve --dashboard --home ~/.alcove --port 8765
+alcove global install --default-kb research_notes
 alcove publish init apple-notes --root-folder "iCloud/Alcove" --json
 alcove publish run apple-notes --json
 ```
+
+`alcove global install` initializes the default Apple Notes publisher and
+installs the scheduler LaunchAgent so due publisher runs happen through
+background `alcove service tick`. Alcove writes to mirrored sources mark the
+publisher dirty, so the next scheduler tick can re-export changed Notes before
+the normal 24-hour TTL. Use `alcove publish run apple-notes` when an immediate
+manual sync is needed.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

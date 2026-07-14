@@ -32,10 +32,10 @@ scripts/check.sh
 Agent quality gate:
 
 - Codex project hooks are configured in `.codex/config.toml`.
-- Hooks run `scripts/agent-quality-gate.sh` on `Stop` in coach mode by default.
-- Coach mode reports required smoke/eval commands without blocking the turn.
-- Set `ALCOVE_AGENT_GATE_MODE=strict` to execute and enforce the selected
-  checks automatically.
+- Hooks run `scripts/agent-quality-gate.sh` on `Stop` in strict mode by default,
+  executing and enforcing the selected checks automatically.
+- Set `ALCOVE_AGENT_GATE_MODE=coach` to report required smoke/eval commands
+  without blocking the turn.
 - See `docs/evals/agent-quality-gates.md` before changing hook, prompt, skill,
   AI eval, MCP routing, search, inbox, dashboard, or verification behavior.
 - Keep implementation and docs aligned in the same change. When code changes

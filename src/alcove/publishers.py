@@ -19,6 +19,10 @@ from alcove.paths import compact_user_path
 from alcove.pins import PinsModule
 from alcove.projects import ProjectsModule
 from alcove.prompts import PromptsModule
+from alcove.publisher_dirty import (
+    clear_publisher_dirty_sources,
+    dirty_sources_for_publisher,
+)
 from alcove.publisher_rendering import (
     content_hash as _content_hash,
     markdown_as_apple_notes_html as _markdown_as_html,
@@ -362,13 +366,19 @@ class PublisherModule:
                     {"publisher": definition.id, "status": "skipped", "reason": "inactive"}
                 )
                 continue
-            if not self._is_due(definition, timestamp):
+            dirty_sources = self._dirty_sources(definition)
+            if not self._is_due(definition, timestamp) and not dirty_sources:
                 skipped += 1
                 results.append(
                     {"publisher": definition.id, "status": "skipped", "reason": "not_due"}
                 )
                 continue
             result = self.run(definition.id, timestamp=timestamp)
+            if dirty_sources:
+                result["due_reason"] = "dirty"
+                result["dirty_sources"] = sorted(dirty_sources)
+                if int(result.get("errors") or 0) == 0:
+                    clear_publisher_dirty_sources(self.home, definition.id, dirty_sources)
             ran += 1
             updated += int(result.get("updated") or 0)
             errors += int(result.get("errors") or 0)
@@ -618,6 +628,10 @@ class PublisherModule:
             return True
         delta = current - latest_at
         return delta.total_seconds() >= max(definition.schedule.ttl_hours, 1) * 3600
+
+    def _dirty_sources(self, definition: PublisherDefinition) -> set[str]:
+        sources = {target.source.module for target in definition.targets if target.source.module}
+        return dirty_sources_for_publisher(self.home, definition.id, sources)
 
     def _definition_from_dict(self, payload: dict[str, Any]) -> PublisherDefinition:
         schedule = payload.get("schedule") if isinstance(payload.get("schedule"), dict) else {}
@@ -885,11 +899,23 @@ function folderPathParts(path) {{
 
 function scanFolderNotes(folder, accountName, parentPath, out) {{
   const folderPath = parentPath ? `${{parentPath}}/${{folder.name()}}` : `${{accountName}}/${{folder.name()}}`;
-  for (const note of folder.notes()) {{
-    out.push({{ note, folderPath }});
+  try {{
+    for (const note of folder.notes()) {{
+      out.push({{ note, folderPath }});
+    }}
+  }} catch (error) {{
   }}
-  for (const child of folder.folders()) {{
-    scanFolderNotes(child, accountName, folderPath, out);
+  let children = [];
+  try {{
+    children = folder.folders();
+  }} catch (error) {{
+    children = [];
+  }}
+  for (const child of children) {{
+    try {{
+      scanFolderNotes(child, accountName, folderPath, out);
+    }} catch (error) {{
+    }}
   }}
 }}
 

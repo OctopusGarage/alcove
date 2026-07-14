@@ -18,6 +18,7 @@ from alcove.dashboard import DashboardModule
 from alcove.home import AlcoveHome
 from alcove.mounts import MountsModule
 from alcove.paths import compact_user_path
+from alcove.publisher_dirty import mark_publisher_source_dirty
 from alcove.publishers import PublisherModule
 from alcove.radars import RadarModule
 from alcove.runtime import AlcoveRuntime
@@ -139,6 +140,8 @@ class ServiceModule:
         usage = UsageRecorder(self.home)
         task_module = TasksModule(home=self.home)
         tasks = task_module.routine_materialize_due(today=today or None)
+        if tasks:
+            mark_publisher_source_dirty(self.home, "tasks")
         task_notifications = task_module.run_due_notifications(today=today or None)
         connector_payload = (
             app.external.connector_refresh_payload(stale_only=True)
