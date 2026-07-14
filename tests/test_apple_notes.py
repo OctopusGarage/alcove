@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from alcove.connector_sources import ConnectorSourceRegistry
 from alcove.connectors.fetch import ConnectorFetchModule
 from alcove.connectors.apple_notes import (
@@ -350,6 +352,87 @@ def test_apple_notes_import_local_exports_indexes_and_registers_source(tmp_path)
     assert source_doc.frontmatter["schema"] == "okf/connector-source/v1"
     assert source_doc.frontmatter["source_id"] == "local"
     assert source_doc.frontmatter["item_count"] == 1
+
+
+def test_local_apple_notes_exporter_keeps_partial_export_when_automation_warns(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    from alcove.connectors import apple_notes
+    from alcove.connectors.apple_notes import LocalAppleNotesExporter
+
+    exporter = LocalAppleNotesExporter()
+    monkeypatch.setattr(apple_notes.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(
+        exporter,
+        "_run_jxa",
+        lambda: {
+            "ok": True,
+            "data": {
+                "notes": [
+                    {
+                        "id": "x-coredata://note-good",
+                        "title": "Good Note",
+                        "account": "iCloud",
+                        "folder_path": "iCloud/Ideas",
+                        "created_at": "2026-07-07T08:00:00Z",
+                        "updated_at": "2026-07-08T09:00:00Z",
+                        "plaintext": "Good note body.",
+                        "body_html": "<div>Good note body.</div>",
+                    },
+                    {"title": "Missing id"},
+                ],
+                "warnings": [
+                    {
+                        "context": "iCloud/IT作文",
+                        "stage": "folder.name",
+                        "error": "Can't get object.",
+                    }
+                ],
+            },
+        },
+    )
+
+    summary = exporter.export_all(tmp_path / "export")
+
+    assert summary["note_count"] == 1
+    assert summary["automation_warning_count"] == 1
+    assert summary["automation_warnings"][0]["stage"] == "folder.name"
+    manifest = json.loads((tmp_path / "export" / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["note_ids"] == ["x-coredata://note-good"]
+
+
+def test_apple_notes_export_tree_dedupes_duplicate_note_ids(tmp_path):
+    output_dir = tmp_path / "export"
+
+    summary = write_apple_notes_export_tree(
+        [
+            {
+                "id": "x-coredata://note-duplicate",
+                "title": "First Title",
+                "account": "iCloud",
+                "folder_path": "iCloud/Ideas",
+                "plaintext": "First body.",
+            },
+            {
+                "id": "x-coredata://note-duplicate",
+                "title": "Second Title",
+                "account": "iCloud",
+                "folder_path": "iCloud/Ideas",
+                "plaintext": "Second body.",
+            },
+        ],
+        output_dir,
+    )
+
+    manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    note_json_paths = sorted((output_dir / "notes").glob("*/note.json"))
+    note = json.loads(note_json_paths[0].read_text(encoding="utf-8"))
+    assert summary["note_count"] == 1
+    assert summary["duplicate_input_count"] == 1
+    assert summary["duplicate_ids"] == ["x-coredata://note-duplicate"]
+    assert manifest["note_count"] == 1
+    assert len(note_json_paths) == 1
+    assert note["title"] == "Second Title"
 
 
 def test_apple_notes_refresh_registered_source_updates_export_and_index(tmp_path):

@@ -8,10 +8,15 @@ local service is deterministic background infrastructure.
 ```text
 Alcove Home (~/.alcove)
 ├── Hub workspace                 strong skill + CLI routing, broad daily work
+│   └── Business workspaces        lightweight scene-specific AI directories
 ├── Global MCP                    lightweight tools from unrelated projects
 ├── Managed KB workspace          KB-scoped skills, inbox, OKF notes, capture
 └── Local service                 launchd dashboard + deterministic maintenance
 ```
+
+Business workspaces do not add a fourth top-level entry mode. They are a
+lightweight workspace type managed by the Hub entry for family, work, travel,
+stock, or other user-defined scenes.
 
 ## Design Principles
 
@@ -103,6 +108,13 @@ alcove hub init ~/AlcoveHub --default-kb social_media_posts
 alcove hub install ~/AlcoveHub --default-kb social_media_posts
 ```
 
+The fixed default Hub can also be initialized through the generic workspace
+surface:
+
+```sh
+alcove workspace init hub --default-kb social_media_posts
+```
+
 Install modes:
 
 - Default copy mode writes generated skills and commands as normal files. This
@@ -136,6 +148,88 @@ MCP server is desired for hub-only sessions, use the full toolset explicitly:
 ```sh
 alcove serve --mcp --toolset full
 ```
+
+### Business Workspaces
+
+Business workspaces are lightweight directories under the Hub concept. They
+carry scene-specific agent context without exposing the full Hub control
+surface by default.
+
+Use them for:
+
+- family, work, travel, finance, learning, or other recurring business scenes,
+- scoped search across preferred KBs, tags, and modules,
+- saving scene-local OKF notes and imported files through `workspace okf`,
+- saving pins, tasks, ideas, and prompt recommendations with the workspace tag,
+- one-shot agent runs that should inherit a scene's `AGENTS.md`, `CLAUDE.md`,
+  and project skill.
+
+Do not use them as system control surfaces. Installing entries, changing global
+MCP, service control, export/backup, connector or mount administration, radar
+definition changes, publisher configuration, and health fixes belong in the
+Hub unless the user explicitly authorizes a command.
+
+Default storage:
+
+```text
+~/.alcove/workspaces/
+├── hub.yml
+├── family.yml
+├── work.yml
+└── data/
+    ├── hub/
+    ├── family/
+    └── work/
+```
+
+Workspace-local OKF:
+
+```text
+~/.alcove/workspaces/data/family/
+├── documents/          raw family-owned files
+└── okf/                managed KB store registered as `family`
+```
+
+Use `alcove workspace okf init family --json` to create and bind the local OKF
+store. After that, workspace agents should use `alcove workspace okf add-note`,
+`import-file`, and `search` for scene-local knowledge before expanding to
+Home-wide search.
+
+If `--path` is omitted, `alcove workspace init <id>` creates the agent entry
+directory at `~/.alcove/workspaces/data/<id>/`. If `--path` is provided, the
+registry still lives under `~/.alcove/workspaces/<id>.yml`, but the agent entry
+files are installed in the chosen directory.
+
+Common commands:
+
+```sh
+alcove workspace init family --default-kb social_media_posts --tag family
+alcove workspace init work --path ~/WorkHub --default-kb work_notes
+alcove workspace list --json
+alcove workspace status family --json
+alcove workspace install family --target all --link
+alcove workspace run family --agent codex "整理家庭相关任务" --json
+```
+
+Long-running interactive sessions should start in the workspace directory:
+
+```sh
+cd ~/.alcove/workspaces/data/family
+codex
+# or
+claude
+```
+
+One-shot runs use the workspace as the agent working directory:
+
+```text
+codex exec -C <workspace-path> ...
+cd <workspace-path> && claude -p ...
+```
+
+The generated lightweight `alcove-workspace` skill reads
+`.alcove-workspace.yml`, starts with configured scope, preserves workspace tags
+on writes, and routes Hub-only administration back to the Hub.
 
 ## Global MCP
 

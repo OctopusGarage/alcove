@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from alcove import __version__
+from alcove.cli_publish_parser import add_publish_parser
 from alcove.cli_registry import CliDispatchContext, dispatch_cli_command
+from alcove.cli_workspace_parser import add_workspace_parser
 from alcove.errors import AlcoveError, WorkspaceNotFoundError
 from alcove.runtime import AlcoveRuntime
 from alcove.workspace import Workspace
@@ -90,6 +92,8 @@ def build_parser() -> argparse.ArgumentParser:
     hub_install.add_argument("--status", action="store_true")
     hub_install.add_argument("--json", action="store_true")
 
+    add_workspace_parser(sub)
+
     global_cmd = sub.add_parser("global", help="Install lightweight global Alcove access")
     global_sub = global_cmd.add_subparsers(dest="global_command", required=True)
     global_install = global_sub.add_parser("install", help="Install global-lite MCP")
@@ -165,24 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
     service_tick.add_argument("--today", default="")
     service_tick.add_argument("--json", action="store_true")
 
-    publish = sub.add_parser("publish", help="Publish Alcove module views to external targets")
-    publish.add_argument("--home")
-    publish_sub = publish.add_subparsers(dest="publish_command", required=True)
-    publish_init = publish_sub.add_parser("init", help="Initialize a publisher definition")
-    publish_init.add_argument("--home", default=argparse.SUPPRESS)
-    publish_init.add_argument("publisher")
-    publish_init.add_argument("--root-folder", default="iCloud/Alcove")
-    publish_init.add_argument("--json", action="store_true")
-    publish_list = publish_sub.add_parser("list", help="List publisher definitions")
-    publish_list.add_argument("--home", default=argparse.SUPPRESS)
-    publish_list.add_argument("--status", default="active")
-    publish_list.add_argument("--json", action="store_true")
-    publish_run = publish_sub.add_parser("run", help="Run a publisher")
-    publish_run.add_argument("--home", default=argparse.SUPPRESS)
-    publish_run.add_argument("publisher")
-    publish_run.add_argument("--target", default="")
-    publish_run.add_argument("--force", action="store_true")
-    publish_run.add_argument("--json", action="store_true")
+    add_publish_parser(sub)
 
     automation = sub.add_parser("automation", help="Manage local user automation jobs")
     automation.add_argument("--home")

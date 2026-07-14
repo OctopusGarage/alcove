@@ -15,6 +15,37 @@ def command_hints_tool(
     workspace_hint = compact_user_path(workspace) if workspace else "<managed-kb>"
     workflows = [
         {
+            "id": "agent_workspaces",
+            "title": "Agent workspaces",
+            "surface": "cli",
+            "intent": "Create, inspect, or run Hub-managed lightweight business workspaces.",
+            "commands": [
+                f"alcove workspace list --home {home_hint} --json",
+                f"alcove workspace status --home {home_hint} <workspace-id> --json",
+                f'alcove workspace run --home {home_hint} <workspace-id> --agent codex "prompt" --json',
+            ],
+            "notes": [
+                "Hub remains the control workspace; custom workspaces are lightweight scene entries.",
+                "Use one-shot runs for scoped work, or open Codex/Claude from the workspace directory.",
+            ],
+        },
+        {
+            "id": "workspace_okf",
+            "title": "Workspace-local OKF",
+            "surface": "cli",
+            "intent": "Initialize, write, import, and search scene-local workspace knowledge.",
+            "commands": [
+                f"alcove workspace okf init --home {home_hint} <workspace-id> --json",
+                f'alcove workspace okf add-note --home {home_hint} <workspace-id> <domain/topic> "Title" --summary "..." --json',
+                f"alcove workspace okf import-file --home {home_hint} <workspace-id> ./documents/file.md --topic <domain/topic> --json",
+                f'alcove workspace okf search --home {home_hint} <workspace-id> "query" --json',
+            ],
+            "notes": [
+                "Use this inside business workspaces for documents, notes, and scene-local recall.",
+                "The implementation reuses managed-KB OKF storage while keeping the workspace command surface simple.",
+            ],
+        },
+        {
             "id": "blog_monitor",
             "title": "Blog monitoring",
             "surface": "cli",

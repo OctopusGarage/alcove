@@ -26,6 +26,9 @@ Alcove Modules
 ├── Observation and Publishing
 │   ├── Dashboard                 local browser console
 │   └── Apple Notes Publisher     readable mirrors for selected modules
+├── Agent Workspaces
+│   ├── Hub                       full control workspace
+│   └── Business Workspaces       lightweight scene-specific agent entries
 ├── Background Runtime
 │   └── Local Service             launchd dashboard + scheduler ticks
 └── Operations
@@ -40,6 +43,7 @@ Storage ownership summary:
 ```text
 ~/.alcove
 ├── global module data            pins, tasks, prompts, projects
+├── agent workspace registry       hub and lightweight business workspaces
 ├── derived/search state           mounts, connectors, dashboard, stats
 ├── operational state              service logs, watcher/blog/radar runs
 ├── publisher state                definitions, renders, target note ids
@@ -142,6 +146,38 @@ alcove pin --home ~/.alcove render-html
 Projects are global aliases for local project paths. They are stored under
 `~/.alcove/projects/projects.json`, can scan configured roots, and participate
 in global search as `Project` rows.
+
+## Agent Workspaces
+
+Agent workspaces are conversation directories. They install project-local
+`AGENTS.md`, `CLAUDE.md`, and skills so Codex or Claude Code inherit the right
+scene rules when launched from that directory. Business workspaces can also own
+a workspace-local OKF store for scene documents and notes.
+
+```text
+~/.alcove/workspaces/
+├── hub.yml                       fixed Hub control workspace registry
+├── <id>.yml                      custom business workspace registry
+└── data/<id>/                    default entry directory when --path omitted
+    ├── .alcove-workspace.yml
+    ├── documents/                optional workspace-local source files
+    ├── okf/                      optional managed KB root for workspace OKF
+    ├── AGENTS.md
+    ├── CLAUDE.md
+    ├── .agents/skills/alcove-workspace/SKILL.md
+    └── .claude/skills/alcove-workspace/SKILL.md
+```
+
+`hub` is special and uses the full `alcove-hub` profile. Other workspace ids use
+the lightweight `alcove-workspace` profile: scoped search, scene-local notes,
+pins, tasks, ideas, and prompt reuse. Hub-only administration remains in the
+Hub unless explicitly authorized.
+
+Workspace-local OKF is managed through `alcove workspace okf ...`. The command
+creates `documents/`, initializes `okf/` with the same managed-KB layout used by
+regular knowledge bases, registers it under `~/.alcove/knowledge-bases/`, and
+updates workspace `default_kb`. This keeps the user-facing workspace workflow
+simple while reusing OKF validation, search, and index behavior.
 
 ## Prompts
 

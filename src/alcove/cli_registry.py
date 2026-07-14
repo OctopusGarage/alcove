@@ -43,6 +43,7 @@ from alcove.cli_system import (
     handle_validate_command,
 )
 from alcove.cli_usage import handle_usage_command
+from alcove.cli_workspaces import handle_workspace_command
 from alcove.runtime import AlcoveRuntime
 from alcove.workspace import Workspace
 
@@ -157,6 +158,10 @@ def _radar(args: argparse.Namespace, context: CliDispatchContext) -> int:
 
 def _hub(args: argparse.Namespace, context: CliDispatchContext) -> int:
     return handle_hub_command(args, context.parser, argument_error=context.argument_error)
+
+
+def _workspace(args: argparse.Namespace, context: CliDispatchContext) -> int:
+    return handle_workspace_command(args, context.parser, argument_error=context.argument_error)
 
 
 def _global(args: argparse.Namespace, context: CliDispatchContext) -> int:
@@ -347,6 +352,7 @@ _COMMANDS: dict[str, CommandHandler] = {
     "blog": _blog,
     "radar": _radar,
     "hub": _hub,
+    "workspace": _workspace,
     "global": _global,
     "kb": _kb,
     "inbox": _inbox,

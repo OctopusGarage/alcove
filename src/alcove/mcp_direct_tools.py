@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from alcove.application import AlcoveApplication
@@ -14,12 +15,49 @@ from alcove.search import SearchRequest
 from alcove.tasks import AddRoutineRequest, AddTaskRequest
 
 
+@dataclass(frozen=True)
+class McpDirectToolRuntime:
+    """Context-aware runtime seam for direct MCP helper calls in tests and adapters."""
+
+    context: McpInvocationContext
+
+    @classmethod
+    def from_defaults(
+        cls,
+        *,
+        default_workspace: str | None = None,
+        default_home: str | None = None,
+    ) -> "McpDirectToolRuntime":
+        return cls(McpInvocationContext(default_workspace, default_home))
+
+    def app(self, workspace: str = "", home: str = "") -> AlcoveApplication:
+        return self.context.scoped_app(workspace, home)
+
+    def managed_app(self, workspace: str = "") -> AlcoveApplication:
+        return self.context.managed_app(workspace)
+
+
+DEFAULT_DIRECT_TOOL_RUNTIME = McpDirectToolRuntime.from_defaults()
+
+
 def _app(workspace: str = "", home: str = "") -> AlcoveApplication:
-    return McpInvocationContext().app(workspace, home)
+    return DEFAULT_DIRECT_TOOL_RUNTIME.app(workspace, home)
 
 
 def _managed_app(workspace: str = "") -> AlcoveApplication:
-    return McpInvocationContext().managed_app(workspace)
+    return DEFAULT_DIRECT_TOOL_RUNTIME.managed_app(workspace)
+
+
+def direct_tool_runtime(
+    *,
+    default_workspace: str | None = None,
+    default_home: str | None = None,
+) -> McpDirectToolRuntime:
+    """Create a context-bound runtime for tests or custom MCP adapters."""
+    return McpDirectToolRuntime.from_defaults(
+        default_workspace=default_workspace,
+        default_home=default_home,
+    )
 
 
 def search_tool(

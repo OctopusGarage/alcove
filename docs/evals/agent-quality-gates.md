@@ -13,7 +13,8 @@ Agent quality gates are intentionally layered and scoped:
    agent judgement: summarization usefulness, routing quality, prompt quality,
    dashboard usefulness, and whether useful evidence is hidden.
 3. Documentation drift checks catch user-visible implementation changes that
-   did not update related docs.
+   did not update related docs. Public GitHub Pages is reviewed separately and
+   updated only when the global overview would otherwise drift.
 4. Entry-mode impact checks keep Hub, managed-KB, global MCP, CLI, service, and
    dashboard behavior from drifting when new features are added.
 5. Hooks run in coach mode by default so everyday agent work is not blocked by
@@ -78,7 +79,9 @@ Alcove uses a layered documentation guard:
 - `$alcove-doc-sync` and `/alcove-doc-sync` provide the reusable doc-sync
   checklist.
 - `scripts/check-docs-drift.sh` and the shared quality gate detect
-  documentation-sensitive source changes without a related docs update.
+  documentation-sensitive source changes without a related docs update. The
+  doc-sync rules also require a Pages review for public-facing changes, but the
+  guard does not force `site/index.html` for every feature.
 
 Codex "rules" are intentionally not used for documentation guidance. In Codex,
 rules control which commands may run outside the sandbox; project behavior
@@ -89,11 +92,28 @@ The docs drift guard triggers when source files under `src/alcove/`,
 areas without a related change under `docs/`, `README.md`, `AGENTS.md`,
 `CLAUDE.md`, `.agents/`, or `.claude/`.
 
+The Pages review rule is intentionally judgement-based. Check
+`site/index.html` when public overview docs, entry modes, workspaces,
+MCP/CLI routing, publishing, dashboard, install, or top-level module
+relationships change. Update it only when the public overview at
+<https://octopusgarage.github.io/alcove/> would become misleading. Detailed
+feature flows belong in `docs/`, not on the landing page.
+
 Manual check:
 
 ```sh
 scripts/check-docs-drift.sh
 ```
+
+Check a specific diff, as CI does:
+
+```sh
+scripts/check-docs-drift.sh src/alcove/agent_workspaces.py docs/workspaces.md
+```
+
+Project Health runs this in coach mode and emits a GitHub Actions warning
+instead of failing the build. Local strict runs of `scripts/check-docs-drift.sh`
+still exit non-zero when a user-visible source change lacks related docs.
 
 ## Entry-Mode Impact Guard
 
@@ -165,7 +185,8 @@ All matched changes require `scripts/smoke.sh` and `scripts/check.sh`.
 
 Additional focused checks are selected by file area:
 
-- Documentation-sensitive source changes without related docs:
+- Documentation-sensitive source changes without related docs or required Pages
+  sync:
   `scripts/check-docs-drift.sh`
 - Agent entry/profile changes: `scripts/smoke-agent-clients.sh`
 - MCP/CLI/search changes: `scripts/smoke-mcp-matrix.sh`

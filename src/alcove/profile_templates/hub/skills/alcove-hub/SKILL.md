@@ -24,6 +24,7 @@ This is the high-level router for Alcove. Decide the storage target before writi
 - blog monitoring, scheduled article checks, failure alerts, or phrases such as
   监控博客更新 / 检查博客文章有没有更新: `blog monitor`.
 - information radar, daily briefing, 技术雷达, 新闻雷达, 股票雷达, 体育资讯: `radar`.
+- business-scoped conversation such as 家庭 workspace, 工作 workspace, travel workspace, or 场景工作区: use `workspace` to find or enter that lightweight business workspace.
 - Alcove feature work, maintenance, refactoring, docs alignment, tests, or
   phrases such as 优化 Alcove / 新增功能 / 修这个项目: route to the registered
   project/worktree, then apply that project's engineering rules. Do not save the
@@ -187,6 +188,9 @@ alcove radar status <radar-id> --json
 alcove radar run <radar-id> --json
 alcove radar run <radar-id> --force --ai --notify --json
 alcove radar run <radar-id> --skip-fetch --force --ai --notify --json
+alcove workspace list --json
+alcove workspace status <workspace-id> --json
+alcove workspace run <workspace-id> --agent codex "prompt" --json
 alcove export global /path/to/backup --json
 ```
 

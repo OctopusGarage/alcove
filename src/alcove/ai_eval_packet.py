@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from alcove.paths import compact_user_paths_in_text
@@ -12,7 +13,7 @@ PACKET_REVIEW_FIELD_MAX = 5000
 
 def compact_packet(value: Any, *, max_string: int = 1200, max_list: int = 40) -> Any:
     if isinstance(value, str):
-        text = compact_user_paths_in_text(value)
+        text = _sanitize_packet_text(compact_user_paths_in_text(value))
         if len(text) <= max_string:
             return text
         return text[:max_string] + f"...[truncated {len(text) - max_string} chars]"
@@ -206,8 +207,12 @@ def _field_max_string(key: str, default: int) -> int:
     return default
 
 
+def _sanitize_packet_text(text: str) -> str:
+    return re.sub(r"""file://~/[^\s"']*/\.tmp/[^\s"']+""", "fixture://local-file", text)
+
+
 def _packet_truncation_fields(key: str, value: str, max_string: int) -> dict[str, Any]:
-    text = compact_user_paths_in_text(value)
+    text = _sanitize_packet_text(compact_user_paths_in_text(value))
     if len(text) <= max_string:
         return {}
     return {

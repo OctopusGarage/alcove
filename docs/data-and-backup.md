@@ -10,6 +10,7 @@ Default global home:
 ```text
 ~/.alcove/
 ├── config.yml
+├── workspaces/               Hub and business agent workspace registry/data
 ├── knowledge-bases/          managed KB registry
 ├── pins/                     OKF-compatible pinned notes
 ├── prompts/                  OKF-compatible reusable prompts
@@ -46,6 +47,30 @@ Managed KB roots live wherever the user chooses:
 
 Connector and mount indexes are Alcove-owned caches. Managed KB `archive/` and
 `knowledge/` are tracked user data.
+
+Agent workspace registry and default entry directories live under Alcove Home:
+
+```text
+~/.alcove/workspaces/
+├── hub.yml                   fixed Hub control workspace
+├── <workspace-id>.yml        family/work/travel scene registry
+└── data/<workspace-id>/      default AGENTS.md / CLAUDE.md / skills directory
+```
+
+If a workspace is created with `--path`, the registry remains in
+`~/.alcove/workspaces/`, while the entry directory lives at the user-chosen
+path.
+
+Business workspaces can optionally own a workspace-local OKF store:
+
+```text
+<workspace-path>/
+├── documents/                 raw scene-local source files
+└── okf/                       managed KB root registered in ~/.alcove/knowledge-bases/
+```
+
+This is user data. Back it up with the workspace directory and the matching
+registry records under `~/.alcove/workspaces/` and `~/.alcove/knowledge-bases/`.
 
 Watcher state is Alcove-owned operational data:
 

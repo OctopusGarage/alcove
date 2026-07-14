@@ -6,7 +6,7 @@
     <title>Alcove — local-first memory for agent workflows</title>
     <meta
       name="description"
-      content="Alcove is a local-first personal information system for managed knowledge bases, pins, tasks, prompts, mounts, connectors, MCP access, and agent-readable memory."
+      content="Alcove is a local-first personal information system for managed knowledge bases, agent workspaces, pins, tasks, prompts, mounts, connectors, MCP access, and agent-readable memory."
     />
     <link rel="icon" href="assets/alcove-mark.svg" type="image/svg+xml" />
     <link rel="canonical" href="https://octopusgarage.github.io/alcove/" />
@@ -755,6 +755,7 @@
         <div class="links">
           <a class="optional" href="#model">Model</a>
           <a class="optional" href="#evidence">Evidence</a>
+          <a class="optional" href="#workspaces">Workspaces</a>
           <a class="optional" href="#install">Install</a>
           <a class="github" href="https://github.com/OctopusGarage/alcove">GitHub ↗</a>
         </div>
@@ -768,8 +769,9 @@
             <div class="eyebrow">Local-first agent memory</div>
             <h1>A quiet operating room for personal knowledge.</h1>
             <p class="lede">
-              Alcove keeps managed knowledge bases, pins, tasks, prompts, mounted folders,
-              external connectors, MCP access, and dashboard telemetry in one coherent local system.
+              Alcove keeps managed knowledge bases, agent workspaces, pins, tasks, prompts,
+              mounted folders, external connectors, MCP access, publishing paths, and
+              dashboard telemetry in one coherent local system.
             </p>
             <div class="hero-actions">
               <a class="button primary" href="#install">Get started</a>
@@ -802,7 +804,7 @@
             </div>
             <div class="node agent">
               <strong>Agent entries</strong>
-              <span>CLI · MCP · Codex · Claude Code</span>
+              <span>Hub · workspace · KB · MCP</span>
             </div>
             <div class="node global">
               <strong>Pins · Tasks · Prompts</strong>
@@ -817,10 +819,10 @@
 
         <div class="wrap">
           <div class="stats" aria-label="Alcove feature statistics">
-            <div class="stat"><b>3</b><span>entry modes</span></div>
+            <div class="stat"><b>4</b><span>agent contexts</span></div>
             <div class="stat"><b>7</b><span>memory surfaces</span></div>
             <div class="stat"><b>OKF</b><span>managed notes</span></div>
-            <div class="stat"><b>MCP</b><span>agent access</span></div>
+            <div class="stat"><b>Export</b><span>portable mirrors</span></div>
           </div>
         </div>
       </section>
@@ -848,7 +850,7 @@
               <h3>Pins, tasks, prompts</h3>
               <p>
                 Small durable items that should be available from any project: references,
-                follow-ups, reusable instructions, and operational reminders.
+                follow-ups, reusable instructions, operational reminders, and exported mirrors.
               </p>
             </article>
             <article class="card">
@@ -874,6 +876,7 @@
             <div class="ledger">
               <div class="ledger-row"><b>Home</b><span>Global registries, indexes, pins, tasks, prompts, usage snapshots.</span></div>
               <div class="ledger-row"><b>KB root</b><span>User-chosen managed folders with inbox, archive, and OKF notes.</span></div>
+              <div class="ledger-row"><b>Workspace</b><span>Hub-level control or lightweight business context with local OKF notes.</span></div>
               <div class="ledger-row"><b>Adapter</b><span>Capture tools write bundles into inboxes without owning the knowledge model.</span></div>
               <div class="ledger-row"><b>Agent</b><span>CLI and MCP expose the same operations to Codex, Claude Code, and local scripts.</span></div>
             </div>
@@ -892,12 +895,12 @@
             <article class="lane">
               <span class="kicker">Operate</span>
               <h3>Agent-ready profiles</h3>
-              <p>Install thin project files and skills for hub workspaces, global MCP access, or KB-local work.</p>
+              <p>Install thin project files and skills for hub control, lightweight workspaces, global MCP access, or KB-local work.</p>
             </article>
             <article class="lane">
               <span class="kicker">Recover</span>
               <h3>Exportable local state</h3>
-              <p>Global data and managed knowledge bases can be exported and backed up outside the runtime.</p>
+              <p>Global data, managed knowledge bases, and module views can be exported or published outside the runtime.</p>
             </article>
           </div>
         </div>
@@ -924,9 +927,51 @@
 <span class="comment"># use a local hub for daily personal knowledge work</span>
 <span class="accent">$</span> alcove hub init ~/AlcoveHub --default-kb research_notes
 
+<span class="comment"># create a lightweight business workspace</span>
+<span class="accent">$</span> alcove workspace init family --context <span class="gold">"Family planning"</span>
+
 <span class="comment"># make memory available from any project through MCP</span>
 <span class="accent">$</span> alcove global install
 <span class="accent">$</span> alcove search <span class="gold">"OKF"</span> --home ~/.alcove --json</pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="workspaces">
+        <div class="wrap">
+          <div class="section-head">
+            <h2>Workspaces keep intent local.</h2>
+            <p>
+              The Hub remains the special control room for the whole system. Ordinary workspaces
+              stay lightweight: enough guidance for Codex or Claude Code to manage a business
+              context, without exposing every admin workflow.
+            </p>
+          </div>
+          <div class="grid-3">
+            <article class="card">
+              <span class="kicker">Hub</span>
+              <h3>Total-system control</h3>
+              <p>
+                Use the Hub for cross-module operations: knowledge base management, connectors,
+                radars, dashboards, publishing, validation, and maintenance.
+              </p>
+            </article>
+            <article class="card">
+              <span class="kicker">Workspace</span>
+              <h3>Business context</h3>
+              <p>
+                Create family, work, travel, or research spaces with local OKF notes and focused
+                agent instructions that keep the conversation grounded.
+              </p>
+            </article>
+            <article class="card">
+              <span class="kicker">Managed KB</span>
+              <h3>Full inbox workflow</h3>
+              <p>
+                Install KB-local commands when a folder owns capture review, source archiving,
+                note synthesis, validation, and cleanup.
+              </p>
+            </article>
           </div>
         </div>
       </section>
@@ -945,6 +990,7 @@
             <pre id="install-code">uv tool install git+https://github.com/OctopusGarage/alcove.git
 alcove home init
 alcove global install
+alcove workspace init family
 alcove dashboard --home ~/.alcove build
 alcove serve --dashboard --home ~/.alcove --port 8765</pre>
           </div>
@@ -952,17 +998,17 @@ alcove serve --dashboard --home ~/.alcove --port 8765</pre>
             <article class="card">
               <span class="kicker">Hub</span>
               <h3>Daily workspace</h3>
-              <p>Use a local project as the primary cockpit for broad personal knowledge work.</p>
+              <p>Use a local project as the primary control room for broad personal knowledge work.</p>
+            </article>
+            <article class="card">
+              <span class="kicker">Workspace</span>
+              <h3>Focused context</h3>
+              <p>Create lightweight business spaces with agent guidance and workspace-local OKF notes.</p>
             </article>
             <article class="card">
               <span class="kicker">Global</span>
               <h3>Lightweight MCP</h3>
               <p>Query and write memory from unrelated repositories without installing heavy files.</p>
-            </article>
-            <article class="card">
-              <span class="kicker">KB-local</span>
-              <h3>Full workflow</h3>
-              <p>Install commands and skills inside a managed KB for inbox review and source archiving.</p>
             </article>
           </div>
         </div>

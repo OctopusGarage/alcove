@@ -5,7 +5,7 @@ from pathlib import Path
 import shlex
 from typing import Any
 
-from alcove.external_index import ExternalIndexStore, ExternalItemReference
+from alcove.external_resolver import ExternalItemResolver
 from alcove.home import AlcoveHome
 from alcove.knowledge import KnowledgeModule, NoteSourceRequest
 from alcove.markdown import MarkdownRepository
@@ -30,6 +30,7 @@ class LinkingModule:
         self.home = home
         self.runtime = AlcoveRuntime.from_modules(workspace=workspace, home=home)
         self.rows = SearchRowBuilder(self.runtime.knowledge_root)
+        self.external_resolver = ExternalItemResolver(self.runtime)
 
     def link_source(self, request: LinkSourceRequest) -> dict[str, Any]:
         row = self._find_row(request.item_path)
@@ -103,24 +104,10 @@ class LinkingModule:
         raise FileNotFoundError(f"Indexed item not found: {item_path}")
 
     def _find_external_row(self, item_path: str) -> dict[str, Any] | None:
-        ref = ExternalItemReference.parse_optional(item_path)
-        if ref is None:
+        try:
+            return dict(self.external_resolver.resolve(item_path).search_row(self.rows))
+        except (FileNotFoundError, ValueError):
             return None
-        if ref.kind == "connector":
-            item = ExternalIndexStore(self.runtime.connectors_root).find_item(ref)
-            if item is None:
-                return None
-            row: dict[str, Any] = dict(self.rows.connector_item(ref.source_id, item))
-            for key in ("language", "stars", "updated_at", "connector_name", "source_id"):
-                if key in item:
-                    row[key] = item[key]
-            return row
-        if ref.kind == "mount":
-            item = ExternalIndexStore(self.runtime.mounts_root).find_item(ref)
-            if item is None:
-                return None
-            return dict(self.rows.mount_item(item))
-        return None
 
     def _platform(self, row: dict[str, Any]) -> str:
         platform = str(row.get("platform") or "")

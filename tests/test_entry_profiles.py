@@ -80,12 +80,18 @@ def test_profile_source_templates_match_default_generated_artifacts(tmp_path):
 
     hub_source = hub_pack.skill_source_path()
     kb_source = kb_pack.skill_source_path()
+    workspace_pack = ProfileInstallationPack(profile="workspace", skill_name="alcove-workspace")
+    workspace_source = workspace_pack.skill_source_path()
     assert hub_source is not None
     assert kb_source is not None
+    assert workspace_source is not None
     assert hub_source.read_text(encoding="utf-8") == hub_pack.skill_content(
         default_kb="research_notes", home_part=""
     )
     assert kb_source.read_text(encoding="utf-8") == kb_pack.skill_content(
+        default_kb="research_notes", home_part=""
+    )
+    assert workspace_source.read_text(encoding="utf-8") == workspace_pack.skill_content(
         default_kb="research_notes", home_part=""
     )
     for artifact in kb_pack.codex_artifacts(root, default_kb="research_notes"):
@@ -118,6 +124,7 @@ def test_cli_hub_init_creates_project_local_entry_files(tmp_path, capsys):
     payload = json.loads(output.out)
     assert payload["profile"] == "hub"
     assert (hub / ".alcove-hub.yml").is_file()
+    assert (home / "workspaces" / "hub.yml").is_file()
     assert (hub / "CLAUDE.md").is_file()
     assert (hub / "AGENTS.md").is_file()
     assert (hub / ".claude" / "skills" / "alcove-hub" / "SKILL.md").is_file()
@@ -180,6 +187,211 @@ def test_cli_hub_init_creates_project_local_entry_files(tmp_path, capsys):
     assert "professional_quality" in hub_skill
     assert "adversarial_reuse" in hub_skill
     assert "Article summaries, one-off project notes, and raw chat dumps" in hub_skill
+
+
+def test_cli_workspace_init_creates_lightweight_business_workspace(tmp_path, monkeypatch, capsys):
+    home = tmp_path / ".alcove"
+    monkeypatch.setenv("ALCOVE_HOME", str(home))
+
+    code = main(
+        [
+            "workspace",
+            "init",
+            "family",
+            "--default-kb",
+            "research_notes",
+            "--tag",
+            "family",
+            "--context",
+            "Family errands and household knowledge.",
+            "--target",
+            "codex",
+            "--json",
+        ]
+    )
+    output = capsys.readouterr()
+
+    payload = json.loads(output.out)
+    workspace_root = home / "workspaces" / "data" / "family"
+    registry_path = home / "workspaces" / "family.yml"
+    assert code == 0
+    assert payload["workspace"]["id"] == "family"
+    assert payload["workspace"]["profile"] == "workspace"
+    assert payload["workspace"]["path"] == str(workspace_root.resolve())
+    assert registry_path.is_file()
+    assert (workspace_root / ".alcove-workspace.yml").is_file()
+    assert (workspace_root / "AGENTS.md").is_file()
+    assert (workspace_root / ".agents" / "skills" / "alcove-workspace" / "SKILL.md").is_file()
+    assert not (workspace_root / "CLAUDE.md").exists()
+    registry = registry_path.read_text(encoding="utf-8")
+    skill = (workspace_root / ".agents" / "skills" / "alcove-workspace" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "profile: workspace" in registry
+    assert "default_kb: research_notes" in registry
+    assert "family" in registry
+    assert "Alcove Business Workspace" in skill
+    assert "lightweight" in skill
+    assert "Do not perform Hub-only administration" in skill
+    assert "alcove service" not in skill
+    assert "alcove export" not in skill
+
+
+def test_cli_workspace_init_hub_uses_special_hub_profile(tmp_path, monkeypatch, capsys):
+    home = tmp_path / ".alcove"
+    monkeypatch.setenv("ALCOVE_HOME", str(home))
+
+    code = main(["workspace", "init", "hub", "--default-kb", "research_notes", "--json"])
+    output = capsys.readouterr()
+
+    payload = json.loads(output.out)
+    workspace_root = home / "workspaces" / "data" / "hub"
+    skill = (workspace_root / ".agents" / "skills" / "alcove-hub" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert code == 0
+    assert payload["workspace"]["id"] == "hub"
+    assert payload["workspace"]["profile"] == "hub"
+    assert (home / "workspaces" / "hub.yml").is_file()
+    assert (workspace_root / ".alcove-hub.yml").is_file()
+    assert "Alcove Hub" in skill
+    assert "Project Development Protocol" in skill
+
+
+def test_cli_workspace_list_status_install_and_run_print_command(tmp_path, monkeypatch, capsys):
+    home = tmp_path / ".alcove"
+    custom_path = tmp_path / "WorkHub"
+    monkeypatch.setenv("ALCOVE_HOME", str(home))
+
+    assert (
+        main(
+            [
+                "workspace",
+                "init",
+                "work",
+                "--path",
+                str(custom_path),
+                "--default-kb",
+                "work_notes",
+                "--target",
+                "codex",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    list_code = main(["workspace", "list", "--json"])
+    list_output = capsys.readouterr()
+    status_code = main(["workspace", "status", "work", "--json"])
+    status_output = capsys.readouterr()
+    install_code = main(["workspace", "install", "work", "--target", "claude", "--json"])
+    install_output = capsys.readouterr()
+    run_code = main(
+        [
+            "workspace",
+            "run",
+            "work",
+            "--agent",
+            "codex",
+            "--print-command",
+            "summarize work tasks",
+            "--json",
+        ]
+    )
+    run_output = capsys.readouterr()
+
+    workspaces = json.loads(list_output.out)
+    status = json.loads(status_output.out)
+    install = json.loads(install_output.out)
+    run = json.loads(run_output.out)
+    assert list_code == status_code == install_code == run_code == 0
+    assert [item["id"] for item in workspaces] == ["work"]
+    assert status["workspace"]["path"] == str(custom_path.resolve())
+    assert status["files"]
+    assert install["workspace"]["id"] == "work"
+    assert (custom_path / "CLAUDE.md").is_file()
+    assert run["agent"] == "codex"
+    assert run["cwd"] == str(custom_path.resolve())
+    assert run["command"][:3] == ["codex", "exec", "-C"]
+    assert str(custom_path.resolve()) in run["command"]
+    assert run["prompt"] == "summarize work tasks"
+
+
+def test_cli_workspace_okf_manages_workspace_local_knowledge(tmp_path, monkeypatch, capsys):
+    home = tmp_path / ".alcove"
+    monkeypatch.setenv("ALCOVE_HOME", str(home))
+
+    assert main(["workspace", "init", "family", "--tag", "family", "--json"]) == 0
+    capsys.readouterr()
+
+    init_code = main(["workspace", "okf", "init", "family", "--json"])
+    init_output = capsys.readouterr()
+    note_code = main(
+        [
+            "workspace",
+            "okf",
+            "add-note",
+            "family",
+            "home/insurance",
+            "家庭保险资料整理",
+            "--summary",
+            "家庭保险资料需要按保单、受益人、续费日期归档。",
+            "--tag",
+            "insurance",
+            "--json",
+        ]
+    )
+    note_output = capsys.readouterr()
+    source = home / "workspaces" / "data" / "family" / "documents" / "insurance.md"
+    source.write_text("# 保险文档\n\n家庭保险保单原文摘要。", encoding="utf-8")
+    import_code = main(
+        [
+            "workspace",
+            "okf",
+            "import-file",
+            "family",
+            str(source),
+            "--topic",
+            "home/insurance",
+            "--json",
+        ]
+    )
+    import_output = capsys.readouterr()
+    search_code = main(["workspace", "okf", "search", "family", "保单 续费日期", "--json"])
+    search_output = capsys.readouterr()
+    status_code = main(["workspace", "okf", "status", "family", "--json"])
+    status_output = capsys.readouterr()
+
+    init_payload = json.loads(init_output.out)
+    note_payload = json.loads(note_output.out)
+    import_payload = json.loads(import_output.out)
+    search_payload = json.loads(search_output.out)
+    status_payload = json.loads(status_output.out)
+    workspace_root = home / "workspaces" / "data" / "family"
+    okf_root = workspace_root / "okf"
+    assert init_code == note_code == import_code == search_code == status_code == 0
+    assert init_payload["workspace"]["default_kb"] == "family"
+    assert init_payload["okf"]["root"] == str(okf_root.resolve())
+    assert init_payload["okf"]["documents"] == str((workspace_root / "documents").resolve())
+    assert (okf_root / ".alcove" / "config.yml").is_file()
+    assert (home / "knowledge-bases" / "family.yml").is_file()
+    assert "default_kb: family" in (workspace_root / ".alcove-workspace.yml").read_text(
+        encoding="utf-8"
+    )
+    assert note_payload["status"] == "noted"
+    assert note_payload["kb"] == "family"
+    assert "family" in note_payload["tags"]
+    assert note_payload["path"].endswith("家庭保险资料整理.md")
+    assert import_payload["status"] == "imported"
+    assert import_payload["source_path"].endswith(".md")
+    assert search_payload["workspace"]["id"] == "family"
+    assert search_payload["kb"] == "family"
+    assert search_payload["count"] >= 2
+    assert any(row["title"] == "家庭保险资料整理" for row in search_payload["results"])
+    assert status_payload["okf"]["initialized"] is True
+    assert status_payload["okf"]["knowledge_items"] >= 2
 
 
 def test_cli_hub_init_can_link_project_skills_in_development_mode(

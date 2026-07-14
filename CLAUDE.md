@@ -40,16 +40,23 @@ scripts/check.sh
   `/alcove-doc-sync` when code changes user-visible behavior, storage,
   CLI/MCP contracts, agent entries, dashboard, radars, connectors, mounts, OKF,
   smoke, eval, or install flows.
+- Review the public GitHub Pages site when public docs, entry modes,
+  workspaces, MCP/CLI routing, publishing, dashboard, or install flows change.
+  Update `site/index.html` only when the global public overview would drift:
+  project positioning, entry model, installation path, or top-level module
+  relationships changed. Do not add narrow feature details to the site just
+  because a feature changed.
 - Treat entry-mode impact as part of every feature change. Most user workflows
   start from the Hub workspace, so new or changed behavior must answer whether
-  `alcove-hub`, managed-KB skills, global MCP toolsets/command hints, docs, and
-  smoke/AI eval need corresponding updates.
+  `alcove-hub`, lightweight `alcove-workspace` business workspaces,
+  managed-KB skills, global MCP toolsets/command hints, docs, and smoke/AI eval
+  need corresponding updates.
 
 ## Rules
 
 - Prefer `scripts/smoke.sh` for normal implementation checks.
 - Run `scripts/check-docs-drift.sh` when changed source behavior may need docs
-  updates.
+  updates or a public Pages review.
 - Run `scripts/smoke-real-home.sh` when global home, dashboard, search, pins,
   tasks, prompts, projects, mounts, or connectors changed.
 - Run `scripts/smoke-real-integrations.sh` only when explicitly asked or when

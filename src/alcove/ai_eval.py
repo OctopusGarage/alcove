@@ -25,7 +25,7 @@ from alcove.ai_eval_packet import (
     project_health_evidence,
 )
 from alcove.paths import compact_user_paths_in_text
-from alcove.verify_suites import eval_report_paths
+from alcove.verify_suites import EvalEvidencePaths
 
 PACKET_SCHEMA = "alcove.ai_eval_packet.v1"
 
@@ -146,6 +146,13 @@ def _build_eval_packet(
         "prompt_compose": _read_json(smoke_fixtures / "prompt-compose.json", warnings),
         "project_add": _read_json(smoke_fixtures / "project-add.json", warnings),
         "project_find": _read_json(smoke_fixtures / "project-find.json", warnings),
+        "workspace_init": _read_json(smoke_fixtures / "workspace-init.json", warnings),
+        "workspace_status": _read_json(smoke_fixtures / "workspace-status.json", warnings),
+        "workspace_okf_init": _read_json(smoke_fixtures / "workspace-okf-init.json", warnings),
+        "workspace_okf_add_note": _read_json(
+            smoke_fixtures / "workspace-okf-add-note.json", warnings
+        ),
+        "workspace_okf_search": _read_json(smoke_fixtures / "workspace-okf-search.json", warnings),
         "task_add": _read_json(smoke_fixtures / "task-add.json", warnings),
         "idea_add": _read_json(smoke_fixtures / "idea-add.json", warnings),
         "routine_add": _read_json(smoke_fixtures / "routine-add.json", warnings),
@@ -184,7 +191,9 @@ def _build_eval_packet(
         "doctor": doctor_for_eval(_read_json(smoke_fixtures / "doctor.json", warnings)),
     }
     real_home = _read_json(real_home_report, warnings)
-    default_reports = eval_report_paths(real_integrations_dir.parent)
+    default_reports = EvalEvidencePaths.from_root(
+        real_integrations_dir.parent
+    ).build_eval_packet_kwargs()
     integrations = {
         "summary": _read_json(real_integrations_dir / "real-integrations-summary.json", warnings),
         "web_inbox_read": _read_json(
@@ -237,7 +246,7 @@ def _build_eval_packet(
         warnings,
     )
 
-    packet = {
+    packet: dict[str, Any] = {
         "schema": PACKET_SCHEMA,
         "evaluation_scope": _evaluation_scope(selected_suites),
         "purpose": (
@@ -297,8 +306,10 @@ def _build_eval_packet(
             "Treat search results as candidate discovery, not final truth; broad or ambiguous knowledge questions should continue with AI-led investigation over OKF indexes, source refs, mount refs, connector fetches, and local files.",
             "Treat durable writes as governed operations; user-facing mutations should go through Alcove CLI/MCP write tools, with direct file edits reserved for repair fallback plus validation or index refresh.",
             "Do not propose broad rewrites unless a module boundary is causing the problem.",
+            "Only cite packet warnings when warning_count is greater than zero and the cited warning exists verbatim in packet.warnings.",
         ],
     }
+    packet["warning_count"] = len(warnings)
     return packet
 
 
@@ -707,6 +718,16 @@ def _modules(selected_suites: Sequence[str] = ()) -> list[dict[str, Any]]:
             ],
         },
         {
+            "id": "workspaces",
+            "scope": "Hub workspace, lightweight business workspaces, workspace-local OKF, and generated Codex/Claude entry files.",
+            "ai_quality_questions": [
+                "Can an agent use the default Hub for total-system control while keeping ordinary business workspaces lightweight?",
+                "Does a workspace install enough Codex/Claude guidance to route local notes without exposing admin-only system controls?",
+                "Can workspace-local OKF initialize, add notes, and search evidence without requiring manual file edits?",
+                "Does workspace search return useful candidate evidence for the active business context?",
+            ],
+        },
+        {
             "id": "mcp_entry",
             "scope": "MCP stdio tools, hub/global/KB agent entries, Claude/Codex commands, and client smoke evidence.",
             "ai_quality_questions": [
@@ -762,6 +783,7 @@ def _module_ids_for_suites(selected_suites: set[str]) -> set[str]:
             "radars",
             "publishers",
             "dashboard",
+            "workspaces",
             "export_health",
             "agent_entries",
         },

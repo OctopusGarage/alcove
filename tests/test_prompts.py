@@ -632,7 +632,10 @@ def test_prompt_save_from_proposal_uses_curated_request(tmp_path):
     assert prompt.description
     assert prompt.use_cases
     assert prompt.outputs
-    assert prompt.quality["status"] == "proposed"
+    assert prompt.quality["status"] == "curated"
+    assert prompt.quality["score"] == proposal["request"]["quality"]["score"]
+    search_results = PromptsModule(home=home).search("Prompt Curation Review")
+    assert search_results[0].quality["status"] == "curated"
 
 
 def test_prompt_proposal_anonymizes_personal_source_refs(tmp_path):
@@ -1134,6 +1137,75 @@ def test_prompt_curation_keeps_style_prompts_as_source_notes(tmp_path):
     assert candidates[0].kind == "source_note"
     assert promoted["count"] == 0
     assert prompts == []
+
+
+def test_prompt_curation_filters_chat_fragments_and_promotes_reusable_prompt(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    source = tmp_path / "mixed_history.md"
+    source.write_text(
+        """# 继续这个任务
+
+用户说继续、做完了吗、提交吧时，按上下文执行。
+这只是某次对话里的偏好说明，不是可复制给其他 agent 的完整 prompt。
+
+# Delivery Verification Prompt
+
+```text
+Before claiming delivery is complete, inspect the current diff, relevant tests,
+smoke artifacts, and user-facing behavior. Verify that changed entry points still
+match the requested workflow, and do not rely on summaries alone.
+
+Steps:
+1. Identify the changed modules and user-visible behavior.
+2. Run or cite the smallest relevant verification commands.
+3. Check whether docs, agent instructions, or eval examples need updates.
+4. If something is unverified, say exactly what evidence is missing.
+
+Return:
+- Findings or "No blocking findings".
+- Verification commands and results.
+- Follow-up artifacts that were added, such as tests, docs, evals, or scripts.
+
+Do NOT mark the work complete when tests are skipped, stale, or unrelated.
+```
+""",
+        encoding="utf-8",
+    )
+
+    curation = PromptCurationModule(home=home)
+    scan = curation.scan([source])
+    candidates = curation.list_candidates(min_score=0.5)
+    promoted = curation.promote(min_score=0.7)
+    prompts = PromptsModule(home=home).search("delivery verification")
+
+    assert scan["count"] == 1
+    assert [candidate.title for candidate in candidates] == ["Delivery Verification Prompt"]
+    assert candidates[0].kind == "eval_prompt"
+    assert "current diff" in candidates[0].content
+    assert promoted["count"] == 1
+    assert prompts[0].title == "Delivery Verification Prompt"
+
+
+def test_prompt_ai_eval_rejects_hardening_title_without_reusable_artifacts(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    result = PromptsModule(home=home).save(
+        AddPromptRequest(
+            title="交付验证与复跑固化",
+            content=(
+                "检查任务是否完成，并返回结论。输出检查结果和简短建议。"
+                "如果发现问题，说明哪里有问题。"
+            ),
+            description="检查交付质量。",
+            tags=["verification"],
+            kind="eval_prompt",
+            domain="testing",
+        )
+    )
+
+    ai_eval = evaluate_prompt_candidate(result.prompt)
+
+    assert ai_eval["verdict"] == "needs_revision"
+    assert any("hardening" in item or "固化" in item for item in ai_eval["must_fix"])
 
 
 def test_prompt_save_infers_use_cases_when_omitted(tmp_path):

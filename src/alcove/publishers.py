@@ -145,12 +145,95 @@ class PublisherTargetState:
     last_error: str = ""
 
 
+@dataclass(frozen=True)
+class PublisherRenderContext:
+    home: AlcoveHome
+    target: PublisherTargetDefinition
+    timestamp: str
+
+
+PublisherRenderHandler = Callable[[PublisherRenderContext], str]
+
+
+class PublisherRenderRegistry:
+    """Owns publisher source/template rendering without leaking module branches."""
+
+    def __init__(
+        self,
+        handlers: dict[tuple[str, str], PublisherRenderHandler] | None = None,
+    ) -> None:
+        self._handlers = handlers or self._default_handlers()
+
+    def render(
+        self,
+        *,
+        home: AlcoveHome,
+        target: PublisherTargetDefinition,
+        timestamp: str,
+    ) -> str:
+        key = (target.source.module, target.render.template)
+        handler = self._handlers.get(key)
+        if handler is None:
+            raise PublishError(
+                "RENDER_FAILED",
+                f"Unsupported publisher source/template: {key[0]}/{key[1]}",
+            )
+        return handler(PublisherRenderContext(home=home, target=target, timestamp=timestamp))
+
+    def _default_handlers(self) -> dict[tuple[str, str], PublisherRenderHandler]:
+        return {
+            ("pins", "pins_digest"): self._render_pins_digest,
+            ("tasks", "planner_digest"): self._render_planner_digest,
+            ("prompts", "prompt_library"): self._render_prompt_library,
+            ("projects", "project_registry"): self._render_project_registry,
+        }
+
+    def _render_pins_digest(self, context: PublisherRenderContext) -> str:
+        kind = str(context.target.source.filter.get("kind") or "")
+        status = str(context.target.source.filter.get("status") or "active")
+        pins = [
+            pin
+            for pin in PinsModule(home=context.home).list(status=status)
+            if not kind or pin.kind == kind
+        ]
+        return render_pins_digest(
+            title=context.target.render.title,
+            pins=pins,
+            timestamp=context.timestamp,
+        )
+
+    def _render_planner_digest(self, context: PublisherRenderContext) -> str:
+        task_module = TasksModule(home=context.home)
+        return render_planner_digest(
+            title=context.target.render.title,
+            tasks=task_module.task_list(status="pending"),
+            ideas=task_module.idea_list(status="active"),
+            routines=task_module.routine_list(status="active"),
+            timestamp=context.timestamp,
+        )
+
+    def _render_prompt_library(self, context: PublisherRenderContext) -> str:
+        return render_prompt_library(
+            title=context.target.render.title,
+            prompts=PromptsModule(home=context.home).list(status="active"),
+            timestamp=context.timestamp,
+        )
+
+    def _render_project_registry(self, context: PublisherRenderContext) -> str:
+        return render_project_registry(
+            title=context.target.render.title,
+            projects=ProjectsModule(home=context.home).list(),
+            timestamp=context.timestamp,
+        )
+
+
 class PublisherModule:
     def __init__(
         self,
         home: AlcoveHome,
         *,
         target_factory: Callable[[PublisherDefinition], AppleNotesTarget] | None = None,
+        render_registry: PublisherRenderRegistry | None = None,
     ) -> None:
         self.home = home
         self.root = home.root / "publishers"
@@ -160,6 +243,7 @@ class PublisherModule:
         self.runs_root = self.root / "runs"
         self.events_path = self.root / "events.jsonl"
         self.target_factory = target_factory
+        self.render_registry = render_registry or PublisherRenderRegistry()
 
     def init_apple_notes(self, *, root_folder: str = "iCloud/Alcove") -> dict[str, Any]:
         definition_path = self.definitions_root / f"{DEFAULT_PUBLISHER_ID}.yml"
@@ -373,41 +457,10 @@ class PublisherModule:
             }
 
     def _render(self, target: PublisherTargetDefinition, *, timestamp: str) -> str:
-        source = target.source.module
-        template = target.render.template
-        if source == "pins" and template == "pins_digest":
-            kind = str(target.source.filter.get("kind") or "")
-            status = str(target.source.filter.get("status") or "active")
-            pins = [
-                pin
-                for pin in PinsModule(home=self.home).list(status=status)
-                if not kind or pin.kind == kind
-            ]
-            return render_pins_digest(title=target.render.title, pins=pins, timestamp=timestamp)
-        if source == "tasks" and template == "planner_digest":
-            task_module = TasksModule(home=self.home)
-            return render_planner_digest(
-                title=target.render.title,
-                tasks=task_module.task_list(status="pending"),
-                ideas=task_module.idea_list(status="active"),
-                routines=task_module.routine_list(status="active"),
-                timestamp=timestamp,
-            )
-        if source == "prompts" and template == "prompt_library":
-            return render_prompt_library(
-                title=target.render.title,
-                prompts=PromptsModule(home=self.home).list(status="active"),
-                timestamp=timestamp,
-            )
-        if source == "projects" and template == "project_registry":
-            return render_project_registry(
-                title=target.render.title,
-                projects=ProjectsModule(home=self.home).list(),
-                timestamp=timestamp,
-            )
-        raise PublishError(
-            "RENDER_FAILED",
-            f"Unsupported publisher source/template: {source}/{template}",
+        return self.render_registry.render(
+            home=self.home,
+            target=target,
+            timestamp=timestamp,
         )
 
     def _target_adapter(self, definition: PublisherDefinition) -> AppleNotesTarget:

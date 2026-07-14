@@ -45,6 +45,7 @@ class HomeHealthCheck:
 def home_health_checks() -> list[HomeHealthCheck]:
     return [
         HomeHealthCheck("registered_kbs", _registered_kbs),
+        HomeHealthCheck("workspaces", _workspaces),
         HomeHealthCheck("pins", _pins),
         HomeHealthCheck("prompts", _prompts),
         HomeHealthCheck("prompt_quality", _prompt_quality),
@@ -83,6 +84,16 @@ def _registered_kbs(
     issues: list["HealthIssue"] = []
     counts: dict[str, int] = {}
     health._check_registered_kbs(context.home, issues, counts, strict=context.strict)
+    return HealthCheckResult(issues=issues, counts=counts)
+
+
+def _workspaces(
+    health: "HealthModule",
+    context: HealthCheckContext,
+) -> HealthCheckResult:
+    issues: list["HealthIssue"] = []
+    counts: dict[str, int] = {}
+    health._check_agent_workspaces(context.home, issues, counts)
     return HealthCheckResult(issues=issues, counts=counts)
 
 

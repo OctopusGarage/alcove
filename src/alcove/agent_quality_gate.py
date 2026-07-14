@@ -138,7 +138,10 @@ SUITE_COMMANDS: dict[str, GateCommand] = {
         display="scripts/check-docs-drift.sh",
         argv=("scripts/check-docs-drift.sh",),
         env={},
-        reason="Documentation alignment check for user-facing behavior and data contract changes",
+        reason=(
+            "Documentation alignment check for user-facing behavior and data contract "
+            "changes; review the public site only when the global overview would drift"
+        ),
     ),
     "check": GateCommand(
         id="check",
@@ -160,6 +163,7 @@ RISK_RULES: tuple[RiskRule, ...] = (
             ".agents/**",
             ".claude/**",
             ".codex/**",
+            "src/alcove/agent_workspaces.py",
             "src/alcove/profile_installer.py",
             "src/alcove/profile_packs.py",
             "tests/test_entry_profiles.py",
@@ -315,7 +319,7 @@ RISK_RULES: tuple[RiskRule, ...] = (
 
 DOCS_ALIGNMENT_RULE = RiskRule(
     id="docs_alignment",
-    label="Documentation alignment for user-facing behavior, storage, and agent contracts",
+    label=("Documentation alignment for user-facing behavior, storage, and agent contracts"),
     patterns=(),
     suites=("docs_alignment",),
     requires_ai_eval=False,
@@ -502,8 +506,12 @@ def hook_response(plan: GatePlan, *, exit_code: int) -> dict[str, object]:
     }
 
 
-def docs_drift_exit_code(*, repo_root: Path) -> int:
-    changed_files = discover_changed_files(repo_root)
+def docs_drift_exit_code(
+    *,
+    repo_root: Path,
+    changed_files: tuple[str, ...] = (),
+) -> int:
+    changed_files = changed_files or discover_changed_files(repo_root)
     plan = build_gate_plan(changed_files=changed_files, mode="strict", surface="manual")
     if "docs_alignment" not in plan.risk_areas:
         print("docs drift check: ok")
@@ -636,14 +644,16 @@ def _needs_docs_alignment(
 ) -> bool:
     if not any(rule.id in DOCS_ALIGNMENT_RISK_IDS for rule in matched_rules):
         return False
-    if any(_matches_any(path, DOCS_ALIGNMENT_DOC_PATTERNS) for path in changed_files):
-        return False
-    return any(
+    source_changed = any(
         _matches_any(path, DOCS_ALIGNMENT_SOURCE_PATTERNS)
         and not path.startswith("tests/")
         and not path.startswith("scripts/verify/")
         for path in changed_files
     )
+    if not source_changed:
+        return False
+    docs_changed = any(_matches_any(path, DOCS_ALIGNMENT_DOC_PATTERNS) for path in changed_files)
+    return not docs_changed
 
 
 def _matches_any(path: str, patterns: tuple[str, ...]) -> bool:

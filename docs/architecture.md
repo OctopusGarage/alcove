@@ -32,6 +32,9 @@ Alcove
 ├── External Views
 │   ├── Dashboard                      local browser console
 │   └── Publishers                     Apple Notes readable mirrors
+├── Agent Workspaces
+│   ├── Hub                            fixed control workspace
+│   └── Business Workspaces            lightweight scene directories
 ├── Runtime Services
 │   ├── launchd dashboard server
 │   └── launchd scheduler ticks
@@ -92,9 +95,10 @@ Feature Groups
 ├── 2. Global Personal Memory / 全局个人记忆
 ├── 3. Intelligence Feeds / 信息雷达与监控
 ├── 4. Entry Profiles / Agent 入口
-├── 5. Local Service / 本地后台服务
-├── 6. External Views / 外部视图与发布
-└── 7. Operations / 健康检查、导出、备份、评估
+├── 5. Agent Workspaces / 业务对话空间
+├── 6. Local Service / 本地后台服务
+├── 7. External Views / 外部视图与发布
+└── 8. Operations / 健康检查、导出、备份、评估
 ```
 
 ## 1. Knowledge Sources / 知识来源体系
@@ -113,11 +117,9 @@ Knowledge Sources
 
 A managed knowledge base is fully managed by Alcove. It has an inbox, archive, formal OKF knowledge, taxonomy, validation, gardening, and note creation workflow.
 
-Current local instance:
-
-```text
-research_notes
-```
+Managed KBs are registered in Alcove Home. A local machine may register one or
+many KBs, and project documentation should not depend on a specific user's
+registry state.
 
 Target structure:
 
@@ -1127,6 +1129,7 @@ Implemented
 ├── global, KB, and all export commands
 ├── registry-routed --kb CLI usage
 ├── hub workspace profile install
+├── lightweight business workspace registry and profile install
 ├── global-lite MCP install
 ├── managed KB profile install with inbox/social-post workflow wrappers
 ├── MCP coverage for the core CLI workflows
@@ -1162,7 +1165,7 @@ The migration has been implemented incrementally and backward compatibly:
 
 2. Add managed KB registry                               done
    -> ~/.alcove/knowledge-bases/<name>.yml
-   -> register existing research_notes
+   -> register existing managed KB directories
 
 3. Move global features for new global usage              done
    -> pins under ~/.alcove/pins
@@ -1188,6 +1191,13 @@ The migration has been implemented incrementally and backward compatibly:
    -> connector fetch
    -> broader MCP coverage
    -> smaller application facade
+
+8. Add agent business workspaces                          done
+   -> ~/.alcove/workspaces/<id>.yml registry
+   -> default agent directories under ~/.alcove/workspaces/data/<id>/
+   -> fixed hub profile plus lightweight custom workspace profile
+   -> one-shot codex/claude runs from a registered workspace
+   -> workspace-local OKF tools backed by managed-KB storage
 ```
 
 ## Safety Rules
@@ -1211,15 +1221,9 @@ Current implemented test suite:
 uv run pytest -q
 ```
 
-At the time this document was last updated, the suite passed with:
-
-```text
-180 passed
-```
-
 For a real managed KB workspace:
 
 ```sh
-alcove doctor --kb research_notes --json
-alcove validate --kb research_notes --json
+alcove doctor --kb <kb-name> --json
+alcove validate --kb <kb-name> --json
 ```

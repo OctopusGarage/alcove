@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
+from alcove.agent_workspaces import AgentWorkspacesModule
 from alcove.application import AlcoveApplication
 from alcove.cli_io import print_install_result
 from alcove.home import AlcoveHome, KnowledgeBaseRecord
@@ -22,7 +23,8 @@ def handle_hub_command(
     *,
     argument_error: ArgumentError,
 ) -> int:
-    profiles = ProfileInstaller(_home(args))
+    home = _home(args)
+    profiles = ProfileInstaller(home)
     if args.hub_command == "init":
         result = (
             profiles.hub_status(
@@ -55,6 +57,13 @@ def handle_hub_command(
         )
     else:
         return argument_error(parser, "the following arguments are required: hub_command")
+    if not args.status:
+        AgentWorkspacesModule(home).register_hub(
+            args.path,
+            default_kb=args.default_kb,
+            targets=args.target or ["all"],
+            install_mode="link" if args.link else "copy",
+        )
     return _print_profile_result(args, result)
 
 

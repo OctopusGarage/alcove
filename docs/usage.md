@@ -26,6 +26,7 @@ Alcove separates global personal state from managed knowledge bases.
 alcove home init
 alcove kb add research_notes /path/to/research_notes
 alcove hub init ~/AlcoveHub --default-kb research_notes
+alcove workspace init family --default-kb research_notes
 alcove global install --default-kb research_notes
 alcove kb install research_notes
 ```
@@ -35,6 +36,7 @@ the repository templates:
 
 ```sh
 alcove hub install ~/AlcoveHub --default-kb research_notes --link
+alcove workspace install family --link
 alcove kb install research_notes --link
 ```
 
@@ -73,12 +75,48 @@ alcove kb install research_notes --status --json
 ```
 
 - `alcove hub init`: project-local hub workspace for daily Alcove conversations.
+- `alcove workspace init`: lightweight business-scoped agent workspace under
+  the Hub concept. Omit `--path` to use
+  `~/.alcove/workspaces/data/<id>/`; pass `--path` for a custom directory.
 - `alcove global install`: lightweight MCP access from unrelated projects.
   It writes a `lite` MCP toolset by default; add `--default-kb <kb>` when
   global chats should be able to save pasted notes into a managed KB inbox.
 - `alcove kb install`: managed-KB workflow files, Claude slash commands, and
   Claude/Codex skills for inbox review, notes search, social post processing,
   and Clipsmith capture handoff.
+
+Business workspaces are useful when a long-running conversation should inherit
+a family, work, travel, or similar scene instead of the full Hub control
+surface:
+
+```sh
+alcove workspace init family \
+  --default-kb research_notes \
+  --tag family \
+  --context "Family errands, household knowledge, and recurring reminders."
+
+cd ~/.alcove/workspaces/data/family
+codex
+```
+
+For one-shot work, run the agent inside a registered workspace:
+
+```sh
+alcove workspace run family --agent codex "整理家庭相关任务"
+alcove workspace run family --agent claude "总结家庭知识记录"
+```
+
+For scene-local documents and notes, initialize the workspace OKF store instead
+of manually wiring a managed KB:
+
+```sh
+alcove workspace okf init family --json
+alcove workspace okf add-note family home/insurance "家庭保险资料整理" \
+  --summary "家庭保险资料需要按保单、受益人、续费日期归档。" \
+  --json
+alcove workspace okf import-file family ./documents/insurance.md --topic home/insurance --json
+alcove workspace okf search family "保单" --json
+```
 
 ## Agent Retrieval and Writes
 

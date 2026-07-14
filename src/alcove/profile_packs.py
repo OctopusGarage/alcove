@@ -60,6 +60,8 @@ def entry_section(profile: str, home: str, default_kb: str, home_part: str) -> s
         return _managed_kb_entry_section(home, default_kb, home_part)
     if profile == "hub":
         return _hub_entry_section(home, default_kb, home_part)
+    if profile == "workspace":
+        return _workspace_entry_section(home, default_kb, home_part)
     description = (
         "This directory is the Alcove hub workspace."
         if profile == "hub"
@@ -88,6 +90,8 @@ def skill_content(profile: str, default_kb: str, home_part: str) -> str:
         return _hub_skill(default_kb, home_part)
     if profile == "managed-kb":
         return _managed_kb_skill(default_kb, home_part)
+    if profile == "workspace":
+        return _workspace_skill(default_kb, home_part)
     description = "Use inside an Alcove managed knowledge base for inbox review."
     return (
         "# Alcove Entry\n\n"
@@ -196,6 +200,46 @@ alcove radar{home_part} run <radar-id> --skip-fetch --force --ai --notify --json
 """
 
 
+def _workspace_entry_section(home: str, default_kb: str, home_part: str) -> str:
+    return f"""{ALCOVE_SECTION_START}
+## Alcove Business Workspace Entry
+
+This directory is a lightweight Alcove business workspace. Use the
+`alcove-workspace` skill for scene-local routing. It is not the Hub control
+workspace.
+
+- Home: configured Alcove Home
+- Default KB: `{default_kb or "(none)"}`
+- Workspace config: `.alcove-workspace.yml`
+- Role: business-scoped search, notes, pins, tasks, ideas, and prompt reuse
+- Workspace OKF: `documents/` for source files and `okf/` for structured notes
+
+Rules:
+
+- Start from this workspace's configured scope, tags, and default KB.
+- For workspace-local documents, notes, and recall, prefer `alcove workspace okf ...`.
+- Escalate system administration to the Hub workspace instead of performing it
+  here by default.
+- Durable writes still go through Alcove CLI/MCP commands.
+
+Common commands:
+
+```sh
+alcove workspace{home_part} okf init <workspace-id> --json
+alcove workspace{home_part} okf add-note <workspace-id> <topic> "Title" --summary "..." --json
+alcove workspace{home_part} okf import-file <workspace-id> ./documents/file.md --topic <domain/topic> --json
+alcove workspace{home_part} okf search <workspace-id> "query" --json
+alcove search{home_part} "query" --json
+alcove search{home_part} --kb <kb-name> "query" --json
+alcove inbox{home_part} --kb <kb-name> manual-add "Title" --content "..." --json
+alcove pin{home_part} add "Title" --tag <workspace-id> --json
+alcove task{home_part} add "Task" --tag <workspace-id> --json
+alcove prompt{home_part} recommend "scenario" --json
+```
+{ALCOVE_SECTION_END}
+"""
+
+
 def _hub_skill(default_kb: str, home_part: str) -> str:
     _ = default_kb
     return (
@@ -221,6 +265,7 @@ def _hub_skill(default_kb: str, home_part: str) -> str:
         "- blog monitoring, scheduled article checks, failure alerts, or phrases such as\n"
         "  监控博客更新 / 检查博客文章有没有更新: `blog monitor`.\n"
         "- information radar, daily briefing, 技术雷达, 新闻雷达, 股票雷达, 体育资讯: `radar`.\n"
+        "- business-scoped conversation such as 家庭 workspace, 工作 workspace, travel workspace, or 场景工作区: use `workspace` to find or enter that lightweight business workspace.\n"
         "- Alcove feature work, maintenance, refactoring, docs alignment, tests, or\n"
         "  phrases such as 优化 Alcove / 新增功能 / 修这个项目: route to the registered\n"
         "  project/worktree, then apply that project's engineering rules. Do not save the\n"
@@ -366,6 +411,9 @@ def _hub_skill(default_kb: str, home_part: str) -> str:
         f"alcove radar{home_part} run <radar-id> --json\n"
         f"alcove radar{home_part} run <radar-id> --force --ai --notify --json\n"
         f"alcove radar{home_part} run <radar-id> --skip-fetch --force --ai --notify --json\n"
+        f"alcove workspace{home_part} list --json\n"
+        f"alcove workspace{home_part} status <workspace-id> --json\n"
+        f'alcove workspace{home_part} run <workspace-id> --agent codex "prompt" --json\n'
         f"alcove export{home_part} global /path/to/backup --json\n"
         "```\n\n"
         "## Safety\n\n"
@@ -377,6 +425,44 @@ def _hub_skill(default_kb: str, home_part: str) -> str:
         "- Do not treat a raw link as permission to process existing inbox items.\n"
         "- Do not store article summaries as prompts; prompts are reusable instructions.\n"
         "- Mutating managed KB actions require explicit user confirmation for the current item.\n"
+    )
+
+
+def _workspace_skill(default_kb: str, home_part: str) -> str:
+    _ = default_kb
+    return (
+        "---\n"
+        "name: alcove-workspace\n"
+        "description: Use inside a lightweight Alcove business workspace for scoped personal knowledge, pins, tasks, ideas, and prompt reuse.\n"
+        "type: project\n"
+        "---\n\n"
+        "# Alcove Business Workspace\n\n"
+        "This is a lightweight business-scoped Alcove workspace. Read `.alcove-workspace.yml` first to learn the workspace id, default KB, tags, modules, and purpose.\n\n"
+        "## Operating Model\n\n"
+        "- Start searches inside this workspace's configured scope: preferred KBs, tags, and modules.\n"
+        "- For workspace-local documents, notes, and recall, use `alcove workspace okf ...` before falling back to Home-wide search.\n"
+        "- If scoped search is too narrow, say that you are expanding to Home-wide search and then inspect evidence before answering.\n"
+        "- For durable writes, use Alcove CLI/MCP commands and preserve the workspace tag or context from `.alcove-workspace.yml`.\n"
+        "- Use `workspace okf add-note/import-file/search` for scene-local knowledge; use `pin`, `task`, `idea`, and `prompt recommend/compose` for global reusable memory and planning.\n"
+        "- If the workspace OKF is not initialized, run `alcove workspace okf init <workspace-id> --json` before saving scene-local knowledge.\n"
+        "- Prompt saves must still use the governed propose/save flow; do not turn raw notes or chat fragments into prompts.\n"
+        "- Do not perform Hub-only administration from here by default. Installing entries, editing global MCP, changing services, export/backup, connector/mount administration, radar definitions, publisher configuration, and health fixes belong in the Hub unless the user explicitly authorizes the command.\n\n"
+        "## Common Commands\n\n"
+        "```sh\n"
+        f"alcove workspace{home_part} okf init <workspace-id> --json\n"
+        f'alcove workspace{home_part} okf add-note <workspace-id> <domain/topic> "Title" --summary "..." --json\n'
+        f"alcove workspace{home_part} okf import-file <workspace-id> ./documents/file.md --topic <domain/topic> --json\n"
+        f'alcove workspace{home_part} okf search <workspace-id> "query" --json\n'
+        f'alcove search{home_part} "query" --json\n'
+        f'alcove search{home_part} --kb <kb-name> "query" --json\n'
+        f'alcove pin{home_part} add "Title" --tag <workspace-id> --summary "..." --content "..." --json\n'
+        f'alcove task{home_part} add "Task" --tag <workspace-id> --json\n'
+        f'alcove idea{home_part} add "Idea" --tag <workspace-id> --json\n'
+        f'alcove prompt{home_part} recommend "scenario" --json\n'
+        f'alcove prompt{home_part} compose "scenario" --json\n'
+        "```\n\n"
+        "## Escalation\n\n"
+        "When a request is about Alcove-wide configuration or system maintenance, route it to the Hub workspace. If running a one-shot command is enough, use `alcove workspace run hub ...` from outside this session.\n"
     )
 
 
@@ -771,6 +857,8 @@ def skill_source_path(profile: str) -> Path | None:
         return _template_path("hub/skills/alcove-hub/SKILL.md")
     if profile == "managed-kb":
         return _template_path("managed-kb/skills/alcove-kb/SKILL.md")
+    if profile == "workspace":
+        return _template_path("workspace/skills/alcove-workspace/SKILL.md")
     return None
 
 

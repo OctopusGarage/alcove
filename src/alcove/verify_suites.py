@@ -26,6 +26,49 @@ class VerifySuite:
         return self.directory(root) / self.report_file
 
 
+@dataclass(frozen=True)
+class EvalEvidencePaths:
+    """Report-path interface owned by the verification suite manifest."""
+
+    root: Path
+    suites: tuple[VerifySuite, ...]
+
+    @classmethod
+    def from_root(cls, root: str | Path) -> "EvalEvidencePaths":
+        return cls(Path(root), tuple(verify_suite_manifest()))
+
+    def directories(self) -> dict[str, Path]:
+        return {suite.directory_var: suite.directory(self.root) for suite in self.suites}
+
+    def reports(self) -> dict[str, Path]:
+        return {suite.report_key: suite.report_path(self.root) for suite in self.suites}
+
+    def as_legacy_dict(self) -> dict[str, Path]:
+        return {**self.directories(), **self.reports()}
+
+    def report(self, report_key: str) -> Path:
+        reports = self.reports()
+        if report_key not in reports:
+            raise KeyError(f"Unknown verification report key: {report_key}")
+        return reports[report_key]
+
+    def build_eval_packet_kwargs(self) -> dict[str, Path]:
+        return {
+            "agent_client_report": self.report("agent_client_report"),
+            "mcp_matrix_report": self.report("mcp_matrix_report"),
+            "dashboard_browser_report": self.report("dashboard_browser_report"),
+            "radar_reports_report": self.report("radar_reports_report"),
+            "export_restore_report": self.report("export_restore_report"),
+            "messy_inbox_report": self.report("messy_inbox_report"),
+        }
+
+    def shell_assignments(self) -> str:
+        lines = []
+        for key, value in self.directories().items():
+            lines.append(f"{key}={shlex.quote(str(value))}")
+        return "\n".join(lines)
+
+
 def verify_suite_manifest() -> list[VerifySuite]:
     return [
         VerifySuite(
@@ -122,14 +165,7 @@ def verify_suite_manifest() -> list[VerifySuite]:
 
 
 def eval_report_paths(root: str | Path) -> dict[str, Path]:
-    base = Path(root)
-    paths: dict[str, Path] = {}
-    for suite in verify_suite_manifest():
-        paths[suite.directory_var] = suite.directory(base)
-        paths[suite.report_key] = suite.report_path(base)
-    paths["real_integrations_dir"] = paths["real_integrations_dir"]
-    paths["smoke_root"] = paths["smoke_root"]
-    return paths
+    return EvalEvidencePaths.from_root(root).as_legacy_dict()
 
 
 def suite_manifest_json(root: str | Path | None = None) -> dict[str, Any]:
@@ -154,13 +190,7 @@ def suite_manifest_json(root: str | Path | None = None) -> dict[str, Any]:
 
 
 def shell_assignments(root: str | Path) -> str:
-    paths = eval_report_paths(root)
-    lines = []
-    for key, value in paths.items():
-        if key.endswith("_report"):
-            continue
-        lines.append(f"{key}={shlex.quote(str(value))}")
-    return "\n".join(lines)
+    return EvalEvidencePaths.from_root(root).shell_assignments()
 
 
 def main(argv: list[str] | None = None) -> int:

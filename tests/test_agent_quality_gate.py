@@ -126,9 +126,49 @@ def test_docs_sensitive_source_changes_require_docs_alignment_without_docs() -> 
 
 def test_docs_alignment_is_satisfied_when_related_docs_change() -> None:
     plan = build_gate_plan(
-        changed_files=("src/alcove/tasks.py", "docs/modules.md"),
+        changed_files=("src/alcove/tasks.py", ".agents/skills/alcove-doc-sync/SKILL.md"),
         mode="coach",
         surface="codex",
+    )
+
+    command_ids = [command.id for command in plan.commands]
+    assert "docs_alignment" not in plan.risk_areas
+    assert "docs_alignment" not in command_ids
+
+
+def test_site_sensitive_entry_changes_are_satisfied_by_related_docs() -> None:
+    plan = build_gate_plan(
+        changed_files=("src/alcove/agent_workspaces.py", "docs/workspaces.md"),
+        mode="coach",
+        surface="codex",
+    )
+
+    command_ids = [command.id for command in plan.commands]
+    assert "docs_alignment" not in plan.risk_areas
+    assert "docs_alignment" not in command_ids
+
+
+def test_site_overview_changes_can_be_included_when_the_public_story_changes() -> None:
+    plan = build_gate_plan(
+        changed_files=(
+            "src/alcove/agent_workspaces.py",
+            "docs/workspaces.md",
+            "site/index.html",
+        ),
+        mode="coach",
+        surface="codex",
+    )
+
+    command_ids = [command.id for command in plan.commands]
+    assert "docs_alignment" not in plan.risk_areas
+    assert "docs_alignment" not in command_ids
+
+
+def test_public_docs_changes_do_not_force_pages_sync() -> None:
+    plan = build_gate_plan(
+        changed_files=("docs/entry-modes.md",),
+        mode="coach",
+        surface="manual",
     )
 
     command_ids = [command.id for command in plan.commands]

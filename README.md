@@ -82,7 +82,7 @@ Data ownership is explicit:
 - **External knowledge sources** — read-only mounts plus Apple Notes, GitHub
   Stars, and Chrome Bookmarks connectors.
 - **Agent entry modes** — Hub workspace, lightweight global MCP, managed-KB
-  workspace, and local service runtime.
+  workspace, business workspace OKF, and local service runtime.
 - **Configurable radars and monitors** — scheduled information reports, watched
   feeds/pages, blog discovery, optional capture, optional AI summary, and
   Telegram/Feishu/tmux-claude-bot notification sinks.
@@ -166,6 +166,8 @@ alcove home init
 alcove kb add research_notes /path/to/research_notes
 alcove hub init ~/AlcoveHub --default-kb research_notes
 alcove hub install ~/AlcoveHub --default-kb research_notes
+alcove workspace init family --default-kb research_notes
+alcove workspace okf init family --json
 alcove global install --default-kb research_notes
 alcove kb install research_notes
 ```
@@ -175,6 +177,7 @@ Entry profiles:
 | Mode | Purpose |
 | --- | --- |
 | Hub workspace | Main AI workspace for broad personal knowledge work. |
+| Business workspace | Lightweight family/work/travel-style agent scene under the Hub concept. |
 | Global MCP | Lightweight search/save access from unrelated projects. |
 | Managed KB workspace | Focused capture, inbox review, and OKF note workflows. |
 | Local service | launchd dashboard server and deterministic scheduler ticks. |
@@ -184,6 +187,7 @@ repository templates:
 
 ```sh
 alcove hub install ~/AlcoveHub --default-kb research_notes --link
+alcove workspace install family --link
 alcove kb install research_notes --link
 ```
 
@@ -301,6 +305,7 @@ tools:
 - [Documentation Index](docs/README.md)
 - [Usage Guide](docs/usage.md)
 - [Entry Modes](docs/entry-modes.md)
+- [Agent Workspaces](docs/workspaces.md)
 - [Architecture](docs/architecture.md)
 - [Modules](docs/modules.md)
 - [OKF Profile](docs/okf-profile.md)

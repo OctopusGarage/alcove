@@ -6,6 +6,7 @@ from typing import Any
 
 import yaml
 
+from alcove.agent_workspaces import WORKSPACE_CONFIG_FILE, AgentWorkspacesModule
 from alcove.automations import AutomationsModule
 from alcove.blog_monitor import BlogMonitorModule
 from alcove.connector_sources import ConnectorSourceRegistry
@@ -216,6 +217,69 @@ class HealthModule(HealthPlannerHygieneMixin, HealthValidationMixin):
                     f"Registered KB cannot be opened: {exc}",
                     "Run `alcove kb install <name> --status --json` and repair the KB config.",
                 )
+
+    def _check_agent_workspaces(
+        self,
+        home: AlcoveHome,
+        issues: list[HealthIssue],
+        counts: dict[str, int],
+    ) -> None:
+        module = AgentWorkspacesModule(home)
+        registry_root = module.root
+        if not registry_root.is_dir():
+            counts["workspaces"] = 0
+            counts["workspace_paths_existing"] = 0
+            counts["workspace_agent_configs"] = 0
+            return
+
+        registry_files = sorted(registry_root.glob("*.yml"))
+        counts["workspaces"] = len(registry_files)
+        existing_paths = 0
+        agent_configs = 0
+        for registry_path in registry_files:
+            try:
+                record = module._read_record(registry_path)
+            except Exception as exc:
+                self._issue(
+                    issues,
+                    "warning",
+                    "workspaces",
+                    "invalid_workspace_registry",
+                    registry_path,
+                    f"Agent workspace registry cannot be read: {exc}",
+                    "Run `alcove workspace init <id>` or remove the stale registry file.",
+                )
+                continue
+
+            if record.path.is_dir():
+                existing_paths += 1
+            else:
+                self._issue(
+                    issues,
+                    "warning",
+                    "workspaces",
+                    "missing_workspace_path",
+                    registry_path,
+                    f"Agent workspace path is missing: {record.id}",
+                    "Run `alcove workspace install <id>` after restoring the workspace path.",
+                )
+                continue
+
+            config_name = ".alcove-hub.yml" if record.profile == "hub" else WORKSPACE_CONFIG_FILE
+            if (record.path / config_name).is_file():
+                agent_configs += 1
+            else:
+                self._issue(
+                    issues,
+                    "warning",
+                    "workspaces",
+                    "missing_workspace_config",
+                    record.path / config_name,
+                    f"Agent workspace config is missing: {record.id}",
+                    "Run `alcove workspace install <id>`.",
+                )
+        counts["workspace_paths_existing"] = existing_paths
+        counts["workspace_agent_configs"] = agent_configs
 
     def _check_pins(
         self,

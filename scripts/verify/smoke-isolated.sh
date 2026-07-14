@@ -13,6 +13,7 @@ fi
 home="$tmp_root/home"
 kb="$tmp_root/research_notes"
 hub="$tmp_root/hub"
+family_workspace="$home/workspaces/data/family"
 fixtures="$tmp_root/fixtures"
 export_root="$tmp_root/export"
 report="$tmp_root/smoke-report.json"
@@ -101,6 +102,26 @@ alcove kb --home "$home" install research_notes --target codex --status --json >
 assert_json "kb install status" "$fixtures/kb-status.json" "payload['profile'] == 'managed-kb' and all(item['installed'] and item['workspace_match'] for item in payload['files'])"
 alcove kb --home "$home" install research_notes --target claude --status --json > "$fixtures/kb-status-claude.json"
 assert_json "kb install status claude" "$fixtures/kb-status-claude.json" "payload['profile'] == 'managed-kb' and all(item['installed'] and item['workspace_match'] for item in payload['files'])"
+
+alcove workspace --home "$home" init family \
+  --default-kb research_notes \
+  --context "Family workspace smoke." \
+  --target codex \
+  --json > "$fixtures/workspace-init.json"
+assert_json "workspace init" "$fixtures/workspace-init.json" "payload['workspace']['id'] == 'family' and payload['workspace']['profile'] == 'workspace'"
+test -f "$family_workspace/.alcove-workspace.yml"
+test -f "$family_workspace/.agents/skills/alcove-workspace/SKILL.md"
+alcove workspace --home "$home" status family --json > "$fixtures/workspace-status.json"
+assert_json "workspace status" "$fixtures/workspace-status.json" "payload['exists'] and all(item['installed'] and item['workspace_match'] for item in payload['files'])"
+alcove workspace --home "$home" okf init family --kb-name family --json > "$fixtures/workspace-okf-init.json"
+assert_json "workspace okf init" "$fixtures/workspace-okf-init.json" "payload['status'] == 'initialized' and payload['workspace']['default_kb'] == 'family'"
+alcove workspace --home "$home" okf add-note family household "Workspace Smoke Note" \
+  --summary "Workspace OKF smoke needle for family planning." \
+  --tag smoke \
+  --json > "$fixtures/workspace-okf-add-note.json"
+assert_json "workspace okf add note" "$fixtures/workspace-okf-add-note.json" "payload['status'] == 'noted' and payload['kb'] == 'family'"
+alcove workspace --home "$home" okf search family "family planning" --json > "$fixtures/workspace-okf-search.json"
+assert_json "workspace okf search" "$fixtures/workspace-okf-search.json" "payload['count'] >= 1 and payload['results'][0]['title'] == 'Workspace Smoke Note'"
 
 alcove inbox --kb research_notes manual-add "Smoke Manual" \
   --content "Smoke inbox body with a local integration needle." \
@@ -438,7 +459,7 @@ alcove idea --home "$home" add "Smoke Idea" --notes "Idea smoke needle." --tag s
 alcove task --home "$home" routine-add "Smoke Routine" --notes "Routine smoke needle." --tag smoke --every-days 7 --next-due 2026-07-10 --json > "$fixtures/routine-add.json"
 alcove task --home "$home" materialize-due --today 2026-07-10 --json > "$fixtures/materialize-due.json"
 assert_json "materialize due" "$fixtures/materialize-due.json" "payload['status'] == 'materialized' and len(payload['created']) >= 1"
-alcove task --home "$home" digest --today 2026-07-12 --json > "$fixtures/task-digest.json"
+alcove task --home "$home" digest --today 2026-07-14 --json > "$fixtures/task-digest.json"
 assert_json "task digest readable" "$fixtures/task-digest.json" \
   "payload['counts']['tasks'] >= 2 and payload['counts']['ideas'] >= 1 and payload['counts']['routines'] >= 1 and payload['title'] not in payload['text'] and '[task:' not in payload['text'] and '[idea:' not in payload['text'] and '[routine:' not in payload['text'] and '✅ Pending tasks' in payload['text'] and '💡 Ideas' in payload['text'] and '🔁 Active routines' in payload['text'] and 'Overdue:' in payload['text']"
 
@@ -786,7 +807,7 @@ assert snapshot["summary"]["counts"]["usage_events"] > 0
 assert usage["search"]["total"] > 0
 assert usage["search"]["surfaces"].get("cli", 0) > 0
 assert usage["actions"]["total"] > 0
-assert health["totals"]["managed_kbs"] == 1
+assert health["totals"]["managed_kbs"] >= 2
 assert health["totals"]["mounts"] == 1
 assert health["totals"]["connectors"] >= 3
 assert health["totals"]["managed_items"] > 0

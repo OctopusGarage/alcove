@@ -8,6 +8,8 @@ and implementation constraints. Keep the README short; put durable details here.
 - [Usage Guide](usage.md): daily CLI/MCP workflows and common commands.
 - [Entry Modes](entry-modes.md): hub workspace, global MCP, managed KB, and
   local service entry profiles.
+- [Agent Workspaces](workspaces.md): fixed Hub plus lightweight business
+  workspaces and workspace-local OKF for family/work/travel-style conversations.
 - [Modules](modules.md): feature groups, ownership boundaries, and storage
   contracts.
 - [Prompt Library](prompts.md): reusable prompt records, curation, search,

@@ -112,6 +112,45 @@ class ProfileInstaller:
             "files": files,
         }
 
+    def project_profile_install(
+        self,
+        path: Path | str,
+        *,
+        profile: str,
+        skill_name: str,
+        default_kb: str = "",
+        targets: list[str] | None = None,
+        link: bool = False,
+    ) -> list[InstallRecord]:
+        root = Path(path).expanduser().resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        return self._install_project_profile(
+            root,
+            profile=profile,
+            skill_name=skill_name,
+            default_kb=default_kb,
+            targets=targets or ["all"],
+            link=link,
+        )
+
+    def project_profile_status(
+        self,
+        path: Path | str,
+        *,
+        profile: str,
+        skill_name: str,
+        default_kb: str = "",
+        targets: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        root = Path(path).expanduser().resolve()
+        return self._project_profile_status(
+            root,
+            profile=profile,
+            skill_name=skill_name,
+            default_kb=default_kb,
+            targets=targets or ["all"],
+        )
+
     def kb_status(
         self,
         kb: str,

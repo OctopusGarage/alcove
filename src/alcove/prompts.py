@@ -406,7 +406,7 @@ class PromptsModule:
         out: dict[str, Any] = {}
         status = str(value.get("status") or "").strip()
         if status:
-            out["status"] = status
+            out["status"] = "curated" if status == "proposed" else status
         score = value.get("score")
         if isinstance(score, int | float):
             out["score"] = max(0.0, min(1.0, float(score)))

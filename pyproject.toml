@@ -56,6 +56,7 @@ strict = true
 ignore_missing_imports = true
 files = [
     "src/alcove/agent_quality_gate.py",
+    "src/alcove/agent_workspaces.py",
     "src/alcove/ai_eval.py",
     "src/alcove/ai_eval_connectors.py",
     "src/alcove/ai_eval_mcp.py",
@@ -84,6 +85,7 @@ files = [
     "src/alcove/cli_managed_kb.py",
     "src/alcove/cli_operations.py",
     "src/alcove/cli_planner.py",
+    "src/alcove/cli_publish_parser.py",
     "src/alcove/cli_profiles.py",
     "src/alcove/cli_prompts.py",
     "src/alcove/cli_registry.py",
@@ -92,6 +94,8 @@ files = [
     "src/alcove/cli_service.py",
     "src/alcove/cli_system.py",
     "src/alcove/cli_usage.py",
+    "src/alcove/cli_workspace_parser.py",
+    "src/alcove/cli_workspaces.py",
     "src/alcove/connector_sources.py",
     "src/alcove/connectors/fetch.py",
     "src/alcove/dashboard_activity.py",
@@ -103,6 +107,7 @@ files = [
     "src/alcove/dashboard_time.py",
     "src/alcove/external_index.py",
     "src/alcove/external_presentation.py",
+    "src/alcove/external_resolver.py",
     "src/alcove/exporter.py",
     "src/alcove/health.py",
     "src/alcove/health_planner.py",

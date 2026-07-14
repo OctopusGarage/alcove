@@ -7,6 +7,7 @@ from alcove.connectors.github_stars import GitHubStarsConnector, GitHubStarsImpo
 from alcove.home import AlcoveHome
 from alcove.knowledge import AddConceptRequest, KnowledgeModule, NoteSourceRequest
 from alcove.markdown import MarkdownRepository
+from alcove.mcp_direct_tools import direct_tool_runtime
 from alcove.mcp_registrar import McpToolRegistrar
 from alcove.mcp_server import (
     command_hints_tool,
@@ -82,6 +83,20 @@ def test_mcp_registrar_owns_toolset_filter_and_context():
     assert registrar.tool(alcove_search) is alcove_search
     assert registrar.tool(alcove_inbox_peek) is alcove_inbox_peek
     assert registrar.mcp.registered == ["alcove_search"]
+
+
+def test_mcp_direct_tool_runtime_uses_server_context_defaults(tmp_path):
+    workspace = Workspace.init(tmp_path / "workspace")
+    home = AlcoveHome.init(tmp_path / "home")
+
+    runtime = direct_tool_runtime(
+        default_workspace=str(workspace.root),
+        default_home=str(home.root),
+    )
+
+    assert runtime.app().runtime.workspace.root == workspace.root
+    assert runtime.app().runtime.home.root == home.root
+    assert runtime.managed_app().runtime.workspace.root == workspace.root
 
 
 def test_mcp_search_tool_returns_search_payload(tmp_path):
@@ -230,13 +245,17 @@ def test_mcp_command_hints_exposes_cli_only_workflows(tmp_path):
     payload = command_hints_tool(home=str(home.root))
 
     workflow_ids = {workflow["id"] for workflow in payload["workflows"]}
-    assert {"blog_monitor", "radars", "dashboard", "publishers"} <= workflow_ids
+    assert {"workspace_okf", "blog_monitor", "radars", "dashboard", "publishers"} <= workflow_ids
     assert payload["status"] == "ok"
     assert payload["home"].endswith("/home")
     assert all(workflow["surface"] == "cli" for workflow in payload["workflows"])
 
     blog = next(workflow for workflow in payload["workflows"] if workflow["id"] == "blog_monitor")
     assert any("alcove blog check" in command for command in blog["commands"])
+    workspace_okf = next(
+        workflow for workflow in payload["workflows"] if workflow["id"] == "workspace_okf"
+    )
+    assert any("workspace okf init" in command for command in workspace_okf["commands"])
 
 
 def test_mcp_command_hints_can_filter_by_workflow(tmp_path):

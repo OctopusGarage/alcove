@@ -67,10 +67,15 @@ class LocalAppleNotesExporter:
             )
         data = response.get("data") if isinstance(response.get("data"), dict) else {}
         notes = data.get("notes") if isinstance(data.get("notes"), list) else []
-        return write_apple_notes_export_tree(
-            [note for note in notes if isinstance(note, dict)],
+        summary = write_apple_notes_export_tree(
+            [note for note in notes if isinstance(note, dict) and note.get("id")],
             output_dir,
         )
+        warnings = data.get("warnings") if isinstance(data.get("warnings"), list) else []
+        if warnings:
+            summary["automation_warning_count"] = len(warnings)
+            summary["automation_warnings"] = warnings[:50]
+        return summary
 
     def _run_jxa(self) -> dict[str, Any]:
         script = """
@@ -82,52 +87,97 @@ function fail(error, details) {
   return { ok: false, action: "export-all-notes", error, details };
 }
 
-function scanFolderNotes(folder, accountName, parentPath, out) {
-  const folderPath = parentPath ? `${parentPath}/${folder.name()}` : `${accountName}/${folder.name()}`;
-  for (const note of folder.notes()) {
-    out.push({ note, folderPath });
-  }
-  for (const child of folder.folders()) {
-    scanFolderNotes(child, accountName, folderPath, out);
+function warning(warnings, context, stage, error) {
+  warnings.push({
+    context: String(context || ''),
+    stage: String(stage || ''),
+    error: String((error && error.message) || error || ''),
+  });
+}
+
+function safeList(warnings, context, stage, read) {
+  try {
+    return read() || [];
+  } catch (error) {
+    warning(warnings, context, stage, error);
+    return [];
   }
 }
 
-function allNotes(app) {
-  const out = [];
-  for (const account of app.accounts()) {
-    const accountName = account.name();
-    for (const folder of account.folders()) {
-      scanFolderNotes(folder, accountName, "", out);
+function safeString(warnings, context, stage, read, fallback) {
+  try {
+    const value = read();
+    if (value === undefined || value === null) {
+      return fallback || '';
     }
+    return String(value);
+  } catch (error) {
+    warning(warnings, context, stage, error);
+    return fallback || '';
   }
-  return out;
 }
 
 function isDeletedFolderPath(folderPath) {
   return String(folderPath || '').split('/').map((part) => part.trim()).includes('Recently Deleted');
 }
 
-function fullNoteRecord(note, folderPath) {
+function fullNoteRecord(note, folderPath, warnings) {
+  const id = safeString(warnings, folderPath, 'note.id', () => note.id(), '');
+  if (!id) {
+    warning(warnings, folderPath, 'note.skip', 'missing note id');
+    return null;
+  }
   const account = folderPath ? folderPath.split('/')[0] : null;
   return {
-    id: note.id(),
-    title: note.name(),
+    id,
+    title: safeString(warnings, id, 'note.name', () => note.name(), 'Untitled'),
     account,
     folder_path: folderPath,
-    created_at: note.creationDate(),
-    updated_at: note.modificationDate(),
-    plaintext: String(note.plaintext() || ''),
-    body_html: String(note.body() || ''),
+    created_at: safeString(warnings, id, 'note.creationDate', () => note.creationDate(), ''),
+    updated_at: safeString(warnings, id, 'note.modificationDate', () => note.modificationDate(), ''),
+    plaintext: safeString(warnings, id, 'note.plaintext', () => note.plaintext(), ''),
+    body_html: safeString(warnings, id, 'note.body', () => note.body(), ''),
   };
+}
+
+function scanFolderNotes(folder, accountName, parentPath, notes, warnings) {
+  const folderName = safeString(warnings, parentPath || accountName, 'folder.name', () => folder.name(), '');
+  if (!folderName) {
+    warning(warnings, parentPath || accountName, 'folder.skip', 'missing folder name');
+    return;
+  }
+  const folderPath = parentPath ? `${parentPath}/${folderName}` : `${accountName}/${folderName}`;
+  if (isDeletedFolderPath(folderPath)) {
+    return;
+  }
+  for (const note of safeList(warnings, folderPath, 'folder.notes', () => folder.notes())) {
+    const record = fullNoteRecord(note, folderPath, warnings);
+    if (record) {
+      notes.push(record);
+    }
+  }
+  for (const child of safeList(warnings, folderPath, 'folder.folders', () => folder.folders())) {
+    scanFolderNotes(child, accountName, folderPath, notes, warnings);
+  }
+}
+
+function allNotes(app, warnings) {
+  const notes = [];
+  for (const account of safeList(warnings, 'Notes.app', 'accounts', () => app.accounts())) {
+    const accountName = safeString(warnings, 'Notes.app', 'account.name', () => account.name(), 'Unknown');
+    for (const folder of safeList(warnings, accountName, 'account.folders', () => account.folders())) {
+      scanFolderNotes(folder, accountName, "", notes, warnings);
+    }
+  }
+  return notes;
 }
 
 function main() {
   try {
     const app = Application('Notes');
-    const notes = allNotes(app)
-      .filter((row) => !isDeletedFolderPath(row.folderPath))
-      .map((row) => fullNoteRecord(row.note, row.folderPath));
-    return ok({ notes });
+    const warnings = [];
+    const notes = allNotes(app, warnings);
+    return ok({ notes, warnings });
   } catch (error) {
     return fail('NOTES_AUTOMATION_ERROR', String(error.message || error));
   }
@@ -494,7 +544,15 @@ def write_apple_notes_export_tree(notes: list[dict[str, Any]], output_dir: Path 
     notes_root = root / "notes"
     notes_root.mkdir(parents=True, exist_ok=True)
 
-    canonical_notes = [_canonical_note_record(note) for note in notes]
+    canonical_by_id: dict[str, dict[str, Any]] = {}
+    duplicate_ids: list[str] = []
+    for note in notes:
+        canonical = _canonical_note_record(note)
+        note_id = str(canonical["id"])
+        if note_id in canonical_by_id:
+            duplicate_ids.append(note_id)
+        canonical_by_id[note_id] = canonical
+    canonical_notes = list(canonical_by_id.values())
     canonical_notes.sort(key=lambda item: str(item["id"]))
     active_dir_names = {_note_dir_name(str(note["id"])) for note in canonical_notes}
     previous_json_by_dir: dict[str, str] = {}
@@ -561,6 +619,8 @@ def write_apple_notes_export_tree(notes: list[dict[str, Any]], output_dir: Path 
     summary = {
         "schema_version": 1,
         "note_count": len(canonical_notes),
+        "duplicate_input_count": len(duplicate_ids),
+        "duplicate_ids": sorted(set(duplicate_ids)),
         "added_count": len(added_ids),
         "updated_count": len(updated_ids),
         "removed_count": len(removed_ids),

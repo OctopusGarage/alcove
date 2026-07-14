@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import shutil
 
 import yaml
 
+from alcove.agent_workspaces import AgentWorkspacesModule
 from alcove.cli import main
 from alcove.health import HealthModule
 from alcove.health_registry import HomeHealthCheck, home_health_checks, required_home_path_names
@@ -20,7 +22,7 @@ def test_home_health_registry_lists_each_check_once():
     names = [check.name for check in home_health_checks()]
 
     assert len(names) == len(set(names))
-    assert names[:4] == ["registered_kbs", "pins", "prompts", "prompt_quality"]
+    assert names[:5] == ["registered_kbs", "workspaces", "pins", "prompts", "prompt_quality"]
     assert {"tasks", "mounts", "connectors", "dashboard", "usage"}.issubset(names)
     assert required_home_path_names() == (
         "pins",
@@ -30,6 +32,25 @@ def test_home_health_registry_lists_each_check_once():
         "mounts",
         "connectors",
         "knowledge_bases",
+    )
+
+
+def test_health_checks_agent_workspace_registries(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    module = AgentWorkspacesModule(home)
+    module.init("family", context="Family workspace")
+    module.init("stale", path=str(tmp_path / "missing-workspace"))
+    shutil.rmtree(tmp_path / "missing-workspace")
+
+    report = HealthModule(home=home).check()
+
+    assert report["status"] == "warnings"
+    assert report["counts"]["workspaces"] == 2
+    assert report["counts"]["workspace_paths_existing"] == 1
+    assert report["counts"]["workspace_agent_configs"] == 1
+    assert any(
+        issue["module"] == "workspaces" and issue["kind"] == "missing_workspace_path"
+        for issue in report["issues"]
     )
 
 

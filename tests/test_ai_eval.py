@@ -9,7 +9,7 @@ from alcove.ai_eval import (
     build_eval_bundle,
     build_eval_packet,
 )
-from alcove.verify_suites import eval_report_paths, verify_suite_manifest
+from alcove.verify_suites import EvalEvidencePaths, eval_report_paths, verify_suite_manifest
 
 
 def _write_json(path: Path, payload: object) -> None:
@@ -55,6 +55,8 @@ def test_verify_suite_manifest_owns_eval_report_paths(tmp_path):
     suites = verify_suite_manifest()
     suite_ids = [suite.id for suite in suites]
     paths = eval_report_paths(tmp_path)
+    evidence_paths = EvalEvidencePaths.from_root(tmp_path)
+    packet_kwargs = evidence_paths.build_eval_packet_kwargs()
 
     assert suite_ids == [
         "isolated",
@@ -76,12 +78,24 @@ def test_verify_suite_manifest_owns_eval_report_paths(tmp_path):
         tmp_path / "radar-reports" / "radar-reports-report.json"
     )
     assert paths["messy_inbox_report"] == tmp_path / "messy-inbox" / "messy-inbox-report.json"
+    assert packet_kwargs == {
+        "agent_client_report": tmp_path / "agent-clients" / "agent-client-smoke-report.json",
+        "mcp_matrix_report": tmp_path / "mcp-matrix" / "mcp-matrix-report.json",
+        "dashboard_browser_report": tmp_path
+        / "dashboard-browser"
+        / "dashboard-browser-report.json",
+        "radar_reports_report": tmp_path / "radar-reports" / "radar-reports-report.json",
+        "export_restore_report": tmp_path / "export-restore" / "export-restore-report.json",
+        "messy_inbox_report": tmp_path / "messy-inbox" / "messy-inbox-report.json",
+    }
+    assert "agent_clients_dir=" in evidence_paths.shell_assignments()
 
 
 def _write_minimal_packet_artifacts(
     tmp_path: Path,
     *,
     inbox_read: dict | None = None,
+    blog_monitor: dict | None = None,
 ) -> tuple[Path, Path, Path]:
     smoke_root = tmp_path / "smoke"
     fixtures = smoke_root / "fixtures"
@@ -222,6 +236,11 @@ def _write_minimal_packet_artifacts(
     _write_json(fixtures / "prompt-recommend.json", [])
     _write_json(fixtures / "prompt-compose.json", {})
     _write_json(fixtures / "task-add.json", {})
+    _write_json(fixtures / "workspace-init.json", {})
+    _write_json(fixtures / "workspace-status.json", {})
+    _write_json(fixtures / "workspace-okf-init.json", {})
+    _write_json(fixtures / "workspace-okf-add-note.json", {})
+    _write_json(fixtures / "workspace-okf-search.json", {})
     _write_json(fixtures / "idea-add.json", {})
     _write_json(fixtures / "routine-add.json", {})
     _write_json(
@@ -250,7 +269,8 @@ def _write_minimal_packet_artifacts(
     _write_json(fixtures / "connector-fetch.json", {})
     _write_json(
         fixtures / "blog-monitor-smoke.json",
-        {
+        blog_monitor
+        or {
             "status": "passed",
             "success": {"sources": [{"status": "changed", "notify": {"status": "sent"}}]},
             "failure": {"sources": [{"status": "needs_attention", "stage": "discovery"}]},
@@ -735,6 +755,31 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
         fixtures / "project-find.json",
         {"projects": [{"alias": "project-alpha", "note": "Smoke project alias"}]},
     )
+    _write_json(
+        fixtures / "workspace-init.json",
+        {"workspace": {"id": "family", "profile": "workspace"}},
+    )
+    _write_json(
+        fixtures / "workspace-status.json",
+        {"exists": True, "files": [{"installed": True, "workspace_match": True}]},
+    )
+    _write_json(
+        fixtures / "workspace-okf-init.json",
+        {"status": "initialized", "workspace": {"id": "family", "default_kb": "family"}},
+    )
+    _write_json(
+        fixtures / "workspace-okf-add-note.json",
+        {"status": "noted", "kb": "family", "path": "~/workspace/okf/note.md"},
+    )
+    _write_json(
+        fixtures / "workspace-okf-search.json",
+        {
+            "workspace": {"id": "family"},
+            "kb": "family",
+            "count": 1,
+            "results": [{"title": "Workspace Smoke Note", "type": "Knowledge Concept"}],
+        },
+    )
     _write_json(fixtures / "task-add.json", {"task": {"title": "Smoke Task"}})
     _write_json(fixtures / "mount-scan.json", {"items": [{"title": "Mounted Smoke"}]})
     _write_json(
@@ -1047,6 +1092,7 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
         "blog_monitor",
         "radars",
         "dashboard",
+        "workspaces",
         "mcp_entry",
         "export_health",
         "agent_entries",
@@ -1073,6 +1119,18 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
     assert packet["evidence"]["smoke"]["prompt_proposal"]["id"] == "proposal-1"
     assert packet["evidence"]["smoke"]["prompt_recommend"][0]["prompt"]["title"] == ("Smoke Prompt")
     assert packet["evidence"]["smoke"]["prompt_compose"]["sources"][0]["title"] == ("Smoke Prompt")
+    assert packet["evidence"]["smoke"]["workspace_init"]["workspace"]["id"] == "family"
+    assert packet["evidence"]["smoke"]["workspace_okf_init"]["workspace"]["default_kb"] == (
+        "family"
+    )
+    assert packet["evidence"]["smoke"]["workspace_okf_search"]["results"][0]["title"] == (
+        "Workspace Smoke Note"
+    )
+    assert any(
+        "workspace-local OKF" in question
+        for module in packet["modules"]
+        for question in module["ai_quality_questions"]
+    )
     assert any(
         "render quality" in question.lower()
         for module in packet["modules"]
@@ -1561,6 +1619,30 @@ def test_eval_packet_builder_owns_artifact_warnings_and_compaction(tmp_path):
     assert inbox_read["packet_truncated"] is True
 
 
+def test_build_eval_packet_sanitizes_local_fixture_file_urls(tmp_path):
+    smoke_root, real_home, integrations = _write_minimal_packet_artifacts(
+        tmp_path,
+        blog_monitor={
+            "events": [
+                {
+                    "source_id": "blog-failure",
+                    "url": "file://~/programming/OctopusGarage/alcove/.tmp/ai-eval/smoke/fixtures/blog-monitor.html",
+                    "status": "failed",
+                }
+            ]
+        },
+    )
+
+    packet = build_eval_packet(
+        smoke_root=smoke_root,
+        real_home_report=real_home,
+        real_integrations_dir=integrations,
+    )
+
+    event = packet["evidence"]["smoke"]["blog_monitor"]["events"][0]
+    assert event["url"] == "fixture://local-file"
+
+
 def test_build_eval_packet_uses_review_surface_for_inbox_content(tmp_path):
     smoke_root, real_home, integrations = _write_minimal_packet_artifacts(
         tmp_path,
@@ -1627,6 +1709,7 @@ def test_build_eval_bundle_writes_packet_prompt_and_missing_artifact_warnings(tm
     assert result.packet_path.is_file()
     assert result.prompt_path.is_file()
     assert packet["schema"] == "alcove.ai_eval_packet.v1"
+    assert packet["warning_count"] == len(packet["warnings"])
     assert packet["evaluation_scope"]["mode"] == "focused"
     assert packet["warnings"]
     assert "Return JSON only" in prompt
