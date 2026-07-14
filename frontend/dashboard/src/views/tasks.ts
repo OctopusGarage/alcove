@@ -4,7 +4,7 @@ import { asText, escapeHtml } from "../components/text";
 import type { DashboardSnapshot } from "../snapshot";
 
 export function renderTasks(snapshot: DashboardSnapshot): string {
-  const tasks = snapshot.tasks.all.map((task) =>
+  const tasks = snapshot.tasks.pending.map((task) =>
     row(
       asText(task.display_title) || asText(task.title),
       [
@@ -23,7 +23,7 @@ export function renderTasks(snapshot: DashboardSnapshot): string {
       "task",
     ),
   );
-  const ideas = snapshot.tasks.ideas_all.map((idea) =>
+  const ideas = snapshot.tasks.ideas.map((idea) =>
     row(
       `Idea: ${asText(idea.title)}`,
       [asText(idea.notes), meta(["status", idea.status], ["created", idea.created_at])]
@@ -33,7 +33,7 @@ export function renderTasks(snapshot: DashboardSnapshot): string {
       "idea",
     ),
   );
-  const routines = snapshot.tasks.routines_all.map((routine) =>
+  const routines = snapshot.tasks.routines.map((routine) =>
     row(
       `Routine: ${asText(routine.title)}`,
       [
@@ -61,9 +61,9 @@ export function renderTasks(snapshot: DashboardSnapshot): string {
         ["planner-routines", "Routine Templates"],
       ])}
     </header>
-    <section class="module-list" data-filter-list data-filter-limit="12" data-filter-mobile-limit="8">
+    <section class="module-list" data-filter-list data-filter-label="planner items" data-filter-limit="all" data-filter-mobile-limit="all">
       ${moduleToolbar("Search planner items", [
-        ["all", "All"],
+        ["", "All"],
         ["task", "Tasks"],
         ["idea", "Ideas"],
         ["routine", "Routines"],

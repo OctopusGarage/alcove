@@ -26,7 +26,8 @@ def test_application_global_mutations_record_usage_and_activity(tmp_path):
         AddTaskRequest(title="Usage Task", notes="Task body.")
     )
     prompt_payload = app.global_home.prompt_save_payload(
-        AddPromptRequest(title="Usage Prompt", content="Prompt body.")
+        AddPromptRequest(title="Usage Prompt", content="Prompt body."),
+        force=True,
     )
 
     summary = UsageRecorder(home).summary()
@@ -47,6 +48,8 @@ def test_application_global_mutations_record_usage_and_activity(tmp_path):
     ]
     assert task_payload["write_contract"]["source_of_truth"] == "tasks"
     assert prompt_payload["write_contract"]["action"] == "prompt.save"
+    assert prompt_payload["prompt_eval"]["verdict"] in {"ready", "needs_review"}
+    assert prompt_payload["prompt_eval"]["audit_status"] in {"ok", "warnings", "issues"}
 
 
 def test_application_managed_kb_mutation_records_usage_and_activity(tmp_path):

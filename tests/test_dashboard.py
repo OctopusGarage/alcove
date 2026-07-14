@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 
+import alcove.dashboard as dashboard_module
 from alcove.connectors.apple_notes import (
     AppleNotesConnector,
     AppleNotesImportRequest,
@@ -14,13 +15,14 @@ from alcove.connectors.chrome_bookmarks import (
 )
 from alcove.connectors.github_stars import GitHubStarsConnector, GitHubStarsImportRequest
 from alcove.dashboard import DashboardModule
+from alcove.dashboard_projection import DashboardProjection
 from alcove.home import AlcoveHome
 from alcove.mounts import AddMountRequest, MountsModule
 from alcove.pins_import import PinsMarkdownImportModule
 from alcove.pins import AddPinRequest, PinsModule
 from alcove.projects import AddProjectRequest, ProjectsModule
 from alcove.prompts import AddPromptRequest, PromptsModule
-from alcove.tasks import AddRoutineRequest, AddTaskRequest, TasksModule
+from alcove.tasks import AddIdeaRequest, AddRoutineRequest, AddTaskRequest, TasksModule
 from alcove.usage import UsageRecorder
 from alcove.workspace import Workspace
 
@@ -75,8 +77,9 @@ def test_dashboard_snapshot_counts_global_modules(tmp_path):
     assert snapshot["routines"] == []
     assert snapshot["modules"][0]["id"] == "pins"
     assert snapshot["modules"][0]["metric"] == 2
-    assert snapshot["modules"][0]["detail"] == (
-        "2 total pins / 0 theme pins (0 regular themes / 0 TODO themes)"
+    assert (
+        snapshot["modules"][0]["detail"]
+        == "2 displayed collections (1 regular / 1 TODO); 2 active pins"
     )
     assert any(module["id"] == "library" for module in snapshot["modules"])
     prompt_row = next(row for row in snapshot["search_index"] if row["type"] == "prompt")
@@ -97,6 +100,46 @@ def test_dashboard_snapshot_counts_global_modules(tmp_path):
     assert "tasks: Review dashboard" in activity_details
     assert "alcove" in activity_details
     assert "search_index" in snapshot
+
+
+def test_dashboard_module_cards_use_detail_page_counting_contract(tmp_path):
+    projection = DashboardProjection(AlcoveHome.init(tmp_path / "home"))
+
+    cards = projection.modules(
+        {
+            "pins": 2,
+            "pin_collections": 2,
+            "theme_pins": 2,
+            "regular_theme_pins": 1,
+            "todo_theme_pins": 1,
+            "knowledge_items": 3,
+            "mount_items": 4,
+            "connector_items": 5,
+            "knowledge_bases": 1,
+            "mounts": 2,
+            "connectors": 3,
+            "pending_tasks": 1,
+            "direct_pending_tasks": 1,
+            "routine_due_tasks": 0,
+            "active_ideas": 2,
+            "active_routines": 0,
+            "prompts": 1,
+            "projects": 1,
+            "activity_events": 6,
+            "blog_sources_active": 2,
+            "radars": 4,
+            "radars_current": 4,
+            "radars_configured": 4,
+            "radars_stale": 0,
+            "usage_events": 7,
+        }
+    )
+
+    by_id = {card["id"]: card for card in cards}
+    assert by_id["pins"]["metric"] == 2
+    assert by_id["pins"]["detail"] == "2 displayed collections (1 regular / 1 TODO); 2 active pins"
+    assert by_id["library"]["detail"] == "1 prompt / 1 project shortcut"
+    assert by_id["radars"]["detail"] == "4 active radars / 4 current reports / 0 stale reports"
 
 
 def test_dashboard_search_index_deduplicates_pin_summary_content(tmp_path):
@@ -171,6 +214,29 @@ def test_dashboard_marks_routine_generated_task_instances(tmp_path):
     assert "overdue" in search_row["text"]
 
 
+def test_dashboard_planner_counts_only_active_workload(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    tasks = TasksModule(home=home)
+    tasks.task_add(AddTaskRequest(title="Open task"))
+    tasks.idea_add(AddIdeaRequest(title="Open idea"))
+    active = tasks.routine_add(AddRoutineRequest(title="Active routine", every_days=7))
+    archived = tasks.routine_add(AddRoutineRequest(title="Archived routine", every_days=7))
+    tasks.routine_archive(archived.id)
+
+    snapshot = DashboardModule(home=home).snapshot()
+    planner = next(module for module in snapshot["modules"] if module["id"] == "planner")
+
+    assert snapshot["summary"]["counts"]["pending_tasks"] == 1
+    assert snapshot["summary"]["counts"]["active_ideas"] == 1
+    assert snapshot["summary"]["counts"]["active_routines"] == 1
+    assert snapshot["summary"]["counts"]["routines_total"] == 2
+    assert planner["metric"] == 3
+    assert "1 active ideas / 1 active routines" in planner["detail"]
+    assert [routine["id"] for routine in snapshot["routines"]] == [active.id]
+    assert [routine["id"] for routine in snapshot["tasks"]["routines"]] == [active.id]
+    assert {routine["id"] for routine in snapshot["routines_all"]} == {active.id, archived.id}
+
+
 def test_dashboard_build_writes_snapshot(tmp_path):
     home = AlcoveHome.init(tmp_path / "home")
     PinsModule(home=home).add(
@@ -203,6 +269,38 @@ def test_dashboard_build_writes_snapshot(tmp_path):
     assert "Claude Code Workflow" in snapshot
 
 
+def test_dashboard_frontend_build_removes_legacy_static_pages(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / "home")
+    frontend = tmp_path / "frontend"
+    dist = frontend / "dist"
+    assets = dist / "assets"
+    assets.mkdir(parents=True)
+    (frontend / "package.json").write_text("{}", encoding="utf-8")
+    (dist / "index.html").write_text("<div>new dashboard</div>", encoding="utf-8")
+    (assets / "app.js").write_text("console.log('dashboard')", encoding="utf-8")
+
+    output_dir = home.root / "dashboard"
+    output_dir.mkdir()
+    (output_dir / "snapshot.json").write_text("{}", encoding="utf-8")
+    (output_dir / "mounts.html").write_text("legacy", encoding="utf-8")
+    (output_dir / "tasks.html").write_text("legacy", encoding="utf-8")
+    old_assets = output_dir / "assets"
+    old_assets.mkdir()
+    (old_assets / "old.js").write_text("legacy", encoding="utf-8")
+
+    monkeypatch.setattr(dashboard_module.shutil, "which", lambda name: "/usr/bin/npm")
+    monkeypatch.setattr(dashboard_module.subprocess, "run", lambda *args, **kwargs: None)
+
+    DashboardModule(home=home)._build_frontend(frontend, output_dir)
+
+    assert (output_dir / "snapshot.json").is_file()
+    assert (output_dir / "index.html").read_text(encoding="utf-8") == "<div>new dashboard</div>"
+    assert (output_dir / "assets" / "app.js").is_file()
+    assert not (output_dir / "mounts.html").exists()
+    assert not (output_dir / "tasks.html").exists()
+    assert not (output_dir / "assets" / "old.js").exists()
+
+
 def test_dashboard_imports_regular_and_todo_text_files_as_markdown_pins(tmp_path):
     home = AlcoveHome.init(tmp_path / "home")
     regular = tmp_path / "regular.txt"
@@ -233,10 +331,11 @@ def test_dashboard_imports_regular_and_todo_text_files_as_markdown_pins(tmp_path
     )
     assert result["todo"]["archive"]["bytes"] == todo.stat().st_size
     assert second["archived_duplicates"] == 0
+    assert len(pins) == 2
+    assert snapshot["summary"]["counts"]["pins"] == 2
     assert {pin.kind for pin in pins} == {"regular", "todo"}
-    assert all("source-markdown-pin" in pin.tags for pin in pins)
-    assert all(not pin.resources for pin in pins)
     assert len(snapshot["pins"]["themes"]) == 2
+    assert len(snapshot["pins"]["all"]) == 2
     assert snapshot["pins"]["themes"][0]["content"] == regular.read_text(encoding="utf-8")
     assert snapshot["pins"]["themes"][1]["content"] == todo.read_text(encoding="utf-8")
     assert (
@@ -375,11 +474,11 @@ def test_dashboard_snapshot_includes_usage_summary_without_noisy_activity(tmp_pa
     assert "private dashboard query with sensitive suffix" not in json.dumps(
         snapshot["usage"], ensure_ascii=False
     )
-    assert any(
-        row.get("metrics", {}).get("query_preview")
-        for row in snapshot["usage"]["recent"]
-        if row["action"] == "search.run"
-    )
+    search_rows = [row for row in snapshot["usage"]["recent"] if row["action"] == "search.run"]
+    assert any(row.get("metrics", {}).get("result_count") == 2 for row in search_rows)
+    assert all("query_preview" not in row.get("metrics", {}) for row in search_rows)
+    assert all("query_hash" not in row.get("metrics", {}) for row in search_rows)
+    assert all("duration_ms" not in row.get("metrics", {}) for row in search_rows)
     assert all(row.get("area") != "dashboard" for row in snapshot["activity"])
 
 
@@ -683,6 +782,38 @@ def test_dashboard_default_knowledge_view_hides_deleted_okf_records(tmp_path):
     assert [item["title"] for item in managed["search_items"]] == ["Active Dashboard Source"]
     assert "Active Dashboard Source" in indexed_titles
     assert "Deleted Dashboard Source" not in indexed_titles
+
+
+def test_dashboard_managed_kb_counts_inbox_and_archive_entries_not_files(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    kb_root = tmp_path / "research_notes"
+    Workspace.init(kb_root)
+    (kb_root / "knowledge" / "sources").mkdir(parents=True)
+    (kb_root / "knowledge" / "sources" / "note.md").write_text(
+        "---\ntype: Source\ntitle: Managed Note\n---\n# Managed Note\n",
+        encoding="utf-8",
+    )
+    inbox_entry = kb_root / "inbox" / "openai" / "captured-post"
+    inbox_entry.mkdir(parents=True)
+    (inbox_entry / "capture.json").write_text("{}", encoding="utf-8")
+    (inbox_entry / "post.md").write_text("# Captured Post\n", encoding="utf-8")
+    (inbox_entry / "summary.md").write_text("# Summary\n", encoding="utf-8")
+    (inbox_entry / "raw").mkdir()
+    (inbox_entry / "raw" / "source.html").write_text("<article>raw</article>", encoding="utf-8")
+    (inbox_entry / "raw" / "metadata.json").write_text("{}", encoding="utf-8")
+    archive_entry = kb_root / "archive" / "agent" / "[xhs] archived-post"
+    archive_entry.mkdir(parents=True)
+    (archive_entry / "post.md").write_text("# Archived Post\n", encoding="utf-8")
+    (archive_entry / "summary.md").write_text("# Archived Summary\n", encoding="utf-8")
+    (archive_entry / "001.webp").write_bytes(b"fake-image")
+    (kb_root / "archive" / "agent" / "index.md").write_text("# Agent Index\n", encoding="utf-8")
+    home.register_knowledge_base("research_notes", kb_root)
+
+    managed = DashboardModule(home=home).snapshot()["knowledge"]["managed"][0]
+
+    assert managed["item_count"] == 1
+    assert managed["inbox_count"] == 1
+    assert managed["archive_count"] == 1
 
 
 def test_dashboard_kb_excerpts_truncate_on_complete_lines(tmp_path):

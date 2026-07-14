@@ -4,6 +4,8 @@ name: Stocks
 status: active
 schedule:
   enabled: true
+  daily_time: "10:00"
+  timezone: Asia/Singapore
   ttl_hours: 24
 sources:
   - id: marketwatch-top

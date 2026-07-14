@@ -278,7 +278,9 @@ class ConnectorSourceRegistry:
         if status not in {"fresh", "stale", "error"}:
             status = "fresh"
         checked_time = _parse_time(checked) if checked else None
-        if checked_time is None or now_value - checked_time > timedelta(hours=ttl_hours):
+        if status != "error" and (
+            checked_time is None or now_value - checked_time > timedelta(hours=ttl_hours)
+        ):
             status = "stale"
         return ConnectorSourceStatus(
             connector=str(source.get("connector") or ""),

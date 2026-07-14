@@ -12,7 +12,7 @@ export function renderRadars(snapshot: DashboardSnapshot): string {
       <h1>Information Radars</h1>
       <p>Check active discovery feeds, deterministic scores, latest run state, and sources that need a manual refresh or AI follow-up review.</p>
     </header>
-    <section class="module-list" data-filter-list data-filter-limit="16">
+    <section class="module-list" data-filter-list data-filter-label="radars" data-filter-limit="16">
       ${moduleToolbar("Search radars")}
       <div class="list" data-filter-items>
         ${rows || emptyState("No radars configured yet.")}
@@ -54,7 +54,7 @@ function radarLastRunLabel(value: unknown): string {
   if (!isRecord(value)) {
     return formatSingaporeDateTime(value);
   }
-  const timestamp = value.generated_at || value.completed_at || value.started_at;
+  const timestamp = value.run_at || value.generated_at || value.completed_at || value.started_at;
   return timestamp ? formatSingaporeDateTime(timestamp) : "No runs yet";
 }
 

@@ -29,6 +29,16 @@ PROMPT_REQUIRED_FIELDS = (
     "created_at",
     "updated_at",
 )
+PROMPT_DEFAULT_KIND = "full_prompt"
+PROMPT_ALLOWED_KINDS = {
+    "full_prompt",
+    "fragment",
+    "modifier",
+    "playbook",
+    "style_profile",
+    "eval_prompt",
+    "source_note",
+}
 
 
 def now_iso() -> str:
@@ -43,6 +53,14 @@ class AddPromptRequest:
     tags: builtins.list[str] = field(default_factory=list)
     use_cases: builtins.list[str] = field(default_factory=list)
     source_refs: builtins.list[str] = field(default_factory=list)
+    kind: str = PROMPT_DEFAULT_KIND
+    domain: str = ""
+    intent: str = ""
+    surfaces: builtins.list[str] = field(default_factory=list)
+    triggers: builtins.list[str] = field(default_factory=list)
+    inputs: builtins.list[str] = field(default_factory=list)
+    outputs: builtins.list[str] = field(default_factory=list)
+    quality: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -58,6 +76,14 @@ class Prompt:
     path: Path
     created_at: str = ""
     updated_at: str = ""
+    kind: str = PROMPT_DEFAULT_KIND
+    domain: str = ""
+    intent: str = ""
+    surfaces: builtins.list[str] = field(default_factory=list)
+    triggers: builtins.list[str] = field(default_factory=list)
+    inputs: builtins.list[str] = field(default_factory=list)
+    outputs: builtins.list[str] = field(default_factory=list)
+    quality: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -99,6 +125,14 @@ class PromptsModule:
                 "status": "active",
                 "use_cases": self._prompt_use_cases(request),
                 "source_refs": self._normalize_refs(request.source_refs),
+                "kind": self._normalize_kind(request.kind),
+                "domain": normalize_tag(request.domain, self.taxonomy) if request.domain else "",
+                "intent": normalize_tag(request.intent, self.taxonomy) if request.intent else "",
+                "surfaces": self._normalize_tags(request.surfaces),
+                "triggers": self._normalize_list(request.triggers),
+                "inputs": self._normalize_list(request.inputs),
+                "outputs": self._normalize_list(request.outputs),
+                "quality": self._normalize_quality(request.quality),
                 "created_at": created,
                 "updated_at": timestamp,
             },
@@ -117,12 +151,24 @@ class PromptsModule:
         query: str = "",
         tag: str = "",
         status: str = "active",
+        kind: str = "",
+        domain: str = "",
+        surface: str = "",
     ) -> builtins.list[Prompt]:
         q = str(query or "").casefold()
         tag_filter = normalize_tag(tag, self.taxonomy) if tag else ""
+        kind_filter = self._normalize_kind(kind) if kind else ""
+        domain_filter = normalize_tag(domain, self.taxonomy) if domain else ""
+        surface_filter = normalize_tag(surface, self.taxonomy) if surface else ""
         prompts: builtins.list[Prompt] = []
         for prompt in self.list(status=status):
             if tag_filter and tag_filter not in prompt.tags:
+                continue
+            if kind_filter and prompt.kind != kind_filter:
+                continue
+            if domain_filter and prompt.domain != domain_filter:
+                continue
+            if surface_filter and surface_filter not in prompt.surfaces:
                 continue
             text = self._search_text(prompt).casefold()
             if q and q not in text:
@@ -215,6 +261,14 @@ class PromptsModule:
             path=path,
             created_at=str(frontmatter.get("created_at") or ""),
             updated_at=str(frontmatter.get("updated_at") or ""),
+            kind=self._normalize_kind(str(frontmatter.get("kind") or PROMPT_DEFAULT_KIND)),
+            domain=str(frontmatter.get("domain") or ""),
+            intent=str(frontmatter.get("intent") or ""),
+            surfaces=self._as_list(frontmatter.get("surfaces")),
+            triggers=self._as_list(frontmatter.get("triggers")),
+            inputs=self._as_list(frontmatter.get("inputs")),
+            outputs=self._as_list(frontmatter.get("outputs")),
+            quality=self._as_dict(frontmatter.get("quality")),
         )
 
     def _prompt_from_index(self, item: dict[str, Any]) -> Prompt:
@@ -232,6 +286,14 @@ class PromptsModule:
             path=path,
             created_at=str(item.get("created_at") or ""),
             updated_at=str(item.get("updated_at") or ""),
+            kind=self._normalize_kind(str(item.get("kind") or PROMPT_DEFAULT_KIND)),
+            domain=str(item.get("domain") or ""),
+            intent=str(item.get("intent") or ""),
+            surfaces=self._as_list(item.get("surfaces")),
+            triggers=self._as_list(item.get("triggers")),
+            inputs=self._as_list(item.get("inputs")),
+            outputs=self._as_list(item.get("outputs")),
+            quality=self._as_dict(item.get("quality")),
         )
 
     def _index_item(self, prompt: Prompt) -> dict[str, Any]:
@@ -243,6 +305,14 @@ class PromptsModule:
             "description": prompt.description,
             "tags": prompt.tags,
             "status": prompt.status,
+            "kind": prompt.kind,
+            "domain": prompt.domain,
+            "intent": prompt.intent,
+            "surfaces": prompt.surfaces,
+            "triggers": prompt.triggers,
+            "inputs": prompt.inputs,
+            "outputs": prompt.outputs,
+            "quality": prompt.quality,
             "use_cases": prompt.use_cases,
             "source_refs": prompt.source_refs,
             "created_at": prompt.created_at,
@@ -276,7 +346,10 @@ class PromptsModule:
     def _search_text(self, prompt: Prompt) -> str:
         return (
             f"{prompt.id}\n{prompt.title}\n{prompt.description}\n"
-            f"{' '.join(prompt.tags)}\n{' '.join(prompt.use_cases)}\n"
+            f"{prompt.kind}\n{prompt.domain}\n{prompt.intent}\n"
+            f"{' '.join(prompt.tags)}\n{' '.join(prompt.surfaces)}\n"
+            f"{' '.join(prompt.triggers)}\n{' '.join(prompt.use_cases)}\n"
+            f"{' '.join(prompt.inputs)}\n{' '.join(prompt.outputs)}\n"
             f"{' '.join(prompt.source_refs)}\n{prompt.content}"
         )
 
@@ -317,11 +390,33 @@ class PromptsModule:
         values: builtins.list[str] = []
         for ref in refs:
             value = str(ref or "").strip()
-            if value and not value.startswith("/"):
+            if value and not value.startswith(("/", "~")) and ":" not in value:
                 value = f"/{value}"
             if value and value not in values:
                 values.append(value)
         return values
+
+    def _normalize_kind(self, value: str) -> str:
+        kind = normalize_tag(value or PROMPT_DEFAULT_KIND, self.taxonomy).replace("-", "_")
+        return kind if kind in PROMPT_ALLOWED_KINDS else PROMPT_DEFAULT_KIND
+
+    def _normalize_quality(self, value: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            return {}
+        out: dict[str, Any] = {}
+        status = str(value.get("status") or "").strip()
+        if status:
+            out["status"] = status
+        score = value.get("score")
+        if isinstance(score, int | float):
+            out["score"] = max(0.0, min(1.0, float(score)))
+        notes = str(value.get("notes") or "").strip()
+        if notes:
+            out["notes"] = notes
+        last_eval_at = str(value.get("last_eval_at") or "").strip()
+        if last_eval_at:
+            out["last_eval_at"] = last_eval_at
+        return out
 
     def _prompt_use_cases(self, request: AddPromptRequest) -> builtins.list[str]:
         explicit = self._normalize_list(request.use_cases)
@@ -370,3 +465,6 @@ class PromptsModule:
         if value:
             return [str(value)]
         return []
+
+    def _as_dict(self, value: object) -> dict[str, Any]:
+        return dict(value) if isinstance(value, dict) else {}

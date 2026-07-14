@@ -454,8 +454,57 @@ def test_radar_notify_falls_back_to_report_when_ai_summary_fails(tmp_path, monke
     assert result["ai"]["status"] == "failed"
     assert result["ai"]["error"] == "model unavailable"
     assert result["notify"]["status"] == "sent"
-    assert "AI summary failed; sending deterministic radar report." in sent_messages[0]
+    assert "AI summary unavailable; sending deterministic radar report." in sent_messages[0]
     assert "Market signal for NVDA" in sent_messages[0]
+
+
+def test_radar_notify_explains_skipped_ai_summary(tmp_path, monkeypatch) -> None:
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    fixture = tmp_path / "items.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "title": "AI infra signal",
+                    "url": "https://example.test/infra",
+                    "summary": "Infrastructure update for AI teams.",
+                    "tags": ["AI"],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    module = RadarModule(home)
+    module.upsert_definition(
+        RadarDefinition(
+            id="tech-news",
+            name="Tech News",
+            sources=[RadarSource(id="fixture", adapter="fixture", params={"path": str(fixture)})],
+            profile={"interest_tags": ["AI"], "min_score_threshold": 0.5},
+            report={"formats": ["md"]},
+            ai_summary={"enabled": True, "provider": "codex"},
+            notify={"enabled": True, "channel": "telegram"},
+        )
+    )
+    sent_messages: list[str] = []
+
+    def fake_run_ai_summary(*, prompt, policy, cwd=None):
+        return {"status": "skipped", "provider": "codex", "reason": "codex is not available"}
+
+    def fake_send_telegram(*, home, text):
+        sent_messages.append(text)
+        return {"status": "sent", "attempts": 1}
+
+    monkeypatch.setattr(radar_pipeline, "run_ai_summary", fake_run_ai_summary)
+    monkeypatch.setattr(radar_pipeline, "send_telegram_message", fake_send_telegram)
+
+    result = module.run("tech-news")
+
+    assert result["ai"]["status"] == "skipped"
+    assert result["notify"]["status"] == "sent"
+    assert "AI summary unavailable; sending deterministic radar report." in sent_messages[0]
+    assert "codex is not available" in sent_messages[0]
+    assert "AI infra signal" in sent_messages[0]
 
 
 def test_radar_run_skip_fetch_reuses_raw_cache_and_status_reports_latest_run(tmp_path) -> None:

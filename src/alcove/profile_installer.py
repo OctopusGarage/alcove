@@ -443,9 +443,12 @@ class ProfileInstaller:
         return files
 
     def _remove_legacy_kb_artifacts(self, root: Path) -> None:
-        legacy_scripts = root / ".claude" / "skills" / "social_post_manager" / "scripts"
-        if legacy_scripts.exists() and legacy_scripts.is_dir():
-            shutil.rmtree(legacy_scripts)
+        for legacy_skill in (
+            root / ".claude" / "skills" / "social_post_manager",
+            root / ".agents" / "skills" / "social_post_manager",
+        ):
+            if legacy_skill.exists() and legacy_skill.is_dir():
+                shutil.rmtree(legacy_skill)
 
     def _home_arg(self) -> str:
         if self.home.root == AlcoveHome.default_root().expanduser().resolve():

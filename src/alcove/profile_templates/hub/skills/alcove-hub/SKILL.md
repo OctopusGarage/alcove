@@ -24,6 +24,24 @@ This is the high-level router for Alcove. Decide the storage target before writi
 - blog monitoring, scheduled article checks, failure alerts, or phrases such as
   监控博客更新 / 检查博客文章有没有更新: `blog monitor`.
 - information radar, daily briefing, 技术雷达, 新闻雷达, 股票雷达, 体育资讯: `radar`.
+- Alcove feature work, maintenance, refactoring, docs alignment, tests, or
+  phrases such as 优化 Alcove / 新增功能 / 修这个项目: route to the registered
+  project/worktree, then apply that project's engineering rules. Do not save the
+  request as a knowledge note unless the user explicitly asks for a note.
+
+## Project Development Protocol
+
+- Most Alcove development requests still start in the Hub. Before changing code,
+  identify the target project and switch to its project entry so `AGENTS.md`,
+  `CLAUDE.md`, hooks, and local skills are in scope.
+- For each user-facing change, run an entry-mode impact check: Hub workspace,
+  managed-KB workspace, global MCP/command hints, CLI, local service/dashboard,
+  docs, smoke, and AI eval.
+- Update `alcove-hub` when the feature changes how users should ask for,
+  trigger, review, or save data from the Hub. Update managed-KB skills only for
+  KB-local capture/inbox/OKF workflows. Keep global MCP lightweight unless a
+  wider toolset is explicitly intended.
+- If no entry change is needed, say why in the completion summary.
 
 ## Fallback Routing Without Skills
 
@@ -33,7 +51,7 @@ This is the high-level router for Alcove. Decide the storage target before writi
 | Current managed KB inbox review | `alcove inbox --kb <kb-name> peek --json`; read full item before summarizing if truncated | archive/note/todo/delete only after explicit confirmation |
 | Save copied article or discussion note | search first for duplicates and choose target KB | `alcove inbox --kb <kb-name> manual-add ...` or `alcove knowledge ...` |
 | Save stable reference, preference, command, shortcut | `alcove pin search "query" --json` | `alcove pin add/update ...` |
-| Save reusable prompt | `alcove prompt search "query" --json` | `alcove prompt save ...` |
+| Save reusable prompt | `alcove prompt recommend "scenario" --json` and `alcove prompt propose ... --json` | `alcove prompt save --proposal-id <id>` after proposal review |
 | Track todo, idea, routine, project, mount, connector | list/search the matching module first | use the matching `alcove task/idea/routine/project/mount/connector` command |
 | Check monitored blogs now | `alcove blog list --status '' --json`, then `alcove blog check --json` or `alcove blog check <source-id> --json` | only add/update sources after explicit confirmation |
 | Run an information radar | `alcove radar list --json`, then `alcove radar status <radar-id> --json` | `alcove radar run <radar-id> --json`, `--force --ai --notify`, or `--skip-fetch --force --ai --notify` after choosing an existing definition |
@@ -63,7 +81,57 @@ This is the high-level router for Alcove. Decide the storage target before writi
 - Use `alcove radar run <radar-id> --force --ai --notify --json` when the user asks to rerun, refresh now, summarize with AI, and send configured notifications.
 - Use `alcove radar run <radar-id> --skip-fetch --force --ai --notify --json` when the user asks to analyze or resend already fetched results without touching external sources.
 - Radar runs fetch and score deterministically first. Optional `ai_summary` is post-report analysis only; it does not rewrite fetched items or scores.
+- Scheduled radar definitions may use `schedule.daily_time` and `schedule.timezone`; the local service should wait for that daily window and still run at most once per local date.
 - Scheduled radar runs start Codex or Claude only when the radar definition explicitly enables `ai_summary`. If AI fails, Alcove should still notify with the deterministic report when notification is enabled.
+
+## Prompt Library Protocol
+
+- When the user describes a task and asks what prompt to use, run
+  `alcove prompt recommend "<scenario>" --json` and present at most five
+  numbered candidates with why they match. If the user chooses multiple
+  candidates, use `alcove prompt compose "<scenario>" --json` or inspect the
+  chosen prompts with `alcove prompt get`.
+- When the user asks to save something into the prompt library, first act as the
+  prompt-quality reviewer yourself. Do not treat the user wording as already
+  reusable. Decide whether it is:
+  - a reusable prompt;
+  - source material that should be rewritten into a reusable prompt;
+  - a duplicate or update to an existing prompt;
+  - a managed KB note / article summary / raw chat fragment that should not
+    become an active prompt.
+- Before proposing, rewrite the candidate into a concise copy-ready prompt body.
+  Preserve the user's goal and constraints, but remove one-off chat context,
+  metadata-card headings, personal paths, stale project names, and vague
+  instructions. If the title promises verification, rerun, hardening, codifying,
+  or 固化/复跑, the prompt body must require concrete evidence, repeatable
+  commands or steps, and durable follow-up artifacts.
+- Search and recommend before writing:
+  `alcove prompt recommend "<scenario>" --json`. If a similar prompt exists,
+  prefer updating/merging it instead of creating a new prompt.
+- Do not call `prompt save` directly. Run
+  `alcove prompt propose "<title>" --content "..." --json`. Use
+  `--ai-eval-provider codex` or `--ai-eval-provider claude` only when the user
+  explicitly asks for a separate model review; otherwise the current agent's
+  own review plus the proposal's built-in eval is the normal Hub path.
+- Inspect `action`, `similar`, `warnings`, `evaluation`, and the optimized `request`.
+  Prefer updating or merging existing prompts when the proposal recommends
+  `update_existing` or `merge_into_existing`.
+- The optimized `request.content` must be copy-ready prompt text. Usage timing,
+  triggers, surfaces, outputs, tags, and source refs belong in metadata fields,
+  not as record-card headings inside the prompt body.
+- Inspect `evaluation.prompt_ai_eval.rounds`. A high-quality proposal should pass
+  both `professional_quality` and `adversarial_reuse`. If `must_fix` is not
+  empty, revise the prompt and run `prompt propose` again instead of saving.
+- Only accept a proposal with `alcove prompt save --proposal-id <id> --json`
+  after confirming it should become reusable prompt memory. Save rejects
+  proposals whose `evaluation.verdict` is not `ready` or `update_existing`.
+- After save/update, inspect `prompt_eval`. A `needs_review` verdict should only
+  appear after explicit force writes or legacy repair; do not treat it as a
+  polished active prompt.
+- Use direct `alcove prompt save --force ...` only for explicit repair or
+  operator-confirmed direct writes.
+- Article summaries, one-off project notes, and raw chat dumps belong in a
+  managed KB unless the reusable instruction has been extracted and proposed.
 
 ## Retrieval Model
 
@@ -99,10 +167,17 @@ alcove inbox --kb <kb-name> peek --json
 alcove pin add "Title" --kind regular --summary "..." --content "..." --tag tag --json
 alcove pin search "query" --kind todo --json
 alcove pin render-html --json
-alcove prompt save "Prompt Name" --content "..." --tag prompt --json
+alcove prompt recommend "scenario" --json
+alcove prompt compose "scenario" --json
+alcove prompt propose "Prompt Name" --content "..." --tag prompt --json
+alcove prompt proposal <proposal-id> --json
+alcove prompt save --proposal-id <proposal-id> --json
 alcove project add alias /path/to/project --note "..." --json
 alcove task add "Task" --notes "..." --json
-alcove mount add /path/to/folder --name name --json
+alcove mount add /path/to/folder --name name --profile docs --json
+alcove mount update name --profile docs --exclude "**/_build/**" --json
+alcove mount scan name --dry-run --json
+alcove mount scan name --json
 alcove connector fetch "connectors/<id>#<path>" --json
 alcove blog list --status '' --json
 alcove blog check --json

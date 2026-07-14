@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime, time
 from pathlib import Path
 from typing import Any, List
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
@@ -36,14 +38,14 @@ class _RadarRuntimeState:
             return "Configured, not run yet"
         if self.operational_status == "stale":
             return "Stale"
-        return self.operational_status.replace("-", " ").title() or "Inactive"
+        return _human_status_label(self.operational_status)
 
     @property
     def report_label(self) -> str:
         if self.report_state == "current":
             return "Latest run report"
         if self.report_state == "historical":
-            return "Historical migrated report"
+            return "Historical report"
         return "No report yet"
 
     @property
@@ -78,6 +80,8 @@ class _RadarRuntimeState:
             "status_label": self.status_label,
             "schedule_enabled": self.definition.schedule.enabled,
             "ttl_hours": self.definition.schedule.ttl_hours,
+            "daily_time": self.definition.schedule.daily_time,
+            "timezone": self.definition.schedule.timezone,
             "source_count": len(self.definition.sources),
             "enabled_source_count": len(
                 [source for source in self.definition.sources if source.enabled]
@@ -206,6 +210,7 @@ class RadarModule:
         force: bool = False,
         ai: bool = False,
         notify: bool = False,
+        run_day: str = "",
     ) -> dict[str, Any]:
         from alcove.radars.pipeline import RadarPipeline
 
@@ -215,6 +220,7 @@ class RadarModule:
             force=force,
             ai=ai,
             notify=notify,
+            run_day=run_day,
         )
 
     def status(self, radar_id: str = "") -> dict[str, Any]:
@@ -222,14 +228,8 @@ class RadarModule:
         rows = [self._status_row(definition) for definition in definitions]
         return {"count": len(rows), "radars": rows}
 
-    def import_social_radar(
-        self, source_home: str | Path = "~/.social_radar", *, force: bool = False
-    ) -> dict[str, Any]:
-        from alcove.radars.migration import import_social_radar
-
-        return import_social_radar(self, source_home, force=force)
-
-    def check_stale(self) -> dict[str, Any]:
+    def check_stale(self, *, current_time: datetime | None = None) -> dict[str, Any]:
+        current_time = current_time or datetime.now(UTC)
         ran = 0
         skipped = 0
         errors = 0
@@ -238,8 +238,22 @@ class RadarModule:
             if definition.status != "active" or not definition.schedule.enabled:
                 skipped += 1
                 continue
+            latest_run = self._latest_run(definition.id)
+            due = _radar_due_state(definition.schedule, latest_run, current_time=current_time)
+            if not due["due"]:
+                skipped += 1
+                row = {
+                    "id": definition.id,
+                    "status": "skipped",
+                    "reason": due["reason"],
+                    "included": int(latest_run.get("included") or 0),
+                }
+                if due.get("next_run_after"):
+                    row["next_run_after"] = due["next_run_after"]
+                rows.append(row)
+                continue
             try:
-                report = self.run(definition.id)
+                report = self.run(definition.id, run_day=str(due.get("local_date") or ""))
             except Exception as exc:
                 errors += 1
                 rows.append({"id": definition.id, "status": "error", "error": str(exc)})
@@ -304,6 +318,8 @@ class RadarModule:
             schedule=RadarSchedule(
                 enabled=bool(schedule_payload.get("enabled", False)),
                 ttl_hours=int(schedule_payload.get("ttl_hours") or DEFAULT_TTL_HOURS),
+                daily_time=str(schedule_payload.get("daily_time") or ""),
+                timezone=str(schedule_payload.get("timezone") or ""),
             ),
             notify=self._mapping_field(payload, "notify", "notify must be a mapping"),
             tags=[str(tag) for tag in self._list_field(payload, "tags", "tags must be a list")],
@@ -336,6 +352,7 @@ class RadarModule:
     def _validate(self, definition: RadarDefinition) -> None:
         if not definition.id or definition.id != normalize_slug(definition.id):
             raise ValueError("radar id must be normalized")
+        _validate_schedule(definition.schedule)
         for source in definition.sources:
             if not source.id:
                 raise ValueError("source id is required")
@@ -429,3 +446,66 @@ class RadarModule:
 
     def _dashboard_row(self, definition: RadarDefinition) -> dict[str, Any]:
         return self._runtime_state(definition).dashboard_row()
+
+
+def _human_status_label(value: str) -> str:
+    text = value.replace("_", " ").replace("-", " ").strip()
+    return text[:1].upper() + text[1:] if text else "Inactive"
+
+
+def _radar_due_state(
+    schedule: RadarSchedule,
+    latest_run: dict[str, Any],
+    *,
+    current_time: datetime,
+) -> dict[str, Any]:
+    zone = _schedule_zone(schedule)
+    local_now = _local_datetime(current_time, zone)
+    today = local_now.date().isoformat()
+    if latest_run.get("date") == today:
+        return {"due": False, "reason": "already_ran_today", "local_date": today}
+    if not schedule.daily_time:
+        return {"due": True, "reason": "due", "local_date": today}
+    due_time = _parse_daily_time(schedule.daily_time)
+    local_time = local_now.time().replace(second=0, microsecond=0)
+    if local_time < due_time:
+        next_run = datetime.combine(local_now.date(), due_time, tzinfo=zone)
+        return {
+            "due": False,
+            "reason": "before_daily_time",
+            "local_date": today,
+            "next_run_after": next_run.isoformat(timespec="minutes"),
+        }
+    return {"due": True, "reason": "due", "local_date": today}
+
+
+def _validate_schedule(schedule: RadarSchedule) -> None:
+    if schedule.daily_time:
+        _parse_daily_time(schedule.daily_time)
+    if schedule.timezone:
+        _schedule_zone(schedule)
+
+
+def _schedule_zone(schedule: RadarSchedule) -> ZoneInfo:
+    timezone = schedule.timezone or "UTC"
+    try:
+        return ZoneInfo(timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError(f"invalid radar schedule timezone: {timezone}") from exc
+
+
+def _local_datetime(current_time: datetime, zone: ZoneInfo) -> datetime:
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=UTC)
+    return current_time.astimezone(zone)
+
+
+def _parse_daily_time(value: str) -> time:
+    parts = value.split(":")
+    if len(parts) != 2 or not all(part.isdigit() for part in parts):
+        raise ValueError("radar schedule daily_time must use HH:MM")
+    hour = int(parts[0])
+    minute = int(parts[1])
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        raise ValueError("radar schedule daily_time must use HH:MM")
+    return time(hour=hour, minute=minute)

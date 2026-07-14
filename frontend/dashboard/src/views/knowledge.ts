@@ -7,7 +7,7 @@ export function renderKnowledge(snapshot: DashboardSnapshot): string {
   const managed = snapshot.knowledge_bases
     .map((kb) => {
       const title = asText(kb.name);
-      const detail = `${asText(kb.item_count)} notes / ${asText(kb.inbox_count)} inbox / ${asText(kb.archive_count)} archived`;
+      const detail = `${asText(kb.item_count)} notes / ${asText(kb.inbox_count)} inbox items / ${asText(kb.archive_count)} archived items`;
       return `
         <article class="row" data-filter-item data-kind="managed-kb" data-filter-text="${escapeHtml([title, detail, "managed KB"].join(" "))}">
           <div>
@@ -21,7 +21,8 @@ export function renderKnowledge(snapshot: DashboardSnapshot): string {
   const connectors = snapshot.sources.connectors
     .map((item) => {
       const title = asText(item.id);
-      const detail = `${asText(item.connector) || "connector"} / ${asText(item.count)} indexed items`;
+      const itemCount = asText(item.item_count) || asText(item.count) || "0";
+      const detail = `${asText(item.connector) || "connector"} / ${itemCount} indexed items`;
       const source = asText(item.source);
       return `
         <article class="row compact-row" data-filter-item data-kind="connector" data-filter-text="${escapeHtml([title, detail, source, "connector"].join(" "))}">
@@ -37,7 +38,10 @@ export function renderKnowledge(snapshot: DashboardSnapshot): string {
   const mounts = snapshot.sources.mounts
     .map((item) => {
       const title = asText(item.name);
-      const detail = `${asText(item.type)} / ${asText(item.count)} indexed items`;
+      const itemCount = asText(item.item_count) || asText(item.count) || "0";
+      const previewCount = asText(item.preview_count);
+      const previewDetail = previewCount ? ` / ${previewCount} preview items` : "";
+      const detail = `${asText(item.type)} / ${itemCount} indexed items${previewDetail}`;
       const status = asText(item.status);
       return `
         <article class="row compact-row" data-filter-item data-kind="mount" data-filter-text="${escapeHtml([title, detail, status, "mount"].join(" "))}">
@@ -70,7 +74,7 @@ export function renderKnowledge(snapshot: DashboardSnapshot): string {
       <div><b>Mounts</b><span>Read-only local folders indexed for AI-led search and follow-up reading.</span></div>
       <div><b>Connectors</b><span>Protocol-based sources with refreshable indexes and lazy fetch details.</span></div>
     </section>
-    <section class="module-list" data-filter-list data-filter-limit="24">
+    <section class="module-list" data-filter-list data-filter-label="sources" data-filter-limit="24">
       ${moduleToolbar("Search knowledge sources")}
       <div class="source-columns" data-filter-items>${rows}</div>
     </section>

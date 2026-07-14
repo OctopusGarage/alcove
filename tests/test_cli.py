@@ -1,8 +1,10 @@
 import json
+from types import SimpleNamespace
 
+from alcove import cli_serve
 from alcove.cli import build_parser, main
 from alcove.connector_sources import ConnectorSourceRegistry
-from alcove.connectors.apple_notes import write_apple_notes_export_tree
+from alcove.connectors.apple_notes import AppleNotesAutomationError, write_apple_notes_export_tree
 from alcove.connectors.github_stars import GitHubStarsConnector
 from alcove.home import AlcoveHome
 from alcove.pins import AddPinRequest, PinsModule
@@ -105,6 +107,73 @@ def test_cli_parser_accepts_serve_dashboard_command(tmp_path):
     assert args.dashboard is True
     assert args.home == str(tmp_path)
     assert args.port == 8123
+
+
+def test_cli_serve_dispatches_mcp(monkeypatch, tmp_path):
+    calls = {}
+
+    def fake_run_mcp_server(workspace, home, *, toolset):
+        calls["mcp"] = {"workspace": workspace, "home": home, "toolset": toolset}
+
+    monkeypatch.setattr(cli_serve, "run_mcp_server", fake_run_mcp_server)
+    args = SimpleNamespace(mcp=True, dashboard=False, home=str(tmp_path / "home"), toolset="lite")
+
+    code = cli_serve.handle_serve_command(
+        args,
+        build_parser(),
+        workspace_from_args=lambda _args: SimpleNamespace(root=tmp_path),
+        argument_error=lambda _parser, _message: 2,
+    )
+
+    assert code == 0
+    assert calls["mcp"] == {
+        "workspace": str(tmp_path),
+        "home": str(tmp_path / "home"),
+        "toolset": "lite",
+    }
+
+
+def test_cli_serve_dispatches_dashboard(monkeypatch, tmp_path):
+    calls = {}
+
+    def fake_serve_dashboard(home, *, host, port):
+        calls["dashboard"] = {"home": home.root, "host": host, "port": port}
+
+    monkeypatch.setattr(cli_serve, "serve_dashboard", fake_serve_dashboard)
+    args = SimpleNamespace(
+        mcp=False,
+        dashboard=True,
+        home=str(tmp_path / "home"),
+        host="127.0.0.1",
+        port=8123,
+    )
+
+    code = cli_serve.handle_serve_command(
+        args,
+        build_parser(),
+        workspace_from_args=lambda _args: None,
+        argument_error=lambda _parser, _message: 2,
+    )
+
+    assert code == 0
+    assert calls["dashboard"] == {
+        "home": tmp_path / "home",
+        "host": "127.0.0.1",
+        "port": 8123,
+    }
+
+
+def test_cli_serve_requires_mode():
+    args = SimpleNamespace(mcp=False, dashboard=False)
+
+    code = cli_serve.handle_serve_command(
+        args,
+        build_parser(),
+        workspace_from_args=lambda _args: None,
+        argument_error=lambda _parser, message: 64 if "requires" in message else 2,
+    )
+
+    assert code == 64
 
 
 def test_cli_search_records_privacy_safe_usage(tmp_path, capsys):
@@ -527,7 +596,9 @@ def test_cli_inbox_manual_add_writes_readable_item(tmp_path, capsys):
     assert add_code == 0
     assert json.loads(add_output.out)["status"] == "added"
     assert read_code == 0
-    assert json.loads(read_output.out)["title"] == "Manual Thought"
+    read_payload = json.loads(read_output.out)
+    assert read_payload["title"] == "Manual Thought"
+    assert read_payload["capture_status"] == "ready"
 
 
 def test_cli_knowledge_note_source_followed_by_search_outputs_matching_title(tmp_path, capsys):
@@ -1011,15 +1082,19 @@ def test_cli_project_add_get_find_list_remove(tmp_path, capsys):
 def test_cli_prompt_save_search_get_tags_archive(tmp_path, capsys):
     home = tmp_path / "home"
 
-    save_code = main(
+    propose_code = main(
         [
             "prompt",
             "--home",
             str(home),
-            "save",
+            "propose",
             "Review Lens",
             "--content",
-            "Look for regressions and missing tests.",
+            (
+                "Review the current diff for regressions, missing tests, unclear "
+                "user-facing behavior, and incomplete verification. Return findings, "
+                "risks, and the exact commands or artifacts used as evidence."
+            ),
             "--description",
             "Review helper.",
             "--tag",
@@ -1028,14 +1103,78 @@ def test_cli_prompt_save_search_get_tags_archive(tmp_path, capsys):
             "PR review",
             "--source-ref",
             "pins/review.md",
+            "--kind",
+            "eval_prompt",
+            "--domain",
+            "review",
+            "--surface",
+            "codex",
+            "--trigger",
+            "regression review",
+            "--output",
+            "findings",
+            "--json",
+        ]
+    )
+    propose_output = capsys.readouterr()
+    proposal = json.loads(propose_output.out)
+    proposal_code = main(["prompt", "--home", str(home), "proposal", proposal["id"], "--json"])
+    proposal_output = capsys.readouterr()
+    save_code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "save",
+            "--proposal-id",
+            proposal["id"],
             "--json",
         ]
     )
     save_output = capsys.readouterr()
     search_code = main(
-        ["prompt", "--home", str(home), "search", "regressions", "--tag", "review", "--json"]
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "search",
+            "regressions",
+            "--tag",
+            "review",
+            "--kind",
+            "eval_prompt",
+            "--domain",
+            "review",
+            "--surface",
+            "codex",
+            "--json",
+        ]
     )
     search_output = capsys.readouterr()
+    recommend_code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "recommend",
+            "need regression review",
+            "--json",
+        ]
+    )
+    recommend_output = capsys.readouterr()
+    compose_code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "compose",
+            "need regression review",
+            "--json",
+        ]
+    )
+    compose_output = capsys.readouterr()
+    audit_code = main(["prompt", "--home", str(home), "audit", "--json"])
+    audit_output = capsys.readouterr()
     get_code = main(["prompt", "--home", str(home), "get", "review-lens", "--json"])
     get_output = capsys.readouterr()
     tags_code = main(["prompt", "--home", str(home), "tags", "--json"])
@@ -1047,23 +1186,168 @@ def test_cli_prompt_save_search_get_tags_archive(tmp_path, capsys):
     )
     archive_output = capsys.readouterr()
 
+    assert propose_code == 0
+    assert proposal["action"] in {"create_new", "create_new_after_review"}
+    assert proposal_code == 0
+    assert json.loads(proposal_output.out)["id"] == proposal["id"]
     assert save_code == 0
     assert json.loads(save_output.out)["prompt"]["id"] == "review-lens"
     assert search_code == 0
     prompt_search_payload = json.loads(search_output.out)
     assert prompt_search_payload[0]["title"] == "Review Lens"
     assert prompt_search_payload[0]["path"] == "prompts/review-lens.md"
+    assert prompt_search_payload[0]["kind"] == "eval_prompt"
+    assert recommend_code == 0
+    assert json.loads(recommend_output.out)[0]["prompt"]["title"] == "Review Lens"
+    assert compose_code == 0
+    compose_payload = json.loads(compose_output.out)
+    assert compose_payload["sources"][0]["title"] == "Review Lens"
+    assert "Review the current diff for regressions" in compose_payload["prompt"]
+    assert audit_code == 0
+    audit_payload = json.loads(audit_output.out)
+    assert audit_payload["counts"]["prompts"] == 1
+    assert audit_payload["counts"]["ready_prompts"] == 1
     assert get_code == 0
     assert (
-        json.loads(get_output.out)["prompt"]["content"] == "Look for regressions and missing tests."
+        "Review the current diff for regressions" in json.loads(get_output.out)["prompt"]["content"]
     )
     assert tags_code == 0
-    assert json.loads(tags_output.out) == [{"tag": "review", "count": 1}]
+    assert {"tag": "review", "count": 1} in json.loads(tags_output.out)
     assert index_code == 0
     assert json.loads(index_output.out)["count"] == 1
     assert (home / "prompts" / "index.json").is_file()
     assert archive_code == 0
     assert json.loads(archive_output.out)["status"] == "archived"
+
+
+def test_cli_prompt_save_repeated_plural_metadata_options(tmp_path, capsys):
+    home = tmp_path / "home"
+
+    code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "save",
+            "Layered Skill Design",
+            "--force",
+            "--content",
+            "Design skills with policy, strategy, and execution layers.",
+            "--tags",
+            "skill,automation",
+            "--tags",
+            "robustness",
+            "--use-cases",
+            "Create reusable skills",
+            "--use-cases",
+            "Upgrade fragile scripts",
+            "--source-refs",
+            "~/prompts/create_skill_prompt.md",
+            "--source-refs",
+            "~/prompts/browser_prompt.md",
+            "--surfaces",
+            "codex,claude",
+            "--surfaces",
+            "skill",
+            "--triggers",
+            "skill,automation",
+            "--triggers",
+            "browser",
+            "--inputs",
+            "goal,constraints",
+            "--inputs",
+            "failure policy",
+            "--outputs",
+            "layered design",
+            "--outputs",
+            "validation contract",
+            "--quality-status",
+            "curated",
+            "--quality-score",
+            "0.93",
+            "--quality-notes",
+            "Reviewed by prompt eval.",
+            "--json",
+        ]
+    )
+    output = capsys.readouterr()
+
+    assert code == 0
+    prompt = json.loads(output.out)["prompt"]
+    assert prompt["tags"] == ["automation", "robustness", "skill"]
+    assert prompt["use_cases"] == ["Create reusable skills", "Upgrade fragile scripts"]
+    assert prompt["source_refs"] == [
+        "~/prompts/create_skill_prompt.md",
+        "~/prompts/browser_prompt.md",
+    ]
+    assert prompt["surfaces"] == ["claude", "codex", "skill"]
+    assert prompt["triggers"] == ["skill", "automation", "browser"]
+    assert prompt["inputs"] == ["goal", "constraints", "failure policy"]
+    assert prompt["outputs"] == ["layered design", "validation contract"]
+    assert prompt["quality"] == {
+        "status": "curated",
+        "score": 0.93,
+        "notes": "Reviewed by prompt eval.",
+    }
+
+
+def test_cli_prompt_save_requires_proposal_or_force(tmp_path, capsys):
+    home = tmp_path / "home"
+
+    code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "save",
+            "Direct Prompt",
+            "--content",
+            "Direct prompt content should be proposed before saving.",
+            "--json",
+        ]
+    )
+    output = capsys.readouterr()
+
+    assert code == 2
+    payload = json.loads(output.out)
+    assert "requires a proposal" in payload["error"]["message"]
+
+
+def test_cli_prompt_save_rejects_unready_proposal(tmp_path, capsys):
+    home = tmp_path / "home"
+
+    propose_code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "propose",
+            "Short Command Fragment",
+            "--content",
+            "继续就继续做，提交就提交，别解释。",
+            "--json",
+        ]
+    )
+    proposal_output = capsys.readouterr()
+    proposal = json.loads(proposal_output.out)
+    save_code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "save",
+            "--proposal-id",
+            proposal["id"],
+            "--json",
+        ]
+    )
+    save_output = capsys.readouterr()
+
+    assert propose_code == 0
+    assert proposal["evaluation"]["verdict"] == "reject"
+    assert save_code == 2
+    payload = json.loads(save_output.out)
+    assert "not ready" in payload["error"]["message"] or "recommends" in payload["error"]["message"]
 
 
 def test_cli_idea_and_task_workflows(tmp_path, capsys):
@@ -1562,6 +1846,41 @@ def test_cli_connector_apple_notes_import_local_and_refresh(
     assert reuse_payload["sources"][0]["reused"] == 1
     assert search_code == 0
     assert json.loads(search_output.out)[0]["title"] == "CLI Local Apple Note"
+
+
+def test_cli_connector_apple_notes_import_local_reports_diagnostic_error(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    def fake_export(self, output_dir):
+        raise AppleNotesAutomationError("Can't get object.")
+
+    monkeypatch.setattr(
+        "alcove.connectors.apple_notes.LocalAppleNotesExporter.export_all", fake_export
+    )
+
+    code = main(
+        [
+            "connector",
+            "--home",
+            str(tmp_path / "home"),
+            "apple-notes",
+            "import-local",
+            "--json",
+        ]
+    )
+    output = capsys.readouterr()
+
+    payload = json.loads(output.out)
+    assert code == 2
+    assert payload["error"]["error_code"] == "applenotesautomation"
+    assert payload["error"]["connector"] == "apple-notes"
+    assert payload["error"]["operation"] == "export-all-notes"
+    assert payload["error"]["remediation_command"] == (
+        "alcove connector apple-notes import-local --json"
+    )
+    assert "Automation access" in payload["error"]["remediation_hint"]
 
 
 def test_cli_connector_github_stars_index_and_search(tmp_path, capsys):

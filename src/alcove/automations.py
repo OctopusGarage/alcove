@@ -4,9 +4,7 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 import json
 from pathlib import Path
-import re
 import shutil
-import shlex
 import subprocess
 import sys
 from typing import Any
@@ -16,6 +14,11 @@ import yaml
 from alcove.home import AlcoveHome
 from alcove.markdown import normalize_slug
 from alcove.notifications import send_feishu_message, send_tcb_notification, send_telegram_message
+from alcove.notification_delivery import (
+    combined_notification_status,
+    notification_sink_label,
+    notification_sinks,
+)
 from alcove.paths import compact_user_path, compact_user_paths_in_text
 
 
@@ -184,82 +187,6 @@ class AutomationsModule:
         if notify_payload:
             result["notify"] = notify_payload
         return result
-
-    def import_social_radar(self, source_home: str | Path) -> dict[str, Any]:
-        source_root = Path(source_home).expanduser()
-        config_path = source_root / "config" / "tasks.json"
-        if not config_path.is_file():
-            return {
-                "status": "failed",
-                "error": f"social-radar tasks config not found: {compact_user_path(config_path)}",
-            }
-        config = json.loads(config_path.read_text(encoding="utf-8"))
-        imported: list[dict[str, Any]] = []
-        skipped: list[dict[str, Any]] = []
-        for entry in config.get("git_repos") or []:
-            if not isinstance(entry, dict):
-                continue
-            name = str(entry.get("name") or "git-sync")
-            imported.append(
-                self._upsert_imported_job(
-                    AutomationJob(
-                        id=normalize_slug(name) or "git-sync",
-                        name=name,
-                        kind="git-sync",
-                        enabled=bool(entry.get("enabled", True)),
-                        order=200,
-                        ttl_hours=24,
-                        timeout_seconds=_positive_int(entry.get("timeout"), default=60),
-                        repo_path=compact_user_path(str(entry.get("path") or "")),
-                        commit_message=str(entry.get("commit_message") or "chore: sync local data"),
-                        notify={"enabled": True, "on": "failure"},
-                        source={
-                            "system": "social-radar",
-                            "path": compact_user_path(config_path),
-                            "kind": "git_repos",
-                        },
-                    )
-                )
-            )
-        for entry in config.get("tasks") or []:
-            if not isinstance(entry, dict):
-                continue
-            name = str(entry.get("name") or "").strip()
-            if not name:
-                continue
-            parsed = self._parse_social_radar_agent_task(source_root, name)
-            if parsed is None:
-                skipped.append({"name": name, "reason": "unsupported task module"})
-                continue
-            imported.append(
-                self._upsert_imported_job(
-                    AutomationJob(
-                        id=normalize_slug(name) or "agent-task",
-                        name=name,
-                        kind="agent",
-                        enabled=bool(entry.get("enabled", True)),
-                        order=_positive_int(entry.get("order"), default=100),
-                        ttl_hours=24,
-                        timeout_seconds=_positive_int(entry.get("timeout"), default=600),
-                        provider=parsed["provider"],
-                        prompt=parsed["prompt"],
-                        allow_service=False,
-                        notify={"enabled": True, "on": "failure"},
-                        source={
-                            "system": "social-radar",
-                            "path": parsed["path"],
-                            "kind": "tasks",
-                            "allow_service_review_required": True,
-                        },
-                    )
-                )
-            )
-        return {
-            "status": "imported",
-            "source": compact_user_path(source_root),
-            "imported": imported,
-            "skipped": skipped,
-        }
 
     def _run_job(self, job: AutomationJob, *, timestamp: str) -> dict[str, Any]:
         started = datetime.fromisoformat(timestamp)
@@ -455,12 +382,10 @@ class AutomationsModule:
         if result.get("error"):
             lines.append(f"Error: {result['error']}")
         text = "\n".join(lines)
-        sinks = notify.get("sinks") or [{"type": "telegram"}]
-        payload: dict[str, Any] = {"status": "sent", "sinks": {}}
-        for sink in sinks:
-            if not isinstance(sink, dict):
-                continue
+        results: dict[str, dict[str, Any]] = {}
+        for sink in notification_sinks(notify):
             sink_type = str(sink.get("type") or "telegram")
+            label = notification_sink_label(sink, results)
             if sink_type == "telegram":
                 sink_result = send_telegram_message(home=self.home, text=f"{title}\n\n{text}")
             elif sink_type == "feishu":
@@ -479,10 +404,8 @@ class AutomationsModule:
                 )
             else:
                 sink_result = {"status": "skipped", "reason": f"unsupported sink: {sink_type}"}
-            payload["sinks"][sink_type] = sink_result
-            if sink_result.get("status") not in {"sent", "skipped"}:
-                payload["status"] = "partial"
-        return payload
+            results[label] = sink_result
+        return {"status": combined_notification_status(results), "sinks": results}
 
     def _job(self, payload: dict[str, Any]) -> AutomationJob:
         return AutomationJob(
@@ -530,43 +453,6 @@ class AutomationsModule:
             index += 1
         return f"{base}-{index}"
 
-    def _upsert_imported_job(self, job: AutomationJob) -> dict[str, Any]:
-        timestamp = now_iso()
-        existing_ids = {existing.id for existing in self._load_jobs()}
-        target = job
-        if job.id in existing_ids:
-            existing = self._get_job(job.id)
-            target = replace(
-                job,
-                created_at=existing.created_at or timestamp,
-                updated_at=timestamp,
-                checked_at=existing.checked_at,
-                last_run_at=existing.last_run_at,
-                last_status=existing.last_status,
-                last_error=existing.last_error,
-            )
-        else:
-            target = replace(job, created_at=timestamp, updated_at=timestamp)
-        self._write_job(target)
-        return target.as_dict()
-
-    def _parse_social_radar_agent_task(
-        self, source_root: Path, task_name: str
-    ) -> dict[str, str] | None:
-        for path in sorted((source_root / "tasks").glob("*.py")):
-            text = path.read_text(encoding="utf-8")
-            if task_name not in text or "ClaudeTask" not in text:
-                continue
-            prompt = _extract_python_prompt(text)
-            if not prompt:
-                continue
-            return {
-                "provider": "claude",
-                "prompt": compact_user_paths_in_text(prompt),
-                "path": compact_user_path(path),
-            }
-        return None
-
 
 def _completed_result(completed: subprocess.CompletedProcess[str]) -> dict[str, Any]:
     stdout = compact_user_paths_in_text(completed.stdout.strip())
@@ -596,17 +482,3 @@ def _positive_int(value: Any, *, default: int) -> int:
 
 def _expand_path(path: str) -> Path:
     return Path(path).expanduser()
-
-
-def _extract_python_prompt(text: str) -> str:
-    constants = {
-        match.group(1): match.group(2)
-        for match in re.finditer(r"^([A-Z_]+)\s*=\s*[\"']([^\"']+)[\"']", text, re.MULTILINE)
-    }
-    prompt_match = re.search(r"prompt\s*=\s*f?[\"']([^\"']+)[\"']", text, re.DOTALL)
-    if not prompt_match:
-        return ""
-    prompt = prompt_match.group(1)
-    for key, value in constants.items():
-        prompt = prompt.replace(f"{{{key}}}", value)
-    return " ".join(shlex.split(prompt)) if "\n" not in prompt else prompt.strip()

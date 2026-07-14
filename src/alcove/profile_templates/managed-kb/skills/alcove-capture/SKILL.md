@@ -1,12 +1,12 @@
 ---
-name: social_post_manager
+name: alcove-capture
 description: Use when capturing social/web links into an Alcove inbox or reviewing, summarizing, archiving, noting, deleting, or deferring managed-KB inbox items.
 type: project
 ---
 
-# Social Post Manager
+# Alcove Capture
 
-This skill keeps the original social-media-posts workflow while routing all
+This skill keeps the managed knowledge capture workflow while routing all
 knowledge behavior through Alcove and all capture behavior through Clipsmith.
 Clipsmith project page: https://octopusgarage.github.io/clipsmith/
 

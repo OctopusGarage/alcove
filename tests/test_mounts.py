@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+
+from alcove.cli import main
 from alcove.markdown import MarkdownRepository
-from alcove.mounts import AddMountRequest, MountsModule
+from alcove.mounts import AddMountRequest, MountIndexPolicy, MountsModule
 from alcove.search import SearchModule, SearchRequest
 from alcove.workspace import Workspace
 
@@ -135,6 +138,211 @@ def test_mount_scan_detects_local_git_repo(tmp_path):
     assert report["mount"]["type"] == "git-repo-local"
     assert report["scanned"] == 1
     assert report["items"][0]["title"] == "Mounted Repo"
+
+
+def test_mount_docs_profile_filters_generated_and_agent_markdown(tmp_path):
+    workspace = Workspace.init(tmp_path / "workspace")
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+    (repo / "docs" / "superpowers" / "plans").mkdir(parents=True)
+    (repo / "book" / "_build").mkdir(parents=True)
+    (repo / ".agents" / "skills" / "demo").mkdir(parents=True)
+    (repo / "src").mkdir(parents=True)
+    (repo / "README.md").write_text("# Repo Readme\n\nUseful.", encoding="utf-8")
+    (repo / "docs" / "guide.md").write_text("# Guide\n\nUseful docs.", encoding="utf-8")
+    (repo / "docs" / "superpowers" / "plans" / "plan.md").write_text(
+        "# Agent Plan",
+        encoding="utf-8",
+    )
+    (repo / "book" / "_build" / "generated.md").write_text("# Generated", encoding="utf-8")
+    (repo / ".agents" / "skills" / "demo" / "SKILL.md").write_text("# Skill", encoding="utf-8")
+    (repo / "src" / "notes.md").write_text("# Source Adjacent", encoding="utf-8")
+    (repo / "src" / "main.py").write_text("print('ignored')", encoding="utf-8")
+    module = MountsModule(workspace)
+    mount = module.add(
+        AddMountRequest(
+            path=str(repo),
+            name="Repo",
+            index_policy=MountIndexPolicy(profile="docs"),
+        )
+    )
+
+    report = module.scan(mount.id, include_diagnostics=True)
+
+    assert report["scanned"] == 2
+    assert report["skipped"] == 5
+    assert [item["relative_path"] for item in report["items"]] == [
+        "README.md",
+        "docs/guide.md",
+    ]
+    assert report["policy"]["profile"] == "docs"
+    assert report["skip_reasons"]["excluded"] == 4
+    assert report["skip_reasons"]["unsupported_extension"] == 1
+
+
+def test_mount_scan_allows_custom_include_and_exclude_over_profile(tmp_path):
+    workspace = Workspace.init(tmp_path / "workspace")
+    repo = tmp_path / "repo"
+    (repo / "content").mkdir(parents=True)
+    (repo / "drafts").mkdir(parents=True)
+    (repo / "content" / "post.md").write_text("# Post\n\nNeedle.", encoding="utf-8")
+    (repo / "drafts" / "draft.md").write_text("# Draft\n\nNoisy.", encoding="utf-8")
+    (repo / "README.md").write_text("# Readme\n\nNoisy.", encoding="utf-8")
+    module = MountsModule(workspace)
+    mount = module.add(
+        AddMountRequest(
+            path=str(repo),
+            name="Site",
+            index_policy=MountIndexPolicy(
+                profile="site",
+                include=["content/**/*.md", "README.md"],
+                exclude=["README.md"],
+            ),
+        )
+    )
+
+    report = module.scan(mount.id)
+
+    assert report["scanned"] == 1
+    assert report["items"][0]["relative_path"] == "content/post.md"
+    assert report["skip_reasons"]["not_included"] == 1
+    assert report["skip_reasons"]["excluded"] == 1
+
+
+def test_mount_update_policy_preserves_current_profile_when_only_excluding(tmp_path):
+    workspace = Workspace.init(tmp_path / "workspace")
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+    (repo / "drafts").mkdir(parents=True)
+    (repo / "docs" / "guide.md").write_text("# Guide\n\nUseful docs.", encoding="utf-8")
+    (repo / "drafts" / "draft.md").write_text("# Draft\n\nNoisy.", encoding="utf-8")
+    module = MountsModule(workspace)
+    mount = module.add(
+        AddMountRequest(
+            path=str(repo),
+            name="Repo",
+            index_policy=MountIndexPolicy(profile="docs"),
+        )
+    )
+
+    updated = module.update_policy(mount.id, MountIndexPolicy(profile="", exclude=["drafts/**"]))
+    report = module.scan(mount.id)
+
+    assert updated.index_policy.profile == "docs"
+    assert "docs/**" in updated.index_policy.include
+    assert "drafts/**" in updated.index_policy.exclude
+    assert report["policy"]["profile"] == "docs"
+    assert report["scanned"] == 1
+    assert report["skip_reasons"]["excluded"] == 1
+
+
+def test_mount_scan_dry_run_reports_without_writing_indexes(tmp_path):
+    workspace = Workspace.init(tmp_path / "workspace")
+    source = tmp_path / "source-docs"
+    source.mkdir()
+    (source / "note.md").write_text("# Agent Notes\n\nMount search needle.", encoding="utf-8")
+    module = MountsModule(workspace)
+    mount = module.add(AddMountRequest(path=str(source), name="Source Docs"))
+
+    report = module.scan(mount.id, dry_run=True)
+
+    assert report["dry_run"] is True
+    assert report["scanned"] == 1
+    assert not (workspace.paths().mounts / "index.json").exists()
+    assert not (workspace.paths().mounts / "okf" / mount.id / "index.md").exists()
+
+
+def test_mount_okf_index_records_policy_for_agent_context(tmp_path):
+    workspace = Workspace.init(tmp_path / "workspace")
+    source = tmp_path / "source-docs"
+    source.mkdir()
+    (source / "README.md").write_text("# Agent Notes\n\nMount search needle.", encoding="utf-8")
+    module = MountsModule(workspace)
+    mount = module.add(
+        AddMountRequest(
+            path=str(source),
+            name="Source Docs",
+            index_policy=MountIndexPolicy(profile="docs", exclude=["drafts/**"]),
+        )
+    )
+
+    module.scan(mount.id)
+
+    mount_index = MarkdownRepository().read_doc(
+        workspace.paths().mounts / "okf" / mount.id / "index.md"
+    )
+    assert mount_index.frontmatter["index_policy"]["profile"] == "docs"
+    assert "drafts/**" in mount_index.frontmatter["index_policy"]["exclude"]
+    assert "- Profile: `docs`" in mount_index.body
+    assert "`drafts/**`" in mount_index.body
+
+
+def test_cli_mount_add_update_and_dry_run_scan_support_index_policy(tmp_path, capsys):
+    workspace = Workspace.init(tmp_path / "workspace")
+    source = tmp_path / "site"
+    (source / "content").mkdir(parents=True)
+    (source / "drafts").mkdir(parents=True)
+    (source / "content" / "post.md").write_text("# Post\n\nNeedle.", encoding="utf-8")
+    (source / "drafts" / "draft.md").write_text("# Draft\n\nNoisy.", encoding="utf-8")
+
+    assert (
+        main(
+            [
+                "mount",
+                "--workspace",
+                str(workspace.root),
+                "add",
+                str(source),
+                "--name",
+                "Site",
+                "--profile",
+                "site",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    added = json.loads(capsys.readouterr().out)
+    assert added["mount"]["index_policy"]["profile"] == "site"
+
+    assert (
+        main(
+            [
+                "mount",
+                "--workspace",
+                str(workspace.root),
+                "update",
+                "site",
+                "--exclude",
+                "drafts/**",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    updated = json.loads(capsys.readouterr().out)
+    assert updated["mount"]["index_policy"]["profile"] == "site"
+    assert "drafts/**" in updated["mount"]["index_policy"]["exclude"]
+
+    assert (
+        main(
+            [
+                "mount",
+                "--workspace",
+                str(workspace.root),
+                "scan",
+                "site",
+                "--dry-run",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    report = json.loads(capsys.readouterr().out)
+    assert report["dry_run"] is True
+    assert report["scanned"] == 1
+    assert report["skip_reasons"]["excluded"] == 1
+    assert not (workspace.paths().mounts / "index.json").exists()
 
 
 def test_search_includes_mounted_items_after_scan(tmp_path):

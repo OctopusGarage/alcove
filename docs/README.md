@@ -10,6 +10,8 @@ and implementation constraints. Keep the README short; put durable details here.
   local service entry profiles.
 - [Modules](modules.md): feature groups, ownership boundaries, and storage
   contracts.
+- [Prompt Library](prompts.md): reusable prompt records, curation, search,
+  scenario recommendation, composition, and quality audit.
 - [Data and Backup](data-and-backup.md): data locations, export, Git sync, and
   encryption recommendations.
 

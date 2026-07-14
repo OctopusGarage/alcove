@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, NotRequired, TypedDict
+from typing import Any, NotRequired, TypedDict, cast
 
 from alcove.external_index import ExternalItemReference
 from alcove.external_presentation import ExternalIndexedItemPresenter
@@ -176,9 +176,9 @@ class SearchRowBuilder:
             "root": "prompts",
             "type": "Prompt",
             "title": string_or_none(prompt.title) or prompt.id,
-            "domain": None,
-            "topic": None,
-            "platform": None,
+            "domain": string_or_none(getattr(prompt, "domain", "")),
+            "topic": string_or_none(getattr(prompt, "intent", "")),
+            "platform": ", ".join(value_list(getattr(prompt, "surfaces", []))) or None,
             "date": str(updated_at or created_at)[:10],
             "published_at": "",
             "collected_at": created_at,
@@ -190,7 +190,13 @@ class SearchRowBuilder:
             "resource": None,
             "notes": "\n".join(
                 part
-                for part in (prompt.description, " ".join(prompt.use_cases), prompt.content)
+                for part in (
+                    prompt.description,
+                    string_or_none(getattr(prompt, "kind", "")) or "",
+                    " ".join(value_list(getattr(prompt, "triggers", []))),
+                    " ".join(prompt.use_cases),
+                    prompt.content,
+                )
                 if part
             ),
             "path": f"prompts/{prompt.path.name}",
@@ -269,78 +275,66 @@ class SearchRowBuilder:
         rel = str(item.get("relative_path") or "")
         ref = ExternalItemReference.mount(mount_id, rel)
         presenter = ExternalIndexedItemPresenter(ref, item)
-        source_fields = presenter.source_fields()
-        return {
-            "root": "mounts",
-            "type": "Mounted Item",
-            "title": presenter.title,
-            "domain": None,
-            "topic": None,
-            "platform": None,
-            "date": frontmatter_date(item),
-            "published_at": _first_date(item, "published_at", "published_date", "date"),
-            "collected_at": _first_date(item, "indexed_at", "created_at", "timestamp"),
-            "updated_at": _first_date(item, "updated_at", "modified_at", "indexed_at"),
-            "deleted_at": _first_date(item, "deleted_at"),
-            "tags": value_list(item.get("tags")),
-            "confidence": 0.5,
-            "status": string_or_none(item.get("status")) or "active",
-            "resource": string_or_none(item.get("relative_path")) or None,
-            "notes": presenter.safe_text(),
-            "path": ref.path,
-            "display_id": str(source_fields.get("display_id") or ref.path),
-            "display_label": str(source_fields.get("display_label") or presenter.title),
-            "source_id": str(source_fields.get("source_id") or mount_id),
-            "source_label": str(source_fields.get("source_label") or mount_id),
-            "origin_label": str(source_fields.get("origin_label") or mount_id),
-            "source_ref": str(source_fields.get("source_ref") or ref.path),
-            "read_ref": str(source_fields.get("source_ref") or ref.path),
-            "read_command": "",
-            "read_hint": str(source_fields.get("read_hint") or presenter.read_hint()),
-        }
+        reference_fields = presenter.search_reference_fields()
+        return cast(
+            SearchRow,
+            {
+                "root": "mounts",
+                "type": "Mounted Item",
+                "title": presenter.title,
+                "domain": None,
+                "topic": None,
+                "platform": None,
+                "date": frontmatter_date(item),
+                "published_at": _first_date(item, "published_at", "published_date", "date"),
+                "collected_at": _first_date(item, "indexed_at", "created_at", "timestamp"),
+                "updated_at": _first_date(item, "updated_at", "modified_at", "indexed_at"),
+                "deleted_at": _first_date(item, "deleted_at"),
+                "tags": value_list(item.get("tags")),
+                "confidence": 0.5,
+                "status": string_or_none(item.get("status")) or "active",
+                "resource": string_or_none(item.get("relative_path")) or None,
+                "notes": presenter.safe_text(),
+                "path": ref.path,
+                **reference_fields,
+            },
+        )
 
     def connector_item(self, connector_id: str, item: dict[str, Any]) -> SearchRow:
         rel = str(item.get("relative_path") or "")
         ref = ExternalItemReference.connector(connector_id, rel)
         presenter = ExternalIndexedItemPresenter(ref, item)
         item_type = string_or_none(item.get("type")) or "Connector Item"
-        fields = presenter.connector_fields()
-        row: SearchRow = {
-            "root": "connectors",
-            "type": item_type,
-            "title": presenter.title,
-            "domain": string_or_none(item.get("account")),
-            "topic": string_or_none(item.get("folder_path")),
-            "platform": connector_id,
-            "date": frontmatter_date(item),
-            "published_at": _first_date(item, "published_at", "published_date", "date"),
-            "collected_at": _first_date(
-                item,
-                "indexed_at",
-                "created_at",
-                "date_added",
-                "timestamp",
-            ),
-            "updated_at": _first_date(item, "updated_at", "date_modified", "indexed_at"),
-            "deleted_at": _first_date(item, "deleted_at"),
-            "tags": value_list(item.get("tags")),
-            "confidence": 0.5,
-            "status": string_or_none(item.get("status")) or "active",
-            "resource": string_or_none(item.get("resource")) or None,
-            "notes": presenter.safe_text(),
-            "path": ref.path,
-            "display_id": fields["display_id"],
-            "display_label": fields["display_label"],
-            "source_id": fields["source_id"],
-            "source_label": fields["source_label"],
-            "origin_label": fields["origin_label"],
-            "fetch_ref": fields["fetch_ref"],
-            "fetch_command": fields["fetch_command"],
-            "read_ref": fields["fetch_ref"],
-            "read_command": fields["fetch_command"],
-            "read_hint": presenter.read_hint(),
-            "source_ref": fields["fetch_ref"],
-        }
+        reference_fields = presenter.search_reference_fields()
+        row = cast(
+            SearchRow,
+            {
+                "root": "connectors",
+                "type": item_type,
+                "title": presenter.title,
+                "domain": string_or_none(item.get("account")),
+                "topic": string_or_none(item.get("folder_path")),
+                "platform": connector_id,
+                "date": frontmatter_date(item),
+                "published_at": _first_date(item, "published_at", "published_date", "date"),
+                "collected_at": _first_date(
+                    item,
+                    "indexed_at",
+                    "created_at",
+                    "date_added",
+                    "timestamp",
+                ),
+                "updated_at": _first_date(item, "updated_at", "date_modified", "indexed_at"),
+                "deleted_at": _first_date(item, "deleted_at"),
+                "tags": value_list(item.get("tags")),
+                "confidence": 0.5,
+                "status": string_or_none(item.get("status")) or "active",
+                "resource": string_or_none(item.get("resource")) or None,
+                "notes": presenter.safe_text(),
+                "path": ref.path,
+                **reference_fields,
+            },
+        )
         if presenter.is_secret_like():
             row["redacted"] = True
         quality = presenter.information_quality()

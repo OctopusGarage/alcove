@@ -71,9 +71,9 @@ Patterns not needed in Alcove v1:
 - Daemon, file watcher, and worker-thread query pool.
 - Bundled Node runtime.
 
-### Social Radar Tasks
+### Legacy Task System
 
-The prior Social Radar project provides the task-system reference.
+The prior personal task project provides the task-system reference.
 
 Useful model:
 
@@ -294,7 +294,7 @@ there is a proven need. Source Markdown is durable data; `index.json`,
 
 ### Tasks Module
 
-Tasks borrow the `social-radar` lifecycle but become part of Alcove's information graph.
+Tasks borrow the legacy task lifecycle but become part of Alcove's information graph.
 
 Object types:
 
@@ -317,7 +317,7 @@ class TasksModule:
     def routine_materialize_due(self, today: date | None = None) -> list[Task]
 ```
 
-V1 storage can be `tasks/tasks.json`, following the Social Radar model. A later version can move to Markdown per task if the user wants git-friendly manual editing.
+V1 storage can be `tasks/tasks.json`, following the legacy task model. A later version can move to Markdown per task if the user wants git-friendly manual editing.
 
 V1 does not install a scheduler. `routine_materialize_due` runs on explicit CLI/MCP calls.
 
@@ -605,7 +605,7 @@ Regression fixtures:
   output files.
 - Web article folder with `article.md`.
 - Existing OKF bundle migrated from `research_notes`.
-- Social Radar task JSON sample.
+- Legacy task JSON sample.
 - Apple Notes deterministic export sample.
 
 ## Implementation Phases
@@ -622,7 +622,7 @@ Regression fixtures:
 ### Phase 2: Pins and Tasks
 
 - Add Pins module and CLI.
-- Add Tasks module using Social Radar IDEA/TASK/ROUTINE model.
+- Add Tasks module using a legacy IDEA/TASK/ROUTINE model.
 - Expose search across Knowledge, Pins, and Tasks.
 - Status: implemented.
 
@@ -667,4 +667,4 @@ The user approved:
 - Path: this repository.
 - Scheme C: local personal information core plus first OKF extraction.
 - Technical route: Python + uv + Markdown-first + FastMCP/CLI.
-- References: current OKF tool, CodeGraph product shape, Social Radar tasks, Apple Notes local skill, pins, and historical mounts.
+- References: current OKF tool, CodeGraph product shape, legacy tasks, Apple Notes local skill, pins, and historical mounts.

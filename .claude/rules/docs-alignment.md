@@ -18,6 +18,10 @@ paths:
   entry behavior, dashboard views, radars, publishers, pins, tasks, prompts,
   projects, managed KBs, connectors, mounts, OKF, validation, smoke, eval, or
   install flows, inspect the related documentation in the same turn.
+- For every user-facing feature, do an entry-mode impact check before finishing:
+  Hub workspace first, then managed-KB workspace, then global MCP/command hints,
+  then local service/dashboard if relevant. Update the matching skills,
+  toolsets, docs, and smoke/AI eval coverage when the behavior changes.
 - Update docs in the same change, or state explicitly why the changed behavior
   is internal and does not need user-facing documentation.
 - Keep `README.md` concise. Put architecture, data layout, entry mode, module,

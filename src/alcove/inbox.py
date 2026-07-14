@@ -192,7 +192,7 @@ class InboxModule:
             date,
             content,
             content_source,
-            self._metadata_string(metadata, "status") or "",
+            self._metadata_string(metadata, "status") or "ready",
             self._metadata_warnings(metadata),
             self._content_file_rows_with_read_hints(content_file_rows, identifier),
             self._content_outline(content_file_rows),

@@ -14,7 +14,9 @@ Agent quality gates are intentionally layered and scoped:
    dashboard usefulness, and whether useful evidence is hidden.
 3. Documentation drift checks catch user-visible implementation changes that
    did not update related docs.
-4. Hooks run in coach mode by default so everyday agent work is not blocked by
+4. Entry-mode impact checks keep Hub, managed-KB, global MCP, CLI, service, and
+   dashboard behavior from drifting when new features are added.
+5. Hooks run in coach mode by default so everyday agent work is not blocked by
    expensive evals. Strict mode is available for release work or risky changes.
    When strict mode fails, the hook returns a `decision: "block"` response so
    Codex or Claude Code continues with the failure reason instead of silently
@@ -92,6 +94,33 @@ Manual check:
 ```sh
 scripts/check-docs-drift.sh
 ```
+
+## Entry-Mode Impact Guard
+
+The Hub workspace is the normal user conversation entry. A feature is not fully
+integrated just because its Python module or CLI command works. For every
+user-facing change, inspect these surfaces:
+
+- Hub workspace: update `alcove-hub` when intent routing, write protocol,
+  safety rules, receipts, or module workflows change.
+- Managed KB workspace: update KB skills or commands when capture, inbox,
+  archive, OKF notes, or KB-scoped search behavior changes.
+- Global MCP: keep `lite` small; add command hints for heavy workflows and only
+  expose broad mutating/admin tools in `full` or KB toolsets.
+- CLI/API: keep durable writes governed and ergonomic for agents to call.
+- Service/dashboard/export: update deterministic maintenance, browser views, or
+  publishers when the new state is meant to surface there.
+
+When entry behavior changes, run:
+
+```sh
+scripts/smoke-agent-clients.sh
+scripts/eval-ai.sh
+```
+
+Use focused AI eval suites through the quality gate when only one entry surface
+changed. Use full AI eval for broad Hub routing, prompt library, MCP, or
+dashboard redesigns.
 
 ## AI Eval Trigger Rules
 

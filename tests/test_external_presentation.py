@@ -98,3 +98,17 @@ def test_mount_presentation_owns_source_ref_and_read_hint():
         "read_ref_available": True,
         "read_ref_pattern": "mounts/<id>#<relative-path>",
     }
+    assert presenter.search_reference_fields() == {
+        "display_id": "mounts/research-archive#notes/agent.md",
+        "display_label": "Agent Notes",
+        "source_id": "research-archive",
+        "source_label": "Research Archive",
+        "origin_label": "Research Archive",
+        "source_ref": "mounts/research-archive#notes/agent.md",
+        "read_ref": "mounts/research-archive#notes/agent.md",
+        "read_command": "",
+        "read_hint": (
+            "Use the mount source reference to inspect the external file "
+            "from the configured mount root."
+        ),
+    }

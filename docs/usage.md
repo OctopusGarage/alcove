@@ -167,10 +167,14 @@ global by default and live under `~/.alcove`.
 alcove pin add "Japanese Edge Launcher" \
   --description "Launch Edge with TZ=Asia/Tokyo" \
   --tag app-launcher
-alcove prompt save "Code Review Lens" \
-  --content "Review for correctness and missing tests." \
+alcove prompt propose "Code Review Lens" \
+  --content "Review for correctness, missing tests, and regression risk." \
   --tag review \
   --use-case "PR review"
+alcove prompt save --proposal-id <proposal-id>
+alcove prompt recommend "review a dashboard regression before shipping"
+alcove prompt compose "review a dashboard regression before shipping"
+alcove prompt audit --json
 alcove project add alcove /path/to/alcove --note "Personal information core"
 alcove task add "Wire MCP search" --priority high --tag mcp
 alcove task edit wire-mcp-search --due 2026-07-20 --priority high
@@ -273,9 +277,21 @@ maintenance run.
 Mounts index local folders without copying them:
 
 ```sh
-alcove mount add /path/to/github-repos --name github --type local-folder --tag repos
+alcove mount add /path/to/github-repos --name github --type local-folder --profile docs --tag repos
+alcove mount scan github --dry-run --json
 alcove mount scan github --json
 ```
+
+Mount profiles keep indexes focused:
+
+```sh
+alcove mount add ~/notes --name notes --profile notes
+alcove mount add ~/blog --name blog --profile site --exclude ".agents/**"
+alcove mount update github --profile docs --exclude "archived-*/**" --exclude "**/_build/**"
+```
+
+Use `--dry-run` before a large rebuild to inspect `scanned`, `skipped`, and
+`skip_reasons` without writing `~/.alcove/mounts/indexes/` or derived OKF files.
 
 Connectors index external systems or exports:
 
@@ -423,15 +439,18 @@ Manual maintenance tick:
 alcove service tick --home ~/.alcove --json
 alcove service tick --home ~/.alcove --skip-radars --json
 alcove service tick --home ~/.alcove --skip-automations --json
+alcove service tick --home ~/.alcove --mount-refresh-days 2 --json
 ```
 
 Each tick materializes due routines, sends configured planner digests, refreshes
 stale connector sources, checks watchers and monitored blogs, runs enabled
-scheduled radars, runs due user automation jobs, rebuilds the global OKF
+scheduled radars, runs due user automation jobs, refreshes mounted knowledge
+indexes when their two-day maintenance window is due, rebuilds the global OKF
 catalog, runs health repair, refreshes usage rollups, prunes old usage events,
-and rebuilds the dashboard snapshot. This is deterministic maintenance; blog
-summary, radar AI analysis, automation notifications, and agent automation jobs
-are opt-in.
+and rebuilds the dashboard snapshot. Mount refresh uses the existing incremental
+scan and can be disabled for a manual tick with `--skip-mounts`. This is
+deterministic maintenance; blog summary, radar AI analysis, automation
+notifications, and agent automation jobs are opt-in.
 
 Watch a site or feed:
 
@@ -519,7 +538,6 @@ alcove automation add-git-sync notes ~/notes \
   --json
 alcove automation run notes --home ~/.alcove --json
 alcove automation run-due --home ~/.alcove --json
-alcove automation import-social-radar ~/.social_radar --home ~/.alcove --json
 ```
 
 `shell`, `git-sync`, and `alcove` jobs can run from the local service when due.
@@ -544,15 +562,17 @@ alcove radar run tech-news --skip-fetch --force --ai --notify --json
 alcove radar status tech-news --json
 ```
 
-To migrate legacy Social Radar profiles, cache, and reports:
+Scheduled radars can use a local daily window:
 
-```sh
-alcove radar import-social-radar ~/.social_radar --home ~/.alcove --json
+```yaml
+schedule:
+  enabled: true
+  daily_time: "10:00"
+  timezone: Asia/Singapore
+  ttl_hours: 24
 ```
 
-Existing definitions are preserved unless `--force` is passed. The migration
-does not import `.env`, tokens, crontab backups, or old MCP configuration. See
-[radars.md](radars.md) for the storage contract and adapter model. Optional
+See [radars.md](radars.md) for the storage contract and adapter model. Optional
 `ai_summary` post-processing writes `<date>.ai.md` and can send notifications
 through configured sinks. Telegram sends the Markdown and HTML report files when
 available. Feishu custom bot webhooks send a text message with the summary and

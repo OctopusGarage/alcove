@@ -43,13 +43,28 @@ class AppleNotesExporter(Protocol):
     def export_all(self, output_dir: Path) -> dict[str, Any]: ...
 
 
+class AppleNotesAutomationError(AlcoveError):
+    """Expected failure while asking Notes.app for local note data."""
+
+    operation = "export-all-notes"
+    remediation_command = "alcove connector apple-notes import-local --json"
+
+    def __init__(self, details: str) -> None:
+        self.details = details.strip() or "Apple Notes automation failed."
+        super().__init__(
+            f"Apple Notes automation failed while running {self.operation}: {self.details}"
+        )
+
+
 class LocalAppleNotesExporter:
     def export_all(self, output_dir: Path) -> dict[str, Any]:
         if platform.system() != "Darwin":
             raise AlcoveError("Apple Notes local export requires macOS.")
         response = self._run_jxa()
         if not response.get("ok"):
-            raise AlcoveError(str(response.get("details") or response.get("error") or response))
+            raise AppleNotesAutomationError(
+                str(response.get("details") or response.get("error") or response)
+            )
         data = response.get("data") if isinstance(response.get("data"), dict) else {}
         notes = data.get("notes") if isinstance(data.get("notes"), list) else []
         return write_apple_notes_export_tree(
@@ -129,13 +144,13 @@ JSON.stringify(main());
         )
         combined = (result.stdout or "").strip() or (result.stderr or "").strip()
         if result.returncode != 0:
-            raise AlcoveError(combined or "Apple Notes automation failed.")
+            raise AppleNotesAutomationError(combined or "osascript exited with a non-zero status.")
         if not combined:
-            raise AlcoveError("Apple Notes automation returned no output.")
+            raise AppleNotesAutomationError("osascript returned no output.")
         try:
             data = json.loads(combined)
         except json.JSONDecodeError as exc:
-            raise AlcoveError("Apple Notes automation returned invalid JSON.") from exc
+            raise AppleNotesAutomationError("osascript returned invalid JSON.") from exc
         return data if isinstance(data, dict) else {}
 
     def _osascript_path(self) -> str:

@@ -17,18 +17,28 @@ def run_ai_summary(
 ) -> dict[str, Any]:
     provider = str(policy.get("provider") or "claude").strip().lower()
     timeout = _positive_int(policy.get("timeout_seconds"), default=180)
-    command = _command(provider, policy)
-    executable = shutil.which(command[0])
-    if not executable:
+    selected_provider = provider
+    selected_command: list[str] | None = None
+    availability_errors: list[str] = []
+    for candidate_provider in _provider_candidates(provider, policy):
+        command = _command(candidate_provider, policy)
+        executable = _which_command(command[0])
+        if not executable:
+            availability_errors.append(f"{command[0]} is not available")
+            continue
+        command[0] = executable
+        selected_provider = candidate_provider
+        selected_command = command
+        break
+    if selected_command is None:
         return {
             "status": "skipped",
             "provider": provider,
-            "reason": f"{command[0]} is not available",
+            "reason": "; ".join(availability_errors) or f"{provider} is not available",
         }
-    command[0] = executable
     try:
         result = subprocess.run(  # noqa: S603
-            command,
+            selected_command,
             input=prompt,
             text=True,
             capture_output=True,
@@ -37,24 +47,57 @@ def run_ai_summary(
             cwd=str(cwd) if cwd else None,
         )
     except subprocess.TimeoutExpired:
-        return {"status": "failed", "provider": provider, "error": "AI summary timed out"}
+        return {"status": "failed", "provider": selected_provider, "error": "AI summary timed out"}
     except OSError as exc:
         return {
             "status": "failed",
-            "provider": provider,
+            "provider": selected_provider,
             "error": compact_user_paths_in_text(str(exc)),
         }
     summary = result.stdout.strip()
     if result.returncode != 0:
         return {
             "status": "failed",
-            "provider": provider,
+            "provider": selected_provider,
             "error": compact_user_paths_in_text((result.stderr or result.stdout).strip())[:2000],
             "returncode": result.returncode,
         }
     if not summary:
-        return {"status": "failed", "provider": provider, "error": "AI summary was empty"}
-    return {"status": "completed", "provider": provider, "summary": summary}
+        return {"status": "failed", "provider": selected_provider, "error": "AI summary was empty"}
+    payload = {"status": "completed", "provider": selected_provider, "summary": summary}
+    if selected_provider != provider:
+        payload["fallback_from"] = provider
+    return payload
+
+
+def _provider_candidates(provider: str, policy: dict[str, Any]) -> list[str]:
+    providers = [provider]
+    fallback = str(policy.get("fallback_provider") or "").strip().lower()
+    if not fallback and provider == "codex":
+        fallback = "claude"
+    if fallback and fallback not in providers:
+        providers.append(fallback)
+    return providers
+
+
+def _which_command(command: str) -> str | None:
+    executable = shutil.which(command)
+    if executable:
+        return executable
+    if command != "codex":
+        return None
+    for path in _nvm_bin_dirs():
+        candidate = path / command
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def _nvm_bin_dirs() -> list[Path]:
+    root = Path.home() / ".nvm" / "versions" / "node"
+    if not root.is_dir():
+        return []
+    return [path for path in sorted(root.glob("*/bin"), reverse=True) if path.is_dir()]
 
 
 def _command(provider: str, policy: dict[str, Any]) -> list[str]:

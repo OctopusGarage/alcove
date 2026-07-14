@@ -27,7 +27,6 @@ from alcove.ai_eval_packet import (
 from alcove.paths import compact_user_paths_in_text
 from alcove.verify_suites import eval_report_paths
 
-
 PACKET_SCHEMA = "alcove.ai_eval_packet.v1"
 
 
@@ -140,7 +139,11 @@ def _build_eval_packet(
         "publisher_render_quality": _read_json(
             smoke_fixtures / "publisher-render-quality.json", warnings
         ),
+        "prompt_propose": _read_json(smoke_fixtures / "prompt-propose.json", warnings),
+        "prompt_proposal": _read_json(smoke_fixtures / "prompt-proposal.json", warnings),
         "prompt_search": _read_json(smoke_fixtures / "prompt-search.json", warnings),
+        "prompt_recommend": _read_json(smoke_fixtures / "prompt-recommend.json", warnings),
+        "prompt_compose": _read_json(smoke_fixtures / "prompt-compose.json", warnings),
         "project_add": _read_json(smoke_fixtures / "project-add.json", warnings),
         "project_find": _read_json(smoke_fixtures / "project-find.json", warnings),
         "task_add": _read_json(smoke_fixtures / "task-add.json", warnings),
@@ -168,9 +171,6 @@ def _build_eval_packet(
         "radar_list": _read_json(smoke_fixtures / "radar-list.json", warnings),
         "radar_run": _read_json(smoke_fixtures / "radar-run.json", warnings),
         "radar_status": _read_json(smoke_fixtures / "radar-status.json", warnings),
-        "radar_import_social_radar": _read_json(
-            smoke_fixtures / "radar-import-social-radar.json", warnings
-        ),
         "link_source": _read_json(smoke_fixtures / "link-source.json", warnings),
         "dashboard_build": _read_json(smoke_fixtures / "dashboard-build.json", warnings),
         "dashboard_render": _read_json(smoke_fixtures / "dashboard-render.json", warnings),
@@ -289,7 +289,7 @@ def _build_eval_packet(
                 max_string=12000,
             ),
         },
-        "modules": _modules(),
+        "modules": _modules(selected_suites),
         "review_rules": [
             "Treat deterministic pass/fail as already verified; focus on AI/user quality.",
             "Flag confusing user-facing wording, missing source context, weak summaries, bad routing, and hidden useful content.",
@@ -440,10 +440,10 @@ def _agent_entry_evidence(
             agent_kb,
             ".agents/skills/notes-search/SKILL.md",
         ),
-        "kb_social_post_manager": _entry_candidates(
+        "kb_capture_skill": _entry_candidates(
             kb_root,
             agent_kb,
-            ".agents/skills/social_post_manager/SKILL.md",
+            ".agents/skills/alcove-capture/SKILL.md",
         ),
         "claude_inbox_peek": _entry_candidates(
             kb_root,
@@ -464,7 +464,7 @@ def _agent_entry_evidence(
             "exists": resolved_paths[name] is not None,
         }
         for name in paths
-        if name.endswith("_skill") or name in {"kb_notes_search", "kb_social_post_manager"}
+        if name.endswith("_skill") or name in {"kb_notes_search", "kb_capture_skill"}
     }
     return evidence
 
@@ -531,7 +531,10 @@ def _agent_entry_kb_root(smoke_root: Path, warnings: list[str]) -> Path:
 
 def _radar_reports_for_eval(report: Any) -> dict[str, Any]:
     if not isinstance(report, dict):
-        return {"status": "missing", "reason": "radar report smoke artifact is not a mapping"}
+        return {
+            "status": "missing",
+            "reason": "radar report smoke artifact is not a mapping",
+        }
     checks_value = report.get("checks")
     checks: list[Any] = checks_value if isinstance(checks_value, list) else []
     visual_summaries_value = report.get("visual_summaries")
@@ -610,8 +613,8 @@ def build_eval_bundle(
     return EvalBundle(packet_path=packet_path, prompt_path=prompt_path)
 
 
-def _modules() -> list[dict[str, Any]]:
-    return [
+def _modules(selected_suites: Sequence[str] = ()) -> list[dict[str, Any]]:
+    modules = [
         {
             "id": "capture_inbox",
             "scope": "Clipsmith capture, manual inbox, OCR bundle, messy bundle fixtures, inbox read surface.",
@@ -671,12 +674,11 @@ def _modules() -> list[dict[str, Any]]:
         },
         {
             "id": "radars",
-            "scope": "Generic user-configured information radars, packaged presets, source adapters, reports, service scheduling, and Social Radar migration.",
+            "scope": "Generic user-configured information radars, packaged presets, source adapters, reports, and service scheduling.",
             "ai_quality_questions": [
                 "Are radar categories represented as user definitions rather than hard-coded product modules?",
                 "Can an agent discover available radars with `alcove radar list`, then run the user-selected radar without assuming fixed IDs?",
                 "Do reports and run status expose enough included counts, source errors, and artifact paths for follow-up review?",
-                "Does Social Radar migration preserve historical cache/report evidence while avoiding secrets and old environment data?",
                 "Are scheduled radar runs deterministic by default, with optional AI summary and Telegram notification enabled only by explicit definition config or manual flags?",
                 "Do radar AI prompts stay radar-specific, and does notification fall back to the deterministic report when AI summary fails?",
             ],
@@ -740,6 +742,97 @@ def _modules() -> list[dict[str, Any]]:
             ],
         },
     ]
+    normalized = {suite for suite in selected_suites if suite and suite != "all"}
+    if not normalized:
+        return modules
+    selected_ids = _module_ids_for_suites(normalized)
+    return [
+        _focused_module(module, normalized) for module in modules if module["id"] in selected_ids
+    ]
+
+
+def _module_ids_for_suites(selected_suites: set[str]) -> set[str]:
+    mapping = {
+        "isolated": {
+            "capture_inbox",
+            "knowledge_okf",
+            "global_memory",
+            "external_indexes",
+            "blog_monitor",
+            "radars",
+            "publishers",
+            "dashboard",
+            "export_health",
+            "agent_entries",
+        },
+        "real_home": {
+            "knowledge_okf",
+            "global_memory",
+            "external_indexes",
+            "publishers",
+            "dashboard",
+            "export_health",
+        },
+        "real_integrations": {"capture_inbox", "external_indexes", "mcp_entry"},
+        "agent_clients": {"mcp_entry", "agent_entries"},
+        "mcp_matrix": {"mcp_entry"},
+        "dashboard_browser": {"dashboard"},
+        "radar_reports": {"radars"},
+        "export_restore": {"export_health"},
+        "messy_inbox": {"capture_inbox"},
+    }
+    module_ids: set[str] = set()
+    for suite in selected_suites:
+        module_ids.update(mapping.get(suite, set()))
+    return module_ids
+
+
+def _focused_module(module: dict[str, Any], selected_suites: set[str]) -> dict[str, Any]:
+    focused = {**module, "ai_quality_questions": list(module["ai_quality_questions"])}
+    if module["id"] == "capture_inbox" and "isolated" in selected_suites:
+        if not ({"real_integrations", "messy_inbox"} & selected_suites):
+            focused["scope"] = "Manual inbox add/read/note flow covered by isolated smoke."
+            focused["ai_quality_questions"] = [
+                "Can an agent see enough manual source, title, content, and read command context to summarize without losing evidence?",
+                "Would a user understand what to archive, note, delete, or defer from this manual inbox payload?",
+            ]
+    if module["id"] == "dashboard" and "dashboard_browser" not in selected_suites:
+        focused["scope"] = (
+            "Dashboard snapshot, module summaries, pins/tasks/knowledge presentation, activity feed."
+        )
+        focused["ai_quality_questions"] = [
+            "Does the dashboard snapshot surface real user data without noisy internal log paths?",
+            "Are module names and counts understandable for a personal knowledge cockpit?",
+            "Are pins and activity represented in a way that helps repeated review?",
+        ]
+    if module["id"] == "export_health" and "export_restore" not in selected_suites:
+        focused["scope"] = (
+            "Export manifest/readback, doctor, validation, gardener, and health summaries covered by isolated smoke."
+        )
+        focused["ai_quality_questions"] = [
+            "Do health/export results help a user trust backup behavior for the refreshed fixture data?",
+            "Are reported issues actionable instead of merely structural?",
+            "Does the health report cover managed KB OKF, global memory indexes, connector/mount derived OKF, and the global OKF catalog?",
+        ]
+    if module["id"] == "agent_entries" and "agent_clients" not in selected_suites:
+        focused["scope"] = (
+            "Generated Codex skills and project entry files covered by isolated smoke."
+        )
+        focused["ai_quality_questions"] = [
+            "Can Codex trigger the right smoke/eval level without memorizing scripts?",
+            "Are the generated Hub and managed-KB prompts generic enough for another clone of the repository?",
+            "Do the prompts make AI review separate from deterministic smoke checks?",
+        ]
+    if module["id"] == "radars" and "radar_reports" not in selected_suites:
+        focused["scope"] = (
+            "Generic radar definition/list/run/status fixtures covered by isolated smoke."
+        )
+        focused["ai_quality_questions"] = [
+            "Are radar categories represented as user definitions rather than hard-coded product modules?",
+            "Can an agent discover available radars with `alcove radar list`, then run the user-selected radar without assuming fixed IDs?",
+            "Do run status results expose enough included counts, source status, and report paths for follow-up review?",
+        ]
+    return focused
 
 
 def _reviewer_prompt(packet_path: Path, packet: dict[str, Any]) -> str:
@@ -922,16 +1015,18 @@ def main(argv: list[str] | None = None) -> int:
         smoke_root=Path(args.smoke_root),
         real_home_report=Path(args.real_home_report),
         real_integrations_dir=Path(args.real_integrations_dir),
-        agent_client_report=Path(args.agent_client_report) if args.agent_client_report else None,
-        mcp_matrix_report=Path(args.mcp_matrix_report) if args.mcp_matrix_report else None,
-        dashboard_browser_report=Path(args.dashboard_browser_report)
-        if args.dashboard_browser_report
-        else None,
-        radar_reports_report=Path(args.radar_reports_report) if args.radar_reports_report else None,
-        export_restore_report=Path(args.export_restore_report)
-        if args.export_restore_report
-        else None,
-        messy_inbox_report=Path(args.messy_inbox_report) if args.messy_inbox_report else None,
+        agent_client_report=(Path(args.agent_client_report) if args.agent_client_report else None),
+        mcp_matrix_report=(Path(args.mcp_matrix_report) if args.mcp_matrix_report else None),
+        dashboard_browser_report=(
+            Path(args.dashboard_browser_report) if args.dashboard_browser_report else None
+        ),
+        radar_reports_report=(
+            Path(args.radar_reports_report) if args.radar_reports_report else None
+        ),
+        export_restore_report=(
+            Path(args.export_restore_report) if args.export_restore_report else None
+        ),
+        messy_inbox_report=(Path(args.messy_inbox_report) if args.messy_inbox_report else None),
         selected_suites=selected_suites,
     )
     payload = {

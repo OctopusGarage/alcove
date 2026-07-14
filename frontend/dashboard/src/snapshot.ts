@@ -78,6 +78,8 @@ export interface DashboardSnapshot {
   modules: ModuleCard[];
   pins: {
     themes: ThemePin[];
+    displayed?: Array<Record<string, unknown>>;
+    active?: Array<Record<string, unknown>>;
     all: Array<Record<string, unknown>>;
   };
   tasks: {

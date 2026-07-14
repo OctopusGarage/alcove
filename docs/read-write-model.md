@@ -87,7 +87,9 @@ save future practice idea
   -> pin kind=todo, idea add, or task add depending on intent
 
 save reusable instruction
-  -> prompt save
+  -> prompt propose
+  -> inspect similar prompts and recommended action
+  -> prompt save --proposal-id <id>
 
 track work
   -> task / idea / routine commands
@@ -198,6 +200,13 @@ For connectors, `read_ref` normally equals `fetch_ref` and `read_command` is
 `alcove connector fetch <fetch_ref> --json`. For mounts, `read_ref` is the
 mount source reference such as `mounts/<id>#<relative-path>` and the agent may
 inspect the mounted source file through the configured mount root.
+
+Mounted repository indexes are governed by per-mount index profiles. They are
+optimized for knowledge retrieval over README, docs, notes, site content, and
+captured article bundles. If the user asks a source-code question, agents should
+use local file inspection tools such as `rg`, direct reads, or project-specific
+code tools against the mounted repository instead of assuming the mount index is
+a complete source-code index.
 
 ## Direct File Edits
 

@@ -305,6 +305,198 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.library-ledger {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  margin-bottom: 18px;
+  border: var(--hairline);
+  border-radius: var(--radius);
+  background: var(--line);
+}
+
+.library-ledger div {
+  min-width: 0;
+  padding: 16px;
+  background: rgba(255, 255, 251, 0.94);
+}
+
+.library-ledger b {
+  display: block;
+  color: var(--ink);
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 30px;
+  font-weight: 560;
+  line-height: 1;
+}
+
+.library-ledger span {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.prompt-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.prompt-card {
+  min-width: 0;
+  padding: 16px;
+  border: var(--hairline);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 251, 0.92);
+  box-shadow: var(--shadow);
+}
+
+.prompt-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.prompt-card h2 {
+  margin: 3px 0 0;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.prompt-kicker,
+.prompt-preview-label,
+.prompt-facts span,
+.prompt-card-foot {
+  color: var(--muted);
+  font-family: "SF Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 760;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.prompt-kicker {
+  margin: 0;
+}
+
+.prompt-purpose {
+  margin: 10px 0 12px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.prompt-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.prompt-facts div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(21, 31, 35, 0.09);
+  border-radius: 6px;
+  background: rgba(237, 242, 232, 0.42);
+}
+
+.prompt-facts p {
+  margin: 5px 0 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.prompt-preview {
+  display: grid;
+  gap: 6px;
+}
+
+.prompt-preview-topline {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.prompt-preview pre {
+  margin: 0;
+  border-color: rgba(21, 31, 35, 0.12);
+  background: rgba(246, 245, 238, 0.72);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow: visible;
+  white-space: pre-wrap;
+}
+
+.copy-button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--graphite);
+  color: var(--sheet);
+  cursor: pointer;
+  font-family: "SF Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 760;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.copy-button:hover,
+.copy-button:focus-visible {
+  border-color: var(--blue);
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(46, 100, 137, 0.18);
+}
+
+.prompt-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.prompt-tags span {
+  max-width: 100%;
+  padding: 4px 7px;
+  border: 1px solid rgba(73, 111, 80, 0.16);
+  border-radius: 999px;
+  background: rgba(73, 111, 80, 0.08);
+  color: var(--moss);
+  font-size: 11px;
+  font-weight: 680;
+}
+
+.prompt-card-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: var(--hairline);
+}
+
+.prompt-card-foot code {
+  max-width: 70%;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-projects {
+  margin-top: 18px;
+}
+
 .panel {
   min-width: 0;
   padding: 18px;
@@ -1118,6 +1310,8 @@ pre {
   .home-focus-grid,
   .source-columns,
   .relationship,
+  .library-ledger,
+  .prompt-grid,
   .usage-hero,
   .usage-grid {
     grid-template-columns: 1fr;
@@ -1152,6 +1346,20 @@ pre {
 
   .module-toolbar-actions {
     justify-content: space-between;
+  }
+
+  .prompt-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .prompt-card-foot {
+    display: grid;
+  }
+
+  .prompt-card-foot code {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 

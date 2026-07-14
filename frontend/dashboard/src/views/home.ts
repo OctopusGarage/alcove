@@ -22,10 +22,10 @@ export function renderHome(snapshot: DashboardSnapshot): string {
         </div>
       </div>
       <div class="home-ledger" aria-label="Alcove snapshot status">
-        ${ledgerCell("Pin Records", counts.pins ?? 0, `${counts.theme_pins ?? 0} featured theme pins`)}
-        ${ledgerCell("Tasks", counts.pending_tasks ?? 0, "pending tasks")}
+        ${ledgerCell("Pin Collections", counts.pins ?? 0, pinCollectionDetail(counts))}
+        ${ledgerCell("Planner Items", plannerItemTotal(counts), plannerItemDetail(counts))}
         ${ledgerCell("Searchable", indexedTotal(counts), "indexed records")}
-        ${ledgerCell("Source Coverage", countPhrase(sourceTotal(counts), "type"), sourceFamilyDetail(counts))}
+        ${ledgerCell("Source Coverage", countPhrase(sourceTotal(counts), "source"), sourceFamilyDetail(counts))}
       </div>
     </section>
 
@@ -86,6 +86,32 @@ function sourceFamilyDetail(counts: Record<string, number>): string {
     `Mounts: ${Number(counts.mounts || 0)}`,
     `Connectors: ${Number(counts.connectors || 0)}`,
   ].join("; ");
+}
+
+function pinCollectionDetail(counts: Record<string, number>): string {
+  return [
+    countPhrase(Number(counts.regular_theme_pins || 0), "regular collection"),
+    countPhrase(Number(counts.todo_theme_pins || 0), "TODO collection"),
+  ].join(" / ");
+}
+
+function plannerItemTotal(counts: Record<string, number>): number {
+  return (
+    Number(counts.pending_tasks || 0) +
+    Number(counts.active_ideas || 0) +
+    Number(counts.active_routines || 0)
+  );
+}
+
+function plannerItemDetail(counts: Record<string, number>): string {
+  const pending = Number(counts.pending_tasks || 0);
+  const ideas = Number(counts.active_ideas || 0);
+  const routines = Number(counts.active_routines || 0);
+  return [
+    countPhrase(pending, "pending task"),
+    countPhrase(ideas, "idea"),
+    countPhrase(routines, "routine"),
+  ].join(" / ");
 }
 
 function countPhrase(count: number, singular: string): string {

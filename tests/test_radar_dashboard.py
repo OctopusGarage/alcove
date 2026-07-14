@@ -49,3 +49,20 @@ def test_dashboard_snapshot_lists_generic_radars(tmp_path) -> None:
         row["type"] == "radar" and row["title"] == "Sports News" and row["href"] == "/radars"
         for row in snapshot["search_index"]
     )
+
+
+def test_dashboard_snapshot_formats_radar_status_labels(tmp_path) -> None:
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = RadarModule(home)
+    module.upsert_definition(
+        RadarDefinition(
+            id="stocks",
+            name="Stocks",
+            status="needs_configuration",
+        )
+    )
+
+    snapshot = DashboardModule(home).snapshot()
+
+    assert snapshot["radars"][0]["status"] == "needs_configuration"
+    assert snapshot["radars"][0]["status_label"] == "Needs configuration"

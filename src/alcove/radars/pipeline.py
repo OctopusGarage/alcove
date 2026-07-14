@@ -13,6 +13,12 @@ from alcove.notifications import (
     send_telegram_document,
     send_telegram_message,
 )
+from alcove.notification_delivery import (
+    combined_notification_status,
+    notification_bool,
+    notification_sink_label,
+    notification_sinks,
+)
 from alcove.paths import compact_user_path
 from alcove.radars.models import RADAR_RUN_SCHEMA, RadarDefinition, RadarItem, now_iso
 from alcove.radars.reporting import render_html, render_markdown, selected_report_items
@@ -35,8 +41,9 @@ class RadarPipeline:
         force: bool = False,
         ai: bool = False,
         notify: bool = False,
+        run_day: str = "",
     ) -> dict[str, Any]:
-        run_day = date.today().isoformat()
+        run_day = run_day or date.today().isoformat()
         run_path = self.module.runs_root / definition.id / run_day / "run.json"
         if run_path.is_file() and not force:
             existing_run = _json_mapping(run_path)
@@ -226,6 +233,8 @@ class RadarPipeline:
             "status": result.get("status", "failed"),
             "provider": result.get("provider") or policy.get("provider") or "claude",
         }
+        if result.get("fallback_from"):
+            payload["fallback_from"] = result["fallback_from"]
         if result.get("summary"):
             summary = str(result["summary"]).strip()
             summary_path = self.module.reports_root / definition.id / f"{run_day}.ai.md"
@@ -307,9 +316,12 @@ class RadarPipeline:
         if not requested:
             return {"status": "skipped", "reason": "notification is not enabled"}
         results: dict[str, dict[str, Any]] = {}
-        for sink in _notification_sinks(policy):
+        for sink in notification_sinks(
+            policy,
+            inheritable_keys=("include_ai_summary", "include_top_links"),
+        ):
             sink_type = str(sink.get("type") or "telegram")
-            label = _sink_label(sink, results)
+            label = notification_sink_label(sink, results, default="telegram")
             if sink_type == "telegram":
                 results[label] = self._notify_telegram(
                     definition,
@@ -339,7 +351,7 @@ class RadarPipeline:
                     "status": "skipped",
                     "reason": f"unsupported notification sink: {sink_type}",
                 }
-        payload = {"status": _combined_status(results), "sinks": results}
+        payload = {"status": combined_notification_status(results), "sinks": results}
         if set(results) == {"telegram"}:
             payload.update(results["telegram"])
             payload["sinks"] = results
@@ -443,19 +455,19 @@ class RadarPipeline:
             f"Date: {escape(str(run_payload['date']))}",
             f"Included: {escape(str(run_payload['included']))}",
         ]
-        include_ai_summary = _notification_bool(definition, sink, "include_ai_summary", True)
-        include_top_links = _notification_bool(definition, sink, "include_top_links", True)
+        include_ai_summary = notification_bool(definition.notify, sink, "include_ai_summary", True)
+        include_top_links = notification_bool(definition.notify, sink, "include_top_links", True)
         summary = str(ai_payload.get("summary") or "").strip() if include_ai_summary else ""
         if summary:
             lines.extend(["", f"<b>Core AI Summary</b>\n{escape(_truncate(summary, 1800))}"])
-        elif include_ai_summary and ai_payload.get("status") == "failed":
-            reason = str(ai_payload.get("error") or "unknown AI failure")
+        elif include_ai_summary and _ai_summary_degraded(ai_payload):
+            reason = _ai_summary_issue(ai_payload)
             lines.extend(
                 [
                     "",
                     "<b>Core Summary</b>",
-                    "AI summary failed; sending deterministic radar report.",
-                    f"AI error: {escape(_truncate(reason, 400))}",
+                    "AI summary unavailable; sending deterministic radar report.",
+                    f"AI reason: {escape(_truncate(reason, 400))}",
                 ]
             )
         else:
@@ -482,19 +494,19 @@ class RadarPipeline:
             f"Date: {run_payload['date']}",
             f"Included: {run_payload['included']}",
         ]
-        include_ai_summary = _notification_bool(definition, sink, "include_ai_summary", True)
-        include_top_links = _notification_bool(definition, sink, "include_top_links", True)
+        include_ai_summary = notification_bool(definition.notify, sink, "include_ai_summary", True)
+        include_top_links = notification_bool(definition.notify, sink, "include_top_links", True)
         summary = str(ai_payload.get("summary") or "").strip() if include_ai_summary else ""
         if summary:
             lines.extend(["", "Core AI Summary", _truncate(summary, 1800)])
-        elif include_ai_summary and ai_payload.get("status") == "failed":
-            reason = str(ai_payload.get("error") or "unknown AI failure")
+        elif include_ai_summary and _ai_summary_degraded(ai_payload):
+            reason = _ai_summary_issue(ai_payload)
             lines.extend(
                 [
                     "",
                     "Core Summary",
-                    "AI summary failed; sending deterministic radar report.",
-                    f"AI error: {_truncate(reason, 400)}",
+                    "AI summary unavailable; sending deterministic radar report.",
+                    f"AI reason: {_truncate(reason, 400)}",
                 ]
             )
         else:
@@ -637,6 +649,20 @@ def _deterministic_brief(report_items: list[RadarItem]) -> str:
     return f"{len(report_items)} items passed the deterministic threshold. Top signal: {top.title}."
 
 
+def _ai_summary_degraded(ai_payload: dict[str, Any]) -> bool:
+    return str(ai_payload.get("status") or "") in {"failed", "skipped"} and bool(
+        ai_payload.get("requested")
+    )
+
+
+def _ai_summary_issue(ai_payload: dict[str, Any]) -> str:
+    return str(
+        ai_payload.get("error")
+        or ai_payload.get("reason")
+        or f"{ai_payload.get('provider') or 'AI provider'} unavailable"
+    )
+
+
 def _report_document_paths(run_payload: dict[str, Any], *, sink: dict[str, Any]) -> dict[str, Path]:
     reports = run_payload.get("reports")
     if not isinstance(reports, dict):
@@ -652,62 +678,6 @@ def _report_document_paths(run_payload: dict[str, Any], *, sink: dict[str, Any])
         if report_path:
             paths[format_name] = Path(str(report_path)).expanduser()
     return paths
-
-
-def _notification_sinks(policy: dict[str, Any]) -> list[dict[str, Any]]:
-    sinks = policy.get("sinks")
-    if isinstance(sinks, list) and sinks:
-        return [
-            {**_inheritable_notification_options(policy), **dict(sink)}
-            for sink in sinks
-            if isinstance(sink, dict)
-        ]
-    channel = str(policy.get("channel") or "telegram")
-    return [{**_inheritable_notification_options(policy), "type": channel}]
-
-
-def _inheritable_notification_options(policy: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: policy[key] for key in ("include_ai_summary", "include_top_links") if key in policy
-    }
-
-
-def _notification_bool(
-    definition: RadarDefinition,
-    sink: dict[str, Any],
-    key: str,
-    default: bool,
-) -> bool:
-    if key in sink:
-        return bool(sink[key])
-    if key in definition.notify:
-        return bool(definition.notify[key])
-    return default
-
-
-def _sink_label(sink: dict[str, Any], existing: dict[str, Any]) -> str:
-    base = str(sink.get("id") or sink.get("name") or sink.get("type") or "sink")
-    if base not in existing:
-        return base
-    index = 2
-    while f"{base}-{index}" in existing:
-        index += 1
-    return f"{base}-{index}"
-
-
-def _combined_status(results: dict[str, dict[str, Any]]) -> str:
-    statuses = [str(result.get("status") or "failed") for result in results.values()]
-    if not statuses:
-        return "skipped"
-    if all(status == "skipped" for status in statuses):
-        return "skipped"
-    if all(status == "sent" for status in statuses):
-        return "sent"
-    if any(status == "sent" for status in statuses):
-        return "partial"
-    if any(status == "partial" for status in statuses):
-        return "partial"
-    return "failed"
 
 
 def _truncate(text: str, max_chars: int) -> str:

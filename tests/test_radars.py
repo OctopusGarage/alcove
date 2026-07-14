@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import pytest
 
 from alcove.home import AlcoveHome
@@ -28,7 +31,12 @@ def test_radar_definition_round_trips_as_user_data(tmp_path):
             "style": "concise-briefing",
             "formats": ["md"],
         },
-        schedule=RadarSchedule(enabled=True, ttl_hours=0),
+        schedule=RadarSchedule(
+            enabled=True,
+            ttl_hours=0,
+            daily_time="10:00",
+            timezone="Asia/Singapore",
+        ),
         tags=["sports"],
     )
 
@@ -42,7 +50,12 @@ def test_radar_definition_round_trips_as_user_data(tmp_path):
     assert loaded.sources[0].enabled is False
     assert loaded.sources[0].limit == 15
     assert loaded.scoring == {"min_score": 0.7}
-    assert loaded.schedule.as_dict() == {"enabled": True, "ttl_hours": 1}
+    assert loaded.schedule.as_dict() == {
+        "enabled": True,
+        "ttl_hours": 1,
+        "daily_time": "10:00",
+        "timezone": "Asia/Singapore",
+    }
     assert loaded.notify == {}
     assert loaded.tags == ["sports"]
     assert (home.root / "radars" / "definitions" / "sports-news.yml").is_file()
@@ -183,3 +196,44 @@ def test_radar_check_stale_runs_enabled_scheduled_radars(tmp_path) -> None:
     assert payload["skipped"] == 1
     assert payload["errors"] == 0
     assert payload["radars"][0]["id"] == "scheduled-radar"
+
+
+def test_radar_check_stale_waits_until_daily_time_in_configured_timezone(tmp_path) -> None:
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    fixture = tmp_path / "items.json"
+    fixture.write_text(
+        '[{"title":"AI signal","url":"https://example.test/ai","summary":"LLM"}]',
+        encoding="utf-8",
+    )
+    module = RadarModule(home)
+    module.upsert_definition(
+        RadarDefinition(
+            id="scheduled-radar",
+            name="Scheduled Radar",
+            schedule=RadarSchedule(
+                enabled=True,
+                ttl_hours=24,
+                daily_time="10:00",
+                timezone="Asia/Singapore",
+            ),
+            sources=[RadarSource(id="fixture", adapter="fixture", params={"path": str(fixture)})],
+            profile={"interest_tags": ["AI", "LLM"], "min_score_threshold": 0.5},
+        )
+    )
+
+    zone = ZoneInfo("Asia/Singapore")
+    today = datetime.now(zone).date()
+    before = module.check_stale(current_time=datetime.combine(today, datetime.min.time(), zone))
+    after = module.check_stale(
+        current_time=datetime.combine(today, datetime.min.time(), zone).replace(hour=10)
+    )
+    repeated = module.check_stale(
+        current_time=datetime.combine(today, datetime.min.time(), zone).replace(hour=10, minute=30)
+    )
+
+    assert before["ran"] == 0
+    assert before["radars"][0]["reason"] == "before_daily_time"
+    assert before["radars"][0]["next_run_after"] == f"{today.isoformat()}T10:00+08:00"
+    assert after["ran"] == 1
+    assert repeated["ran"] == 0
+    assert repeated["radars"][0]["reason"] == "already_ran_today"

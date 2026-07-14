@@ -21,9 +21,9 @@ class PinsMarkdownImportModule:
         regular_file: str | Path | None = None,
         todo_file: str | Path | None = None,
     ) -> dict[str, Any]:
-        archived_legacy = self._archive_legacy_import_pins()
+        archived_previous_imports = self._archive_previous_import_pins()
         keep_ids: set[str] = set()
-        result: dict[str, Any] = {"archived_legacy": archived_legacy}
+        result: dict[str, Any] = {"archived_previous_imports": archived_previous_imports}
         if regular_file:
             result["regular"] = self._import_markdown_pin_file(
                 Path(regular_file).expanduser(), "regular"
@@ -36,7 +36,7 @@ class PinsMarkdownImportModule:
         PinsModule(home=self.home).rebuild_index()
         return result
 
-    def _archive_legacy_import_pins(self) -> int:
+    def _archive_previous_import_pins(self) -> int:
         module = PinsModule(home=self.home)
         archived = 0
         for pin in module.list(status="active"):

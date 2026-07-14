@@ -6,19 +6,77 @@ import yaml
 
 from alcove.cli import main
 from alcove.health import HealthModule
+from alcove.health_registry import HomeHealthCheck, home_health_checks, required_home_path_names
 from alcove.home import AlcoveHome
 from alcove.markdown import MarkdownDoc, MarkdownRepository
 from alcove.mounts import AddMountRequest, MountsModule
 from alcove.pins import AddPinRequest, PinsModule
 from alcove.prompts import AddPromptRequest, PromptsModule
+from alcove.tasks import AddIdeaRequest, AddRoutineRequest, AddTaskRequest, TasksModule
 from alcove.workspace import Workspace
+
+
+def test_home_health_registry_lists_each_check_once():
+    names = [check.name for check in home_health_checks()]
+
+    assert len(names) == len(set(names))
+    assert names[:4] == ["registered_kbs", "pins", "prompts", "prompt_quality"]
+    assert {"tasks", "mounts", "connectors", "dashboard", "usage"}.issubset(names)
+    assert required_home_path_names() == (
+        "pins",
+        "prompts",
+        "tasks",
+        "projects",
+        "mounts",
+        "connectors",
+        "knowledge_bases",
+    )
+
+
+def test_health_home_checks_are_isolated(monkeypatch, tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+
+    def broken_check(*_args):
+        raise RuntimeError("adapter exploded")
+
+    monkeypatch.setattr(
+        "alcove.health.home_health_checks",
+        lambda: [HomeHealthCheck("broken_adapter", broken_check)],
+    )
+
+    report = HealthModule(home=home).check()
+
+    assert report["status"] == "issues"
+    assert any(
+        issue["module"] == "broken_adapter"
+        and issue["kind"] == "health_check_failed"
+        and "adapter exploded" in issue["message"]
+        for issue in report["issues"]
+    )
 
 
 def test_health_detects_stale_global_indexes_and_fix_rebuilds(tmp_path):
     home = AlcoveHome.init(tmp_path / "home")
     PinsModule(home=home).add(AddPinRequest(title="OKF Reference", content="Use local evidence."))
     PromptsModule(home=home).save(
-        AddPromptRequest(title="Review Prompt", content="Review the local evidence.")
+        AddPromptRequest(
+            title="Review Prompt",
+            content=(
+                "Use this before shipping a change that needs evidence review.\n\n"
+                "Inspect local evidence, relevant tests, and the change summary before judging. "
+                "Report only concrete correctness or validation gaps, then recommend the "
+                "smallest fix.\n\n"
+                "Output findings, risks, and verification notes. Do not invent issues or "
+                "hide assumptions.\n\n"
+                "Verify the final judgment against the evidence you inspected."
+            ),
+            description="Review local evidence before shipping.",
+            tags=["review"],
+            use_cases=["Health test prompt"],
+            kind="eval_prompt",
+            domain="testing",
+            outputs=["findings"],
+        )
     )
     HealthModule(home=home).check(fix=True)
 
@@ -39,6 +97,25 @@ def test_health_detects_stale_global_indexes_and_fix_rebuilds(tmp_path):
     repaired = json.loads(pin_index.read_text(encoding="utf-8"))
     assert repaired["count"] == 1
     assert len(repaired["pins"]) == 1
+
+
+def test_health_includes_prompt_quality_audit(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    PromptsModule(home=home).save(
+        AddPromptRequest(
+            title="Tiny Prompt",
+            content="Do it.",
+            tags=["tiny"],
+            use_cases=[],
+        )
+    )
+
+    report = HealthModule(home=home).check()
+
+    assert report["status"] == "warnings"
+    assert report["counts"]["prompt_ready_prompts"] == 0
+    assert report["counts"]["prompt_quality_issues"] > 0
+    assert any(issue["kind"] == "prompt_short_content" for issue in report["issues"])
 
 
 def test_health_checks_registered_kb_okf_validation(tmp_path):
@@ -141,6 +218,28 @@ def test_health_flags_invalid_mount_okf_schema(tmp_path):
     assert str(item_path) in invalid_paths
 
 
+def test_health_flags_invalid_mount_index_policy(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    source = tmp_path / "source"
+    source.mkdir()
+    mounts = MountsModule(home=home)
+    mount = mounts.add(AddMountRequest(path=str(source), name="Source Docs"))
+    mounts_path = home.paths().mounts / "mounts.json"
+    data = json.loads(mounts_path.read_text(encoding="utf-8"))
+    data["mounts"][0]["index_policy"] = {"profile": "unknown-profile"}
+    mounts_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    report = HealthModule(home=home).check()
+
+    assert any(
+        issue["module"] == "mounts"
+        and issue["kind"] == "invalid_mount_index_policy"
+        and issue["path"].endswith("mounts.json")
+        and mount.id in issue["message"]
+        for issue in report["issues"]
+    )
+
+
 def test_health_fix_repairs_missing_governed_okf_schema(tmp_path):
     workspace = Workspace.init(tmp_path / "kb")
     path = workspace.paths().knowledge / "concepts" / "agent" / "okf" / "schema.md"
@@ -223,6 +322,43 @@ def test_health_checks_operational_module_data(tmp_path):
     assert report["counts"]["watch_sources"] == 1
     assert report["counts"]["blog_sources"] == 1
     assert report["counts"]["automation_jobs"] == 1
+
+
+def test_health_flags_active_planner_fixture_records(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    tasks = TasksModule(home=home)
+    fixture_task = tasks.task_add(
+        AddTaskRequest(title="MCP Task", notes="Expose task tools.", tags=["mcp"])
+    )
+    fixture_idea = tasks.idea_add(AddIdeaRequest(title="test idea"))
+    fixture_routine = tasks.routine_add(
+        AddRoutineRequest(title="MCP Routine", tags=["mcp"], next_due="2026-07-10")
+    )
+    cancelled = tasks.task_add(AddTaskRequest(title="Smoke Task", tags=["smoke"]))
+    tasks.task_cancel(cancelled.id)
+    archived = tasks.idea_add(AddIdeaRequest(title="smoke idea"))
+    tasks.idea_archive(archived.id)
+
+    report = HealthModule(home=home).check()
+
+    assert report["status"] == "warnings"
+    assert report["counts"]["planner_fixture_records"] == 3
+    messages = {
+        issue["message"] for issue in report["issues"] if issue["kind"] == "active_fixture_record"
+    }
+    assert any(fixture_task.id in message for message in messages)
+    assert any(fixture_idea.id in message for message in messages)
+    assert any(fixture_routine.id in message for message in messages)
+    assert not any(cancelled.id in message for message in messages)
+    assert not any(archived.id in message for message in messages)
+
+    fixture_report = HealthModule(home=home).check(fixture_context=True)
+
+    assert fixture_report["counts"]["planner_fixture_records"] == 3
+    assert fixture_report["counts"]["planner_fixture_context"] == 1
+    assert not [
+        issue for issue in fixture_report["issues"] if issue["kind"] == "active_fixture_record"
+    ]
 
 
 def test_health_checks_connector_source_registry_status(tmp_path):

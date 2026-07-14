@@ -19,9 +19,16 @@ def now_iso() -> str:
 class RadarSchedule:
     enabled: bool = False
     ttl_hours: int = DEFAULT_TTL_HOURS
+    daily_time: str = ""
+    timezone: str = ""
 
     def as_dict(self) -> dict[str, Any]:
-        return {"enabled": self.enabled, "ttl_hours": max(self.ttl_hours, 1)}
+        payload: dict[str, Any] = {"enabled": self.enabled, "ttl_hours": max(self.ttl_hours, 1)}
+        if self.daily_time:
+            payload["daily_time"] = self.daily_time
+        if self.timezone:
+            payload["timezone"] = self.timezone
+        return payload
 
 
 @dataclass(frozen=True)

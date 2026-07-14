@@ -47,7 +47,7 @@ def test_profile_installation_pack_owns_entry_skill_and_agent_artifacts(tmp_path
     assert "unrelated global or project-specific tools" in skill
     assert {artifact.path for artifact in codex} >= {
         root / ".agents" / "skills" / "notes-search" / "SKILL.md",
-        root / ".agents" / "skills" / "social_post_manager" / "SKILL.md",
+        root / ".agents" / "skills" / "alcove-capture" / "SKILL.md",
     }
     notes_search = next(
         artifact.content
@@ -164,6 +164,22 @@ def test_cli_hub_init_creates_project_local_entry_files(tmp_path, capsys):
     assert "fetch and score deterministically first" in hub_skill
     assert "--skip-fetch --force --ai --notify" in hub_skill
     assert "Optional `ai_summary` is post-report analysis only" in hub_skill
+    assert "Project Development Protocol" in hub_skill
+    assert "entry-mode impact check" in hub_skill
+    assert "project/worktree" in hub_skill
+    assert "Do not save the" in hub_skill
+    assert "request as a knowledge note" in hub_skill
+    assert "prompt-quality reviewer yourself" in hub_skill
+    assert "Do not treat the user wording as already" in hub_skill
+    assert "rewrite the candidate into a concise copy-ready prompt body" in hub_skill
+    assert "prefer updating/merging it instead of creating a new prompt" in hub_skill
+    assert "--ai-eval-provider codex" in hub_skill
+    assert "current agent's" in hub_skill
+    assert "proposal's built-in eval" in hub_skill
+    assert "evaluation.prompt_ai_eval.rounds" in hub_skill
+    assert "professional_quality" in hub_skill
+    assert "adversarial_reuse" in hub_skill
+    assert "Article summaries, one-off project notes, and raw chat dumps" in hub_skill
 
 
 def test_cli_hub_init_can_link_project_skills_in_development_mode(
@@ -235,7 +251,7 @@ def test_cli_kb_install_can_link_skills_and_claude_commands_in_development_mode(
     linked_paths = [
         kb_root / ".agents" / "skills" / "alcove-kb" / "SKILL.md",
         kb_root / ".agents" / "skills" / "notes-search" / "SKILL.md",
-        kb_root / ".agents" / "skills" / "social_post_manager" / "SKILL.md",
+        kb_root / ".agents" / "skills" / "alcove-capture" / "SKILL.md",
         kb_root / ".claude" / "commands" / "inbox-peek.md",
         kb_root / ".claude" / "commands" / "into-kb.md",
     ]
@@ -276,7 +292,7 @@ def test_cli_kb_copy_install_replaces_previous_linked_skills_and_commands(
     copied_paths = [
         kb_root / ".agents" / "skills" / "alcove-kb" / "SKILL.md",
         kb_root / ".agents" / "skills" / "notes-search" / "SKILL.md",
-        kb_root / ".agents" / "skills" / "social_post_manager" / "SKILL.md",
+        kb_root / ".agents" / "skills" / "alcove-capture" / "SKILL.md",
         kb_root / ".claude" / "skills" / "alcove-kb" / "SKILL.md",
         kb_root / ".claude" / "commands" / "inbox-peek.md",
         kb_root / ".claude" / "commands" / "into-kb.md",
@@ -524,18 +540,16 @@ def test_cli_kb_install_restores_full_managed_kb_workflow_wrappers(
     assert (kb_root / ".claude" / "commands" / "inbox-peek.md").is_file()
     assert (kb_root / ".claude" / "commands" / "into-kb.md").is_file()
     assert (kb_root / ".claude" / "skills" / "notes-search" / "SKILL.md").is_file()
-    assert (kb_root / ".claude" / "skills" / "social_post_manager" / "SKILL.md").is_file()
+    assert (kb_root / ".claude" / "skills" / "alcove-capture" / "SKILL.md").is_file()
     assert (kb_root / ".agents" / "skills" / "notes-search" / "SKILL.md").is_file()
-    assert (kb_root / ".agents" / "skills" / "social_post_manager" / "SKILL.md").is_file()
-    assert not (kb_root / ".claude" / "skills" / "social_post_manager" / "scripts").exists()
+    assert (kb_root / ".agents" / "skills" / "alcove-capture" / "SKILL.md").is_file()
+    assert not (kb_root / ".claude" / "skills" / "alcove-capture" / "scripts").exists()
     assert str(kb_root / ".claude" / "commands" / "inbox-peek.md") in installed_paths
-    assert (
-        str(kb_root / ".agents" / "skills" / "social_post_manager" / "SKILL.md") in installed_paths
-    )
+    assert str(kb_root / ".agents" / "skills" / "alcove-capture" / "SKILL.md") in installed_paths
 
     claude_doc = (kb_root / "CLAUDE.md").read_text(encoding="utf-8")
     agents_doc = (kb_root / "AGENTS.md").read_text(encoding="utf-8")
-    manager_skill = (kb_root / ".claude" / "skills" / "social_post_manager" / "SKILL.md").read_text(
+    manager_skill = (kb_root / ".claude" / "skills" / "alcove-capture" / "SKILL.md").read_text(
         encoding="utf-8"
     )
     inbox_peek_command = (kb_root / ".claude" / "commands" / "inbox-peek.md").read_text(
@@ -604,7 +618,7 @@ def test_cli_kb_install_writes_user_paths_with_tilde(tmp_path, monkeypatch, caps
     capsys.readouterr()
 
     agents_doc = (kb_root / "AGENTS.md").read_text(encoding="utf-8")
-    manager_skill = (kb_root / ".agents" / "skills" / "social_post_manager" / "SKILL.md").read_text(
+    manager_skill = (kb_root / ".agents" / "skills" / "alcove-capture" / "SKILL.md").read_text(
         encoding="utf-8"
     )
     assert code == 0

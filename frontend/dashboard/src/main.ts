@@ -40,6 +40,7 @@ loadSnapshot()
 
 window.addEventListener("hashchange", () => {
   render();
+  window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   recordDashboardEvent("dashboard.route", "Dashboard route viewed", {
     route: currentRoute(),
   });
@@ -54,6 +55,7 @@ function render(): void {
   bindModuleFilters();
   bindPageJumps();
   bindCommandCopy();
+  bindTextCopy();
   bindRefreshButton();
 }
 
@@ -111,8 +113,9 @@ function bindModuleFilters(): void {
     const toggle = container.querySelector<HTMLButtonElement>("[data-filter-toggle]");
     const chips = Array.from(container.querySelectorAll<HTMLButtonElement>("[data-filter-chip]"));
     const items = Array.from(container.querySelectorAll<HTMLElement>("[data-filter-item]"));
-    const desktopLimit = Number(container.dataset.filterLimit ?? "24");
-    const mobileLimit = Number(container.dataset.filterMobileLimit ?? desktopLimit);
+    const desktopLimit = parseFilterLimit(container.dataset.filterLimit, 24);
+    const mobileLimit = parseFilterLimit(container.dataset.filterMobileLimit, desktopLimit);
+    const filterLabel = container.dataset.filterLabel ?? "rows";
     let expanded = false;
     let activeKind = "";
     let activeChipQuery = "";
@@ -138,19 +141,23 @@ function bindModuleFilters(): void {
         }
       });
       if (count) {
-        count.textContent = `${visible} of ${matched.length} shown`;
+        count.textContent =
+          visible === matched.length
+            ? `${matched.length} ${filterLabel}`
+            : `${visible} of ${matched.length} ${filterLabel}`;
       }
       if (toggle) {
         toggle.hidden = matched.length <= limit || typedQuery.length > 0 || chipQuery.length > 0;
-        toggle.textContent = expanded ? "Limit view" : `Show all ${matched.length}`;
+        toggle.textContent = expanded ? "Limit view" : `Show all ${matched.length} ${filterLabel}`;
       }
     };
 
     input?.addEventListener("input", apply);
     chips.forEach((chip) => {
       chip.addEventListener("click", () => {
-        activeKind = chip.dataset.filterKind ?? "";
-        activeChipQuery = chip.dataset.filterQuery ?? "";
+        const resetsFilter = chip.dataset.filterReset === "true";
+        activeKind = resetsFilter ? "" : (chip.dataset.filterKind ?? "");
+        activeChipQuery = resetsFilter ? "" : (chip.dataset.filterQuery ?? "");
         if (chip.dataset.filterReset === "true" && input) {
           input.value = "";
         }
@@ -185,6 +192,13 @@ function bindPageJumps(): void {
   });
 }
 
+function parseFilterLimit(value: string | undefined, fallback: number): number {
+  if (!value) {
+    return fallback;
+  }
+  return value === "all" ? Number.POSITIVE_INFINITY : Number(value);
+}
+
 function bindCommandCopy(): void {
   document.querySelectorAll<HTMLButtonElement>("[data-copy-command]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -209,6 +223,51 @@ function bindCommandCopy(): void {
         });
     });
   });
+}
+
+function bindTextCopy(): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-copy-target]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const targetId = button.dataset.copyTarget ?? "";
+      const target = targetId ? document.getElementById(targetId) : null;
+      const text = target?.textContent ?? "";
+      if (!text.trim()) {
+        return;
+      }
+      const original = button.textContent ?? "Copy";
+      copyText(text)
+        .then(() => {
+          button.textContent = "Copied";
+          window.setTimeout(() => {
+            button.textContent = original;
+          }, 1200);
+        })
+        .catch(() => {
+          button.textContent = original;
+        });
+    });
+  });
+}
+
+function copyText(text: string): Promise<void> {
+  if (navigator.clipboard) {
+    return navigator.clipboard.writeText(text).catch(() => fallbackCopyText(text));
+  }
+  return fallbackCopyText(text);
+}
+
+function fallbackCopyText(text: string): Promise<void> {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.top = "0";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  return copied ? Promise.resolve() : Promise.reject(new Error("Copy failed"));
 }
 
 function bindRefreshButton(): void {
@@ -278,7 +337,14 @@ function fingerprint(current: DashboardSnapshot): string {
   return JSON.stringify({
     counts: current.summary.counts,
     pins: current.pins.themes.map((pin) => [pin.id, pin.updated_at]),
-    tasks: current.tasks.pending.length,
+    tasks: [
+      current.tasks.pending.length,
+      current.tasks.ideas.length,
+      current.tasks.routines.length,
+      current.tasks.all.length,
+      current.tasks.ideas_all.length,
+      current.tasks.routines_all.length,
+    ],
     activity: current.activity.slice(0, 8).map((item) => [
       item.name,
       item.detail,

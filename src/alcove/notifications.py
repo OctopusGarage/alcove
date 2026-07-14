@@ -114,6 +114,7 @@ def send_tcb_notification(
         payload = {"status": "sent"}
     if isinstance(payload, dict):
         payload.setdefault("status", "sent")
+        payload["status"] = _normalize_tcb_status(payload)
         payload["attachment_count"] = len(attachments)
         return payload
     return {"status": "sent", "attachment_count": len(attachments)}
@@ -356,3 +357,21 @@ def _feishu_response_code(response_body: str) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_tcb_status(payload: dict[str, Any]) -> str:
+    deliveries = payload.get("deliveries")
+    if not isinstance(deliveries, list):
+        return str(payload.get("status") or "sent")
+    delivery_statuses = [
+        bool(delivery.get("ok"))
+        for delivery in deliveries
+        if isinstance(delivery, dict) and "ok" in delivery
+    ]
+    if not delivery_statuses:
+        return str(payload.get("status") or "sent")
+    if all(delivery_statuses):
+        return "sent"
+    if any(delivery_statuses):
+        return "partial"
+    return "failed"

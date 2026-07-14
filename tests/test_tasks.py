@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import json
+import subprocess
+import sys
+import time
 from datetime import datetime
-from pathlib import Path
 
 from alcove.search import SearchModule, SearchRequest
 from alcove.tasks import AddIdeaRequest, AddRoutineRequest, AddTaskRequest, TasksModule
@@ -53,6 +54,39 @@ def test_task_add_list_and_complete_updates_status(tmp_path):
     assert completed.status == "done"
     assert pending_after_complete == []
     assert done[0].id == task.id
+
+
+def test_task_writes_are_serialized_across_processes(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    module = TasksModule(home=home)
+    first = module.task_add(AddTaskRequest(title="First concurrent task"))
+    second = module.task_add(AddTaskRequest(title="Second concurrent task"))
+    script = """
+import sys
+from alcove.home import AlcoveHome
+from alcove.tasks import TasksModule
+
+TasksModule(home=AlcoveHome.load(sys.argv[1])).task_cancel(sys.argv[2])
+"""
+
+    with module._transaction() as data:
+        item = next(row for row in data["tasks"] if row["id"] == first.id)
+        item["status"] = "done"
+        proc = subprocess.Popen(  # noqa: S603 - fixed test subprocess with controlled args.
+            [sys.executable, "-c", script, str(home.root), second.id],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        time.sleep(0.2)
+        assert proc.poll() is None
+
+    stdout, stderr = proc.communicate(timeout=5)
+    assert proc.returncode == 0, (stdout, stderr)
+    statuses = {task.id: task.status for task in module.task_list(status="")}
+
+    assert statuses[first.id] == "done"
+    assert statuses[second.id] == "cancelled"
 
 
 def test_idea_promote_to_task_marks_idea_and_creates_task(tmp_path):
@@ -432,72 +466,3 @@ def test_search_includes_active_ideas_and_pending_tasks(tmp_path):
         "status": "active",
         "path": "tasks/tasks.json#ideas/bookmark-mounts",
     }.items() <= rows[0].items()
-
-
-def test_import_social_radar_preserves_tasks_ideas_and_routines(tmp_path):
-    workspace = Workspace.init(tmp_path)
-    source = tmp_path / "todos.json"
-    source.write_text(
-        json.dumps(
-            {
-                "todos": [
-                    {
-                        "id": "todo-1",
-                        "title": "Review repair records",
-                        "category": "personal",
-                        "status": "cancelled",
-                        "priority": "medium",
-                        "due": None,
-                        "created_at": "2026-04-04",
-                        "notes": f"Check {Path.home()}/raw records.",
-                        "source": "manual",
-                    }
-                ],
-                "ideas": [
-                    {
-                        "id": "idea-1",
-                        "title": "Build data migration",
-                        "status": "active",
-                        "category": "migration",
-                        "notes": "Migrate personal records.",
-                        "created_at": "2026-04-22",
-                    }
-                ],
-                "routines": [
-                    {
-                        "id": "routine-1",
-                        "title": "Check Apple Notes backup",
-                        "category": "maintenance",
-                        "status": "archived",
-                        "priority": "medium",
-                        "notes": "Confirm commits exist.",
-                        "schedule": {"frequency": "weekly", "interval": 1, "weekdays": ["sat"]},
-                        "next_due": "2026-04-19",
-                        "last_generated_due": None,
-                        "created_at": "2026-04-16",
-                        "generated_todo_ids": [],
-                    }
-                ],
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-    module = TasksModule(workspace)
-
-    result = module.import_social_radar(source)
-    second = module.import_social_radar(source)
-
-    assert result["tasks"]["imported"] == 1
-    assert result["ideas"]["imported"] == 1
-    assert result["routines"]["imported"] == 1
-    assert second["tasks"]["updated"] == 1
-    store = json.loads((tmp_path / "tasks" / "tasks.json").read_text(encoding="utf-8"))
-    assert store["tasks"][0]["social_radar_id"] == "todo-1"
-    assert store["tasks"][0]["status"] == "cancelled"
-    assert str(Path.home()) not in store["tasks"][0]["notes"]
-    assert "~/raw records" in store["tasks"][0]["notes"]
-    assert store["ideas"][0]["tags"] == ["migration", "social-radar"]
-    assert store["routines"][0]["schedule"]["weekdays"] == ["sat"]
-    assert store["routines"][0]["every_days"] == 7
-    assert (tmp_path / "tasks" / "imports" / "social-radar-todos.latest.json").is_file()

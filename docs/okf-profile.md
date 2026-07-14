@@ -223,6 +223,10 @@ Module write expectations:
 - Tasks, ideas, routines, and projects currently write JSON source of truth and
   participate in global search and dashboard indexes.
 - Mount scans update JSON rows and derived OKF mirrors; stale files are removed.
+- Mount scans apply the per-mount index policy before writing JSON rows or
+  derived OKF mirrors. The resolved policy is recorded on the `Mount Index`
+  document so agents know whether the mount is docs-, notes-, site-, raw-, or
+  capture-bundle-oriented.
 - Connector refresh/import updates source registries, JSON rows, derived OKF
   mirrors, freshness status, and stale/deleted rows.
 
@@ -380,7 +384,7 @@ Managed KB: relative path + frontmatter updated_at + content hash
 Pins/Prompts: Markdown path + frontmatter schema + updated_at/hash
 Tasks/Ideas/Routines: record id + updated_at + status
 Projects: alias + path + updated_at
-Mounts: mount id + relative path + size + mtime + optional content hash
+Mounts: mount id + relative path + size + mtime + resolved index policy + optional content hash
 Connectors: connector id + source id + external item id + updated_at/hash
 ```
 

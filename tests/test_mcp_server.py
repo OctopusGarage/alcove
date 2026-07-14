@@ -7,6 +7,7 @@ from alcove.connectors.github_stars import GitHubStarsConnector, GitHubStarsImpo
 from alcove.home import AlcoveHome
 from alcove.knowledge import AddConceptRequest, KnowledgeModule, NoteSourceRequest
 from alcove.markdown import MarkdownRepository
+from alcove.mcp_registrar import McpToolRegistrar
 from alcove.mcp_server import (
     command_hints_tool,
     create_mcp_server,
@@ -49,6 +50,38 @@ from alcove.mounts import AddMountRequest, MountsModule
 from alcove.tasks import AddIdeaRequest, TasksModule
 from alcove.usage import UsageRecorder
 from alcove.workspace import Workspace
+
+
+class _FakeMcp:
+    def __init__(self, name: str = "alcove") -> None:
+        self.name = name
+        self.registered: list[str] = []
+
+    def tool(self, fn):
+        self.registered.append(fn.__name__)
+        return fn
+
+
+def test_mcp_registrar_owns_toolset_filter_and_context():
+    registrar = McpToolRegistrar.create(
+        _FakeMcp,
+        default_workspace="/tmp/workspace",
+        default_home="/tmp/home",
+        toolset="lite",
+    )
+
+    def alcove_search():
+        return {}
+
+    def alcove_inbox_peek():
+        return {}
+
+    assert registrar.mcp.name == "alcove-lite"
+    assert registrar.context.default_workspace == "/tmp/workspace"
+    assert registrar.context.default_home == "/tmp/home"
+    assert registrar.tool(alcove_search) is alcove_search
+    assert registrar.tool(alcove_inbox_peek) is alcove_inbox_peek
+    assert registrar.mcp.registered == ["alcove_search"]
 
 
 def test_mcp_search_tool_returns_search_payload(tmp_path):
@@ -157,6 +190,7 @@ def test_mcp_project_and_prompt_tools_use_global_home(tmp_path):
         title="Review Lens",
         content="Check regressions and missing tests.",
         tags=["review"],
+        force=True,
     )
     get_payload = prompt_get_tool("", home=str(home.root), prompt_id="review-lens")
     index_payload = prompt_rebuild_index_tool("", home=str(home.root))
@@ -253,7 +287,12 @@ def test_mcp_server_registers_v1_tools(tmp_path):
         "alcove_project_remove",
         "alcove_project_roots_set",
         "alcove_prompt_save",
+        "alcove_prompt_propose",
+        "alcove_prompt_proposal",
         "alcove_prompt_search",
+        "alcove_prompt_recommend",
+        "alcove_prompt_compose",
+        "alcove_prompt_audit",
         "alcove_prompt_get",
         "alcove_prompt_archive",
         "alcove_prompt_tags",
@@ -272,6 +311,7 @@ def test_mcp_server_registers_v1_tools(tmp_path):
         "alcove_link_source",
         "alcove_mount_list",
         "alcove_mount_add",
+        "alcove_mount_update_policy",
         "alcove_mount_scan",
         "alcove_connector_fetch",
         "alcove_connector_status",
@@ -302,11 +342,13 @@ def test_mcp_server_lite_toolset_keeps_global_common_tools_small(tmp_path):
     assert "alcove_pin_add" in tools
     assert "alcove_task_add" in tools
     assert "alcove_prompt_save" in tools
+    assert "alcove_prompt_propose" in tools
+    assert "alcove_prompt_proposal" in tools
     assert "alcove_inbox_manual_add" in tools
     assert "alcove_connector_github_stars_import_url" not in tools
     assert "alcove_mount_scan" not in tools
     assert "alcove_export_all" not in tools
-    assert len(tools) < 25
+    assert len(tools) <= 27
 
 
 def test_mcp_server_kb_toolset_keeps_kb_workflow_without_admin_tools(tmp_path):
@@ -338,7 +380,8 @@ def test_mcp_tool_descriptions_encode_read_write_operating_model(tmp_path):
     assert "governed OKF write path" in tools["alcove_knowledge_revise"].description
     assert "soft-delete" in tools["alcove_knowledge_delete"].description
     assert "governed global write path" in tools["alcove_pin_update"].description
-    assert "governed prompt write path" in tools["alcove_prompt_save"].description
+    assert "proposal" in tools["alcove_prompt_save"].description
+    assert "deduplicate" in tools["alcove_prompt_propose"].description
     assert "derived global OKF catalog" in tools["alcove_okf_catalog_build"].description
     assert "AI-led reads" in tools["alcove_okf_catalog_build"].description
     assert "governed planner write path" in tools["alcove_task_add"].description
@@ -390,18 +433,45 @@ def test_mcp_server_default_home_routes_global_tools(tmp_path):
             {"alias": "alcove", "path": str(tmp_path), "note": "Default project."},
         )
     )
+    proposal_result = asyncio.run(
+        mcp.call_tool(
+            "alcove_prompt_propose",
+            {
+                "title": "Default Prompt",
+                "content": (
+                    "Review the default home workflow for regression risk, missing "
+                    "tests, incomplete evidence, and unclear user-facing behavior. "
+                    "Return findings, risks, and verification notes."
+                ),
+                "tags": ["review"],
+            },
+        )
+    )
     prompt_result = asyncio.run(
         mcp.call_tool(
             "alcove_prompt_save",
-            {"title": "Default Prompt", "content": "Default home prompt."},
+            {
+                "proposal_id": proposal_result.structured_content["id"],
+            },
         )
     )
+    compose_result = asyncio.run(
+        mcp.call_tool("alcove_prompt_compose", {"scenario": "regression review"})
+    )
+    audit_result = asyncio.run(mcp.call_tool("alcove_prompt_audit", {}))
     list_result = asyncio.run(mcp.call_tool("alcove_task_list", {}))
 
     assert add_result.structured_content["home"] == str(home.root)
     assert add_result.structured_content["task"]["id"] == "default-home-mcp-task"
     assert project_result.structured_content["project"]["alias"] == "alcove"
+    assert proposal_result.structured_content["action"] in {
+        "create_new",
+        "create_new_after_review",
+    }
     assert prompt_result.structured_content["prompt"]["id"] == "default-prompt"
+    assert compose_result.structured_content["sources"][0]["title"] == "Default Prompt"
+    assert "Review the default home workflow" in compose_result.structured_content["prompt"]
+    assert audit_result.structured_content["counts"]["prompts"] == 1
     assert list_result.structured_content["home"] == str(home.root)
     assert list_result.structured_content["tasks"][0]["title"] == "Default Home MCP Task"
 

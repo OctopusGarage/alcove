@@ -35,6 +35,10 @@ capture_json project-list alcove project --home "$home" list --json
 capture_json radar-list alcove radar --home "$home" list --json
 capture_json radar-status alcove radar --home "$home" status --json
 capture_json dashboard-build alcove dashboard --home "$home" build --skip-frontend-build --json
+capture_json dashboard-audit run uv run scripts/verify/audit-dashboard-data.py \
+  --home "$home" \
+  --snapshot "$home/dashboard/snapshot.json" \
+  --json
 capture_json search-smoke alcove search --home "$home" smoke --json
 
 run uv run python - "$home" "$report_dir" "$report" <<'PY'
@@ -60,6 +64,7 @@ projects = load("project-list")
 radar_list = load("radar-list")
 radar_status = load("radar-status")
 dashboard = load("dashboard-build")
+dashboard_audit = load("dashboard-audit")
 
 checks = [
     ("home_exists", home.is_dir(), str(home)),
@@ -76,6 +81,7 @@ checks = [
     ("radar_status_readable", isinstance(radar_status.get("radars"), list), "radar status"),
     ("dashboard_built", dashboard.get("status") == "built", dashboard.get("index", "")),
     ("dashboard_snapshot_exists", (home / "dashboard" / "snapshot.json").is_file(), str(home / "dashboard" / "snapshot.json")),
+    ("dashboard_data_audit", dashboard_audit.get("status") == "passed", json.dumps(dashboard_audit.get("failures", []), ensure_ascii=False)),
 ]
 failed = [name for name, ok, _detail in checks if not ok]
 report = {

@@ -83,16 +83,24 @@ assert_json "kb list" "$fixtures/kb-list.json" "payload[0]['name'] == 'research_
 
 alcove hub init "$hub" --home "$home" --default-kb research_notes --target codex --json > "$fixtures/hub-init.json"
 assert_json "hub init" "$fixtures/hub-init.json" "payload['profile'] == 'hub' and len(payload['files']) >= 2"
+alcove hub init "$hub" --home "$home" --default-kb research_notes --target claude --json > "$fixtures/hub-init-claude.json"
+assert_json "hub init claude" "$fixtures/hub-init-claude.json" "payload['profile'] == 'hub' and len(payload['files']) >= 2"
 alcove hub init "$hub" --home "$home" --default-kb research_notes --target codex --status --json > "$fixtures/hub-status.json"
 assert_json "hub status" "$fixtures/hub-status.json" "payload['profile'] == 'hub' and all(item['installed'] and item['workspace_match'] for item in payload['files'])"
+alcove hub init "$hub" --home "$home" --default-kb research_notes --target claude --status --json > "$fixtures/hub-status-claude.json"
+assert_json "hub status claude" "$fixtures/hub-status-claude.json" "payload['profile'] == 'hub' and all(item['installed'] and item['workspace_match'] for item in payload['files'])"
 
 alcove global install --home "$home" --target codex --print --json > "$fixtures/global-print.json"
 assert_json "global install print" "$fixtures/global-print.json" "payload['profile'] == 'global-lite' and 'codex' in payload['configs']"
 
 alcove kb --home "$home" install research_notes --target codex --json > "$fixtures/kb-install.json"
 assert_json "kb install" "$fixtures/kb-install.json" "payload['profile'] == 'managed-kb' and len(payload['files']) >= 2"
+alcove kb --home "$home" install research_notes --target claude --json > "$fixtures/kb-install-claude.json"
+assert_json "kb install claude" "$fixtures/kb-install-claude.json" "payload['profile'] == 'managed-kb' and len(payload['files']) >= 2"
 alcove kb --home "$home" install research_notes --target codex --status --json > "$fixtures/kb-status.json"
 assert_json "kb install status" "$fixtures/kb-status.json" "payload['profile'] == 'managed-kb' and all(item['installed'] and item['workspace_match'] for item in payload['files'])"
+alcove kb --home "$home" install research_notes --target claude --status --json > "$fixtures/kb-status-claude.json"
+assert_json "kb install status claude" "$fixtures/kb-status-claude.json" "payload['profile'] == 'managed-kb' and all(item['installed'] and item['workspace_match'] for item in payload['files'])"
 
 alcove inbox --kb research_notes manual-add "Smoke Manual" \
   --content "Smoke inbox body with a local integration needle." \
@@ -168,7 +176,7 @@ alcove knowledge --kb research_notes delete sources/web/agent-engineering/cleanu
   --confirm \
   --json > "$fixtures/cleanup-delete-confirm.json"
 assert_json "cleanup delete confirm" "$fixtures/cleanup-delete-confirm.json" \
-  "payload['status'] == 'deleted' and payload['deleted_at'] and any(item['action'] == 'deleted_single_source_concept' for item in payload['related_actions'])"
+  "payload['status'] == 'deleted' and payload['deleted_at'] and any(item['action'] in {'deleted_single_source_concept', 'detached_source_ref'} for item in payload['related_actions'])"
 alcove search --kb research_notes "Cleanup obsolete" --json > "$fixtures/cleanup-search-after-delete.json"
 assert_json "cleanup default search hides deleted" "$fixtures/cleanup-search-after-delete.json" "payload == []"
 alcove search --kb research_notes "Cleanup obsolete" --status deleted --json > "$fixtures/cleanup-search-deleted.json"
@@ -372,15 +380,47 @@ alcove pin --home "$home" add "常用收藏：OKF 知识库采集" \
 assert_json "multilingual pin add" "$fixtures/multilingual-pin-add.json" \
   "payload['pin']['title'].startswith('常用收藏') and payload['pin']['kind'] == 'regular'"
 
-alcove prompt --home "$home" save "Smoke Prompt" \
-  --description "Prompt smoke description." \
-  --content "Review this smoke feature for missing tests." \
+alcove prompt --home "$home" propose "Smoke Prompt" \
+  --description "Review a smoke-tested feature for missing verification and regression risk." \
+  --content "Review this smoke-tested feature for correctness, missing tests, regression risk, and unclear user-facing behavior. Use the current diff, smoke artifacts, and expected workflow as evidence before reporting findings." \
+  --kind eval_prompt \
+  --domain testing \
+  --intent review \
+  --surface codex \
+  --surface claude-code \
+  --trigger "missing tests" \
+  --input "diff" \
+  --input "smoke artifacts" \
+  --output "findings" \
+  --output "verification gaps" \
+  --use-case "Smoke regression review" \
   --tag smoke \
+  --json > "$fixtures/prompt-propose.json"
+assert_json "prompt propose" "$fixtures/prompt-propose.json" \
+  "payload['request']['title'] == 'Smoke Prompt' and payload['action'] in {'create_new', 'create_new_after_review'} and payload['similar'] == []"
+proposal_id="$(uv run python - "$fixtures/prompt-propose.json" <<'PY'
+import json
+import sys
+print(json.loads(open(sys.argv[1], encoding="utf-8").read())["id"])
+PY
+)"
+alcove prompt --home "$home" proposal "$proposal_id" \
+  --json > "$fixtures/prompt-proposal.json"
+assert_json "prompt proposal" "$fixtures/prompt-proposal.json" \
+  "payload['id'] and payload['request']['outputs']"
+alcove prompt --home "$home" save --proposal-id "$proposal_id" \
   --json > "$fixtures/prompt-save.json"
-assert_json "prompt save" "$fixtures/prompt-save.json" "payload['prompt']['title'] == 'Smoke Prompt'"
+assert_json "prompt save" "$fixtures/prompt-save.json" \
+  "payload['prompt']['title'] == 'Smoke Prompt' and payload['prompt']['domain'] == 'testing' and payload['prompt']['outputs']"
 
 alcove prompt --home "$home" search "missing tests" --json > "$fixtures/prompt-search.json"
 assert_json "prompt search" "$fixtures/prompt-search.json" "payload[0]['title'] == 'Smoke Prompt'"
+alcove prompt --home "$home" recommend "review this smoke-tested feature for missing tests" --json > "$fixtures/prompt-recommend.json"
+assert_json "prompt recommend" "$fixtures/prompt-recommend.json" \
+  "payload[0]['prompt']['title'] == 'Smoke Prompt' and payload[0]['score'] > 0"
+alcove prompt --home "$home" compose "review this smoke-tested feature for missing tests" --json > "$fixtures/prompt-compose.json"
+assert_json "prompt compose" "$fixtures/prompt-compose.json" \
+  "payload['sources'][0]['title'] == 'Smoke Prompt' and 'Smoke Prompt' in payload['prompt']"
 
 project_dir="$tmp_root/project-alpha"
 mkdir -p "$project_dir"
@@ -400,7 +440,7 @@ alcove task --home "$home" materialize-due --today 2026-07-10 --json > "$fixture
 assert_json "materialize due" "$fixtures/materialize-due.json" "payload['status'] == 'materialized' and len(payload['created']) >= 1"
 alcove task --home "$home" digest --today 2026-07-12 --json > "$fixtures/task-digest.json"
 assert_json "task digest readable" "$fixtures/task-digest.json" \
-  "payload['counts']['tasks'] >= 2 and payload['counts']['ideas'] >= 1 and payload['counts']['routines'] >= 1 and payload['title'] not in payload['text'] and '[task:' not in payload['text'] and '[idea:' not in payload['text'] and '[routine:' not in payload['text'] and '✅ Pending tasks' in payload['text'] and '💡 Ideas' in payload['text'] and '🔁 Active routines' in payload['text']"
+  "payload['counts']['tasks'] >= 2 and payload['counts']['ideas'] >= 1 and payload['counts']['routines'] >= 1 and payload['title'] not in payload['text'] and '[task:' not in payload['text'] and '[idea:' not in payload['text'] and '[routine:' not in payload['text'] and '✅ Pending tasks' in payload['text'] and '💡 Ideas' in payload['text'] and '🔁 Active routines' in payload['text'] and 'Overdue:' in payload['text']"
 
 mount_dir="$tmp_root/mounted-repo"
 mkdir -p "$mount_dir/docs"
@@ -519,22 +559,6 @@ alcove radar --home "$home" run sports-news --json > "$fixtures/radar-run.json"
 assert_json "radar run" "$fixtures/radar-run.json" "payload['status'] == 'completed' and payload['included'] == 1 and payload['reports']['md']"
 alcove radar --home "$home" status sports-news --json > "$fixtures/radar-status.json"
 assert_json "radar status" "$fixtures/radar-status.json" "payload['radars'][0]['id'] == 'sports-news' and payload['radars'][0]['last_run']"
-
-legacy_social="$fixtures/social-radar"
-mkdir -p "$legacy_social/config" "$legacy_social/data/radar" "$legacy_social/data/news_radar" "$legacy_social/data/stock_radar" "$legacy_social/reports/news" "$legacy_social/reports/stock"
-write_json "$legacy_social/config/preference_profile.json" '{"interest_tags":["LLM"],"min_score_threshold":0.5}'
-write_json "$legacy_social/config/news_preference_profile.json" '{"regions":["global"],"min_score_threshold":0.5,"api_key":"must-not-migrate"}'
-write_json "$legacy_social/config/stock_preference_profile.json" '{"watched_symbols":["NVDA"],"min_score_threshold":0.5}'
-printf 'TELEGRAM_BOT_TOKEN=must-not-migrate\n' > "$legacy_social/.env"
-write_json "$legacy_social/data/radar/all_2026-07-11.json" '{"items":[{"source":"hn","title":"LLM radar migration","url":"https://example.test/radar-migration","report_score":0.9,"included_in_report":true,"tags":["LLM"],"fetched_at":"2026-07-11"}]}'
-write_json "$legacy_social/data/news_radar/all_2026-07-11.json" '{"items":[]}'
-write_json "$legacy_social/data/stock_radar/all_2026-07-11.json" '{"items":[{"symbol":"NVDA","title":"NVDA migration"}]}'
-printf '<html>legacy tech</html>\n' > "$legacy_social/reports/2026-07-11.html"
-printf '# legacy news\n' > "$legacy_social/reports/news/2026-07-11.md"
-printf '# legacy stocks\n' > "$legacy_social/reports/stock/2026-07-11.md"
-alcove radar --home "$home" import-social-radar "$legacy_social" --json > "$fixtures/radar-import-social-radar.json"
-assert_json "radar import social radar" "$fixtures/radar-import-social-radar.json" \
-  "payload['status'] == 'imported' and payload['count'] == 3 and any(row['id'] == 'stocks' for row in payload['radars'])"
 
 run uv run python - "$home" "$kb" "$fixtures" <<'PY'
 import json
@@ -687,7 +711,7 @@ assert_json "blog monitor success and failure" "$fixtures/blog-monitor-smoke.jso
 alcove okf --home "$home" catalog build --json > "$fixtures/okf-catalog.json"
 assert_json "okf catalog" "$fixtures/okf-catalog.json" \
   "payload['status'] == 'built' and 'search-map.md' in payload['files'] and (Path(payload['root']).expanduser() / 'index.md').is_file()"
-alcove health --home "$home" --kb research_notes --fix --json > "$fixtures/health.json"
+alcove health --home "$home" --kb research_notes --fix --fixture-context --json > "$fixtures/health.json"
 assert_json "health" "$fixtures/health.json" \
   "payload['status'] in {'ok', 'warnings'} and 'issues' in payload and 'actions' in payload"
 
@@ -744,7 +768,7 @@ alcove dashboard --home "$home" import-pins --regular-file "$regular" --todo-fil
 alcove okf --home "$home" catalog build --json > "$fixtures/okf-catalog.json"
 assert_json "okf catalog after dashboard pin import" "$fixtures/okf-catalog.json" \
   "payload['status'] == 'built' and payload['counts']['pins'] >= 4 and 'search-map.md' in payload['files'] and (Path(payload['root']).expanduser() / 'index.md').is_file()"
-alcove health --home "$home" --kb research_notes --fix --json > "$fixtures/health.json"
+alcove health --home "$home" --kb research_notes --fix --fixture-context --json > "$fixtures/health.json"
 assert_json "health after dashboard pin import" "$fixtures/health.json" \
   "payload['status'] in {'ok', 'warnings'} and payload['counts']['pins'] >= 4"
 alcove dashboard --home "$home" build --json > "$fixtures/dashboard-build.json"

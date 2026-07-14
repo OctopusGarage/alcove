@@ -494,14 +494,32 @@ async def main() -> None:
             "home": str(home),
             "output_path": str(report_path.parent / "pins.html"),
         })
-        prompt = await call("global_memory", "alcove_prompt_save", {
+        proposal = await call("global_memory", "alcove_prompt_propose", {
             "home": str(home),
             "title": "MCP Matrix Prompt",
-            "content": "Review MCP matrix output.",
+            "content": "Review MCP matrix output for missing tools, wrong toolsets, unclear descriptions, and broken prompt proposal workflow evidence.",
             "description": "Prompt fixture.",
             "tags": ["mcp"],
         })
+        await call("global_memory", "alcove_prompt_proposal", {
+            "home": str(home),
+            "proposal_id": proposal["id"],
+        })
+        prompt = await call("global_memory", "alcove_prompt_save", {
+            "home": str(home),
+            "proposal_id": proposal["id"],
+        })
         await call("global_memory", "alcove_prompt_search", {"home": str(home), "query": "matrix"})
+        await call("global_memory", "alcove_prompt_recommend", {
+            "home": str(home),
+            "scenario": "review MCP matrix output",
+        })
+        await call("global_memory", "alcove_prompt_compose", {
+            "home": str(home),
+            "scenario": "review MCP matrix output",
+            "limit": 2,
+        })
+        await call("global_memory", "alcove_prompt_audit", {"home": str(home)})
         prompt_id = prompt["prompt"]["id"]
         await call("global_memory", "alcove_prompt_get", {
             "home": str(home),
@@ -641,6 +659,12 @@ async def main() -> None:
             "path": str(mount_dir),
             "name": "mcp-matrix",
             "tags": ["mcp"],
+        })
+        await call("external_indexes", "alcove_mount_update_policy", {
+            "home": str(home),
+            "mount_id": "mcp-matrix",
+            "profile": "docs",
+            "exclude": ["drafts/**"],
         })
         await call("external_indexes", "alcove_mount_scan", {"home": str(home), "mount_id": "mcp-matrix"})
         await call("external_indexes", "alcove_mount_list", {"home": str(home)})

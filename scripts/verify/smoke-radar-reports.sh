@@ -342,7 +342,7 @@ for radar_id, prompt in [
             result["ai"]["status"] == "completed"
             or (
                 result["ai"]["status"] == "failed"
-                and "AI summary failed; sending deterministic radar report." in latest_message
+                and "AI summary unavailable; sending deterministic radar report." in latest_message
             )
         ),
         json.dumps(

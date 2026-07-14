@@ -27,6 +27,43 @@ Read broadly, write narrowly.
   behavior belong in Alcove or the capture adapter.
 - Global access should be quiet. Unrelated coding projects should not inherit
   the full admin surface unless the user explicitly installs it.
+- Hub is the default human conversation entry. When adding or changing a
+  feature, evaluate how the user will trigger it from the Hub first, then decide
+  whether the managed-KB entry, global MCP, CLI command hints, dashboard, or
+  background service also need updates.
+
+## Feature Entry Impact Checklist
+
+Every user-facing feature change should answer these questions before it is
+called done:
+
+```text
+Feature / behavior change
+├── Hub workspace
+│   ├── Does `alcove-hub` need intent routing or a protocol section?
+│   ├── Should the Hub agent call CLI directly, search first, or inspect data?
+│   └── Does the completion receipt need module-specific wording?
+├── Managed KB workspace
+│   ├── Does a KB-local workflow need capture, inbox, archive, OKF, or note rules?
+│   └── Should KB skills stay narrow instead of becoming global memory tools?
+├── Global MCP
+│   ├── Is this safe as a lightweight global MCP tool?
+│   ├── Should it be a command hint instead of an exposed mutating tool?
+│   └── Should it require `full` or KB toolset instead of `lite`?
+├── CLI / API
+│   ├── Is there a governed write command for durable state?
+│   └── Is the command ergonomic for Hub and MCP agents to call?
+├── Service / dashboard
+│   ├── Does deterministic background work need scheduler support?
+│   └── Does the dashboard or exported view need the new state?
+└── Verification
+    ├── Update docs and profile templates in the same change.
+    ├── Run entry/profile smoke when skills, commands, MCP, or profile installs change.
+    └── Run AI eval when routing quality, prompt quality, summaries, or dashboard usefulness changes.
+```
+
+If the answer is "no change needed" for an entry mode, record that in the final
+engineering summary. Silent omissions are how Hub and MCP behavior drift.
 
 ## Hub Workspace
 
@@ -41,6 +78,10 @@ Use it for:
 - managing pins, prompts, projects, tasks, mounts, connectors, exports, and
   multiple managed KBs,
 - using AI judgment to route ambiguous "remember/save/record" requests.
+- project maintenance requests that originate in the Hub, such as "optimize
+  Alcove prompt management" or "add a radar feature". The Hub should route these
+  to the relevant project/worktree and preserve the entry impact checklist
+  above instead of saving the request as ordinary knowledge by default.
 
 Default routing:
 
@@ -114,7 +155,7 @@ alcove global install --default-kb social_media_posts
   dashboard serving, and publisher syncs,
 - search,
 - pins,
-- prompts save/search/get,
+- prompts propose/save/search/recommend/compose/get,
 - lightweight planner tools: tasks, ideas, task edit, complete/cancel,
 - manual-add into a default managed KB inbox when `--default-kb` is configured.
 
@@ -232,13 +273,16 @@ alcove radar run tech-news --skip-fetch --force --ai --notify --json
 
 Use the first command to refetch sources and analyze the new report. Use the
 second command when the user asks to analyze or resend the already fetched
-results without touching external sources.
+results without touching external sources. Scheduled radar definitions may use
+`schedule.daily_time` and `schedule.timezone`, so the service can send reports
+after a daily local window such as `10:00` in `Asia/Singapore` instead of just
+after midnight.
 
 ## Managed KB Workspace
 
 A managed KB is where capture, inbox review, source archiving, and OKF note
 maintenance happen. It installs `alcove-kb`, `notes-search`, and
-`social_post_manager` skills plus Claude commands.
+`alcove-capture` skills plus Claude commands.
 
 Use it for:
 
@@ -285,7 +329,7 @@ Managed KB target layout:
 ├── CLAUDE.md                                      normal file, Alcove marked section
 ├── .claude/skills/alcove-kb/SKILL.md             copy or symlink
 ├── .claude/skills/notes-search/SKILL.md          copy or symlink
-├── .claude/skills/social_post_manager/SKILL.md   copy or symlink
+├── .claude/skills/alcove-capture/SKILL.md   copy or symlink
 ├── .claude/commands/inbox-peek.md                copy or symlink
 └── .claude/commands/into-kb.md                   copy or symlink
 
@@ -293,7 +337,7 @@ Managed KB target layout:
 ├── AGENTS.md                                     normal file, Alcove marked section
 ├── .agents/skills/alcove-kb/SKILL.md             copy or symlink
 ├── .agents/skills/notes-search/SKILL.md          copy or symlink
-└── .agents/skills/social_post_manager/SKILL.md   copy or symlink
+└── .agents/skills/alcove-capture/SKILL.md   copy or symlink
 ```
 
 For MCP sessions focused on a KB, use the `kb` toolset:
@@ -308,7 +352,7 @@ alcove serve --mcp --toolset kb --kb social_media_posts
 lite
 ├── search
 ├── pin add/list/get/search/update
-├── prompt save/search/get
+├── prompt propose/save/search/get/recommend/compose
 ├── task add/list/complete/cancel
 ├── idea add/list/promote
 ├── inbox manual-add, when a default KB is configured

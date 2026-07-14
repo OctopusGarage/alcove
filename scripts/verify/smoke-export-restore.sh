@@ -35,8 +35,9 @@ alcove pin --home "$source_home" add "Restore Pin" \
   --tag restore \
   --json > "$fixtures/pin-add.json"
 alcove prompt --home "$source_home" save "Restore Prompt" \
+  --force \
   --description "Export restore prompt." \
-  --content "Use restore prompt." \
+  --content "Use export restore evidence to verify restored prompts, pins, tasks, projects, indexes, and search behavior before reporting success." \
   --tag restore \
   --json > "$fixtures/prompt-save.json"
 alcove task --home "$source_home" add "Restore Task" \

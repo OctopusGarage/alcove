@@ -40,6 +40,10 @@ scripts/check.sh
   `/alcove-doc-sync` when code changes user-visible behavior, storage,
   CLI/MCP contracts, agent entries, dashboard, radars, connectors, mounts, OKF,
   smoke, eval, or install flows.
+- Treat entry-mode impact as part of every feature change. Most user workflows
+  start from the Hub workspace, so new or changed behavior must answer whether
+  `alcove-hub`, managed-KB skills, global MCP toolsets/command hints, docs, and
+  smoke/AI eval need corresponding updates.
 
 ## Rules
 

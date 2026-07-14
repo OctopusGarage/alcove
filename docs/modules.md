@@ -146,10 +146,19 @@ in global search as `Project` rows.
 ## Prompts
 
 Prompts are reusable global memory records stored as OKF-compatible Markdown
-under `~/.alcove/prompts/`. Each prompt uses YAML frontmatter with
-`type: Prompt`, tags, use cases, source refs, and an active/archive status.
+under `~/.alcove/prompts/`. Each prompt uses YAML frontmatter with `type:
+Prompt`, tags, use cases, source refs, kind, domain, intent, surfaces,
+triggers, inputs, outputs, quality metadata, and an active/archive status.
 Markdown files are the source of truth; `~/.alcove/prompts/index.json` is a
 derived search index rebuilt automatically by save/archive/search flows.
+
+Historical prompt folders should first be scanned into
+`~/.alcove/prompts/candidates/index.json`; only scored, reusable candidates are
+promoted into the active library. Scenario recommendation and ready-to-use
+Prompt Pack composition are available through `alcove prompt recommend`,
+`alcove prompt compose`, `alcove prompt audit`, `alcove_prompt_recommend`,
+`alcove_prompt_compose`, and `alcove_prompt_audit`. See
+[Prompt Library](prompts.md).
 
 ## Tasks, Ideas, and Routines
 
@@ -289,10 +298,16 @@ launchd
 - check monitored blog sources,
 - run enabled scheduled radars,
 - run due user automation jobs,
+- refresh mounted knowledge indexes when their two-day maintenance window is due,
 - rebuild the global OKF catalog,
 - run health repair,
 - refresh and prune usage rollups,
 - rebuild the dashboard snapshot.
+
+Mount refresh is deliberately lightweight: the scheduler does not install a
+filesystem watcher. It reuses `alcove mount scan` and its incremental file
+metadata checks, then records the last service refresh in
+`~/.alcove/stats/service-state.json`.
 
 Watchers live under `~/.alcove/watchers/`. Each source is a YAML config with
 refresh state, and changes are appended to `events.jsonl`. If a watcher is
@@ -326,7 +341,7 @@ Claude automatically; agent-assisted repair is a manual follow-up.
 ## Automations
 
 Automations are generic repeatable user jobs under `~/.alcove/automations/`.
-They cover the generic "daily user task" capability from Social Radar without
+They cover repeatable shell, git-sync, Alcove CLI, and guarded agent jobs without
 importing arbitrary Python modules as Alcove core behavior.
 
 ```text
@@ -346,25 +361,20 @@ alcove automation list --json
 alcove automation add-git-sync notes ~/notes --commit-message "chore: sync notes" --json
 alcove automation run notes --json
 alcove automation run-due --json
-alcove automation import-social-radar ~/.social_radar --json
 ```
-
-`import-social-radar` maps legacy `git_repos[]` to `git-sync` jobs and supported
-`ClaudeTask` modules to guarded `agent` jobs. Unsupported Python tasks are
-reported as skipped for manual review.
 
 ## Configurable Radars
 
 Radars are generic user-defined information briefings under `~/.alcove/radars/`.
 Alcove owns the engine, storage contract, adapters, reports, scheduled
-maintenance hook, dashboard projection, and migration tool. Specific categories
+maintenance hook, and dashboard projection. Specific categories
 such as tech news, world news, stocks, sports, or personal hobby feeds are user
 definitions, not hard-coded product modules.
 
 ```text
 ~/.alcove/radars/
 ├── definitions/*.yml
-├── cache/<radar-id>/<date>/{raw.json,scored.json,legacy.json}
+├── cache/<radar-id>/<date>/{raw.json,scored.json}
 ├── runs/<radar-id>/<date>/run.json
 ├── reports/<radar-id>/<date>.{md,html}
 ├── reports/<radar-id>/<date>.ai.md
@@ -382,13 +392,14 @@ alcove radar init tech-news --from-preset tech-news --json
 alcove radar run tech-news --json
 alcove radar run tech-news --force --ai --notify --json
 alcove radar run tech-news --skip-fetch --force --ai --notify --json
-alcove radar import-social-radar ~/.social_radar --json
 ```
 
 `service tick` runs scheduled radar definitions only when `schedule.enabled` is
-true. Scheduled runs are deterministic by default. They invoke `codex exec` or
-`claude -p` only when the definition explicitly enables `ai_summary`. If AI
-fails and notifications are enabled, Alcove sends the deterministic report
-instead. Notification sinks currently support Telegram and Feishu custom bot
-webhooks. See [radars.md](radars.md) for the full contract and Social Radar
-migration behavior.
+true. Definitions can set `schedule.daily_time` plus `schedule.timezone`, for
+example `10:00` in `Asia/Singapore`, so the local service waits until that
+daily window instead of sending reports just after midnight. Scheduled runs are
+deterministic by default. They invoke `codex exec` or `claude -p` only when the
+definition explicitly enables `ai_summary`. If AI fails and notifications are
+enabled, Alcove sends the deterministic report instead. Notification sinks
+currently support Telegram and Feishu custom bot webhooks. See
+[radars.md](radars.md) for the full contract and runtime behavior.

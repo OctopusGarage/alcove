@@ -16,6 +16,7 @@ Alcove is a local-first personal information core for agent-assisted knowledge w
 ## Architecture Vocabulary
 
 - CLI and MCP are adapters.
+- CLI Command Registry owns parsed command dispatch from CLI command names to adapter handlers. `cli.py` owns parser construction and process-level error handling.
 - `AlcoveApplication` is the behavior interface shared by adapters.
 - `AlcoveApplication` stays a stable facade with six public capability groups: search, system, inbox, knowledge, global home, and external indexes.
 - `AlcoveRuntime` carries the active workspace/home scope.

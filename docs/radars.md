@@ -1,8 +1,8 @@
 # Configurable Radars
 
 Radars are user-configured information briefings. Alcove provides the generic
-engine, adapters, reports, scheduling, dashboard projection, and migration
-tools. Radar categories such as tech news, world news, stocks, sports, or
+engine, adapters, reports, scheduling, and dashboard projection. Radar
+categories such as tech news, world news, stocks, sports, or
 personal hobbies are user data under `~/.alcove/radars/definitions/`.
 
 ## Model
@@ -13,7 +13,7 @@ personal hobbies are user data under `~/.alcove/radars/definitions/`.
 ├── cache/<radar-id>/<date>/   fetched and scored item cache
 │   ├── raw.json
 │   ├── scored.json
-│   └── legacy.json            present only for imported Social Radar runs
+│   └── raw.json               deterministic fetched source data
 ├── runs/<radar-id>/<date>/run.json
 ├── reports/<radar-id>/<date>.md
 ├── reports/<radar-id>/<date>.html
@@ -32,7 +32,8 @@ fields:
 - `report`: language, style, output formats
 - `ai_summary`: optional post-report AI analysis through `codex exec` or
   `claude -p`
-- `schedule`: enabled flag and TTL for `alcove service tick`
+- `schedule`: enabled flag, optional local daily run time, timezone, and TTL
+  fallback for `alcove service tick`
 - `notify`: optional notification policy for Telegram, Feishu webhook, or TCB sinks
 
 Built-in presets are only starter templates:
@@ -67,6 +68,19 @@ definition profile, writes cache, writes Markdown/HTML reports, writes a latest
 OKF index, and appends a run event.
 
 `alcove service tick` runs only active definitions with `schedule.enabled: true`.
+Definitions may set a local daily trigger:
+
+```yaml
+schedule:
+  enabled: true
+  daily_time: "10:00"
+  timezone: Asia/Singapore
+  ttl_hours: 24
+```
+
+When `daily_time` is set, the scheduler runs the radar only after that local
+time and only once per local date. Without `daily_time`, Alcove keeps the older
+TTL-compatible behavior and runs the first due scheduled tick for the day.
 Scheduled runs are deterministic unless the radar definition explicitly enables
 `ai_summary.enabled: true`. When AI summary is enabled, Alcove calls the
 configured provider after the deterministic report is already written:
@@ -192,41 +206,12 @@ Current source adapters:
 Adapters are generic. A radar definition chooses adapters through `sources[]`;
 categories remain user data.
 
-## Social Radar Migration
-
-Legacy Social Radar data can be imported explicitly:
-
-```sh
-alcove radar import-social-radar ~/.social_radar --home ~/.alcove --json
-```
-
-The migration reads:
-
-- `config/preference_profile.json` or `preference_profile.example.json`
-- `config/news_preference_profile.json`
-- `config/stock_preference_profile.json`
-- `data/radar/all_*.json`
-- `data/news_radar/all_*.json`
-- `data/stock_radar/all_*.json`
-- `reports/`, `reports/news/`, and `reports/stock/`
-
-It writes:
-
-- `tech-news`, `world-news`, and `stocks` definitions
-- converted `scored.json` cache files
-- original `legacy.json` cache files for traceability
-- copied historical reports
-
-It intentionally ignores `.env`, crontab backups, tokens, old MCP config, and
-other runtime environment files. Existing radar definitions are kept unless
-`--force` is passed.
-
 ## Agent Rules
 
 - Read path: agents may inspect radar definitions, run status, reports, cache,
   and OKF indexes to answer user questions.
 - Write path: durable changes should use `alcove radar init`,
-  `alcove radar import-social-radar`, or a controlled definition save path.
+  `alcove radar run`, or a controlled definition save path.
 - Scheduled path: launchd/service runs deterministic fetch/score/report first,
   then optional `ai_summary`/Telegram post-processing only when the definition
   explicitly enables it.

@@ -103,6 +103,30 @@ class ExternalIndexedItemPresenter:
             "read_ref_pattern": "mounts/<id>#<relative-path>",
         }
 
+    def search_reference_fields(self) -> dict[str, Any]:
+        if self.ref.kind == "connector":
+            fields = self.connector_fields()
+            return {
+                **fields,
+                "read_ref": fields["fetch_ref"],
+                "read_command": fields["fetch_command"],
+                "read_hint": self.read_hint(),
+                "source_ref": fields["fetch_ref"],
+            }
+        fields = self.source_fields()
+        source_ref = str(fields.get("source_ref") or self.ref.path)
+        return {
+            "display_id": str(fields.get("display_id") or self.ref.path),
+            "display_label": str(fields.get("display_label") or self.display_label()),
+            "source_id": str(fields.get("source_id") or self.ref.source_id),
+            "source_label": str(fields.get("source_label") or self.source_label()),
+            "origin_label": str(fields.get("origin_label") or self.origin_label()),
+            "source_ref": source_ref,
+            "read_ref": source_ref,
+            "read_command": "",
+            "read_hint": str(fields.get("read_hint") or self.read_hint()),
+        }
+
     def dashboard_connector_fields(self) -> dict[str, Any]:
         if self.ref.kind != "connector":
             return {}

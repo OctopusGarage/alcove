@@ -210,7 +210,11 @@ alcove search "Example" --kb research_notes
 
 ```sh
 alcove pin add "Useful Pattern" --description "Short reusable note" --tag reference
-alcove prompt save "Code Review Lens" --content "Review for correctness." --tag review
+alcove prompt propose "Code Review Lens" --content "Review the diff for regressions..." --tag review
+alcove prompt save --proposal-id <proposal-id>
+alcove prompt recommend "review a dashboard regression before shipping"
+alcove prompt compose "review a dashboard regression before shipping"
+alcove prompt audit --json
 alcove task add "Wire MCP search" --priority high --tag mcp
 alcove project add alcove /path/to/alcove --note "Personal information core"
 ```
@@ -218,13 +222,20 @@ alcove project add alcove /path/to/alcove --note "Personal information core"
 ### External Indexes
 
 ```sh
-alcove mount add /path/to/repos --name repos --type local-folder --tag repos
+alcove mount add /path/to/repos --name repos --type local-folder --profile docs --tag repos
+alcove mount scan repos --dry-run --json
 alcove mount scan repos --json
 alcove connector github-stars import-url "https://github.com/octocat?tab=stars" --json
 alcove connector chrome-bookmarks import-local --tag bookmarks --json
 alcove connector apple-notes import-local --tag apple-notes --json
 alcove connector status --json
 ```
+
+Mount profiles keep local repository indexes focused. Use `docs` for README and
+documentation-heavy repositories, `site` for blog/site content, `notes` for
+personal Markdown folders, and `capture-bundles` for Clipsmith-style captured
+article folders. Add `--include` and `--exclude` when a specific mount needs
+custom rules.
 
 ### Radars, Watchers, and Blogs
 

@@ -20,6 +20,7 @@ Default to this KB for inbox/archive/current-KB wording. Use Alcove Home-wide se
 
 - Use Alcove CLI/MCP commands for durable writes: inbox actions, OKF notes, revisions, pins, tasks, prompts, projects, mounts, connectors, links, refreshes, and exports.
 - Direct file edits are repair fallbacks only. Run `alcove validate` or the nearest refresh/scan/rebuild command afterward.
+- Mounted repository indexes are policy-filtered knowledge indexes. Use mount refs for README/docs/notes evidence; use `rg` or direct source reads for code-specific questions.
 
 ## Fallback Routing Without Skills
 

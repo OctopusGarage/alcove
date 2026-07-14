@@ -136,7 +136,7 @@ Fallback routing table when project skills are unavailable:
 | Current managed KB inbox review | `alcove inbox{home_part} --kb <kb-name> peek --json`; read full item before summarizing if truncated | archive/note/todo/delete only after explicit confirmation |
 | Save copied article or discussion note | search first for duplicates and choose target KB | `alcove inbox{home_part} --kb <kb-name> manual-add ...` or `alcove knowledge ...` |
 | Save stable reference, preference, command, shortcut | `alcove pin{home_part} search "query" --json` | `alcove pin{home_part} add/update ...` |
-| Save reusable prompt | `alcove prompt{home_part} search "query" --json` | `alcove prompt{home_part} save ...` |
+| Save reusable prompt | `alcove prompt{home_part} recommend "scenario" --json` and `alcove prompt{home_part} propose ... --json` | `alcove prompt{home_part} save --proposal-id <id>` after proposal review |
 | Track todo, idea, routine, project, mount, connector | list/search the matching module first | use the matching `alcove task/idea/routine/project/mount/connector` command |
 | Check monitored blogs now | `alcove blog{home_part} list --status '' --json`, then `alcove blog{home_part} check --json` or `alcove blog{home_part} check <source-id> --json` | only add/update sources after explicit confirmation |
 | Run an information radar | `alcove radar{home_part} list --json`, then `alcove radar{home_part} status <radar-id> --json` | `alcove radar{home_part} run <radar-id> --json`, `--force --ai --notify`, or `--skip-fetch --force --ai --notify` after choosing an existing definition |
@@ -178,7 +178,9 @@ alcove search{home_part} "query" --json
 alcove search{home_part} --kb <kb-name> "query" --json
 alcove pin{home_part} list --json
 alcove pin{home_part} search "" --kind regular --json
-alcove prompt{home_part} search "" --json
+alcove prompt{home_part} recommend "scenario" --json
+alcove prompt{home_part} propose "Prompt Name" --content "..." --json
+alcove prompt{home_part} save --proposal-id <proposal-id> --json
 alcove project{home_part} list --json
 alcove task{home_part} list --json
 alcove blog{home_part} list --status '' --json
@@ -218,7 +220,23 @@ def _hub_skill(default_kb: str, home_part: str) -> str:
         "- exported/protocol data source such as Apple Notes or GitHub Stars: `connector`.\n"
         "- blog monitoring, scheduled article checks, failure alerts, or phrases such as\n"
         "  监控博客更新 / 检查博客文章有没有更新: `blog monitor`.\n"
-        "- information radar, daily briefing, 技术雷达, 新闻雷达, 股票雷达, 体育资讯: `radar`.\n\n"
+        "- information radar, daily briefing, 技术雷达, 新闻雷达, 股票雷达, 体育资讯: `radar`.\n"
+        "- Alcove feature work, maintenance, refactoring, docs alignment, tests, or\n"
+        "  phrases such as 优化 Alcove / 新增功能 / 修这个项目: route to the registered\n"
+        "  project/worktree, then apply that project's engineering rules. Do not save the\n"
+        "  request as a knowledge note unless the user explicitly asks for a note.\n\n"
+        "## Project Development Protocol\n\n"
+        "- Most Alcove development requests still start in the Hub. Before changing code,\n"
+        "  identify the target project and switch to its project entry so `AGENTS.md`,\n"
+        "  `CLAUDE.md`, hooks, and local skills are in scope.\n"
+        "- For each user-facing change, run an entry-mode impact check: Hub workspace,\n"
+        "  managed-KB workspace, global MCP/command hints, CLI, local service/dashboard,\n"
+        "  docs, smoke, and AI eval.\n"
+        "- Update `alcove-hub` when the feature changes how users should ask for,\n"
+        "  trigger, review, or save data from the Hub. Update managed-KB skills only for\n"
+        "  KB-local capture/inbox/OKF workflows. Keep global MCP lightweight unless a\n"
+        "  wider toolset is explicitly intended.\n"
+        "- If no entry change is needed, say why in the completion summary.\n\n"
         "## Fallback Routing Without Skills\n\n"
         "| Intent | Read path | Governed write path |\n"
         "| --- | --- | --- |\n"
@@ -226,7 +244,7 @@ def _hub_skill(default_kb: str, home_part: str) -> str:
         f"| Current managed KB inbox review | `alcove inbox{home_part} --kb <kb-name> peek --json`; read full item before summarizing if truncated | archive/note/todo/delete only after explicit confirmation |\n"
         f"| Save copied article or discussion note | search first for duplicates and choose target KB | `alcove inbox{home_part} --kb <kb-name> manual-add ...` or `alcove knowledge ...` |\n"
         f'| Save stable reference, preference, command, shortcut | `alcove pin{home_part} search "query" --json` | `alcove pin{home_part} add/update ...` |\n'
-        f'| Save reusable prompt | `alcove prompt{home_part} search "query" --json` | `alcove prompt{home_part} save ...` |\n'
+        f'| Save reusable prompt | `alcove prompt{home_part} recommend "scenario" --json` and `alcove prompt{home_part} propose ... --json` | `alcove prompt{home_part} save --proposal-id <id>` after proposal review |\n'
         "| Track todo, idea, routine, project, mount, connector | list/search the matching module first | use the matching `alcove task/idea/routine/project/mount/connector` command |\n"
         f"| Check monitored blogs now | `alcove blog{home_part} list --status '' --json`, then `alcove blog{home_part} check --json` or `alcove blog{home_part} check <source-id> --json` | only add/update sources after explicit confirmation |\n"
         f"| Run an information radar | `alcove radar{home_part} list --json`, then `alcove radar{home_part} status <radar-id> --json` | `alcove radar{home_part} run <radar-id> --json`, `--force --ai --notify`, or `--skip-fetch --force --ai --notify` after choosing an existing definition |\n\n"
@@ -252,7 +270,55 @@ def _hub_skill(default_kb: str, home_part: str) -> str:
         f"- Use `alcove radar{home_part} run <radar-id> --force --ai --notify --json` when the user asks to rerun, refresh now, summarize with AI, and send configured notifications.\n"
         f"- Use `alcove radar{home_part} run <radar-id> --skip-fetch --force --ai --notify --json` when the user asks to analyze or resend already fetched results without touching external sources.\n"
         "- Radar runs fetch and score deterministically first. Optional `ai_summary` is post-report analysis only; it does not rewrite fetched items or scores.\n"
+        "- Scheduled radar definitions may use `schedule.daily_time` and `schedule.timezone`; the local service should wait for that daily window and still run at most once per local date.\n"
         "- Scheduled radar runs start Codex or Claude only when the radar definition explicitly enables `ai_summary`. If AI fails, Alcove should still notify with the deterministic report when notification is enabled.\n\n"
+        "## Prompt Library Protocol\n\n"
+        "- When the user describes a task and asks what prompt to use, run\n"
+        f'  `alcove prompt{home_part} recommend "<scenario>" --json` and present at most five\n'
+        "  numbered candidates with why they match. If the user chooses multiple\n"
+        f'  candidates, use `alcove prompt{home_part} compose "<scenario>" --json` or inspect the\n'
+        f"  chosen prompts with `alcove prompt{home_part} get`.\n"
+        "- When the user asks to save something into the prompt library, first act as the\n"
+        "  prompt-quality reviewer yourself. Do not treat the user wording as already\n"
+        "  reusable. Decide whether it is:\n"
+        "  - a reusable prompt;\n"
+        "  - source material that should be rewritten into a reusable prompt;\n"
+        "  - a duplicate or update to an existing prompt;\n"
+        "  - a managed KB note / article summary / raw chat fragment that should not\n"
+        "    become an active prompt.\n"
+        "- Before proposing, rewrite the candidate into a concise copy-ready prompt body.\n"
+        "  Preserve the user's goal and constraints, but remove one-off chat context,\n"
+        "  metadata-card headings, personal paths, stale project names, and vague\n"
+        "  instructions. If the title promises verification, rerun, hardening, codifying,\n"
+        "  or 固化/复跑, the prompt body must require concrete evidence, repeatable\n"
+        "  commands or steps, and durable follow-up artifacts.\n"
+        "- Search and recommend before writing:\n"
+        f'  `alcove prompt{home_part} recommend "<scenario>" --json`. If a similar prompt exists,\n'
+        "  prefer updating/merging it instead of creating a new prompt.\n"
+        "- Do not call `prompt save` directly. Run\n"
+        f'  `alcove prompt{home_part} propose "<title>" --content "..." --json`. Use\n'
+        "  `--ai-eval-provider codex` or `--ai-eval-provider claude` only when the user\n"
+        "  explicitly asks for a separate model review; otherwise the current agent's\n"
+        "  own review plus the proposal's built-in eval is the normal Hub path.\n"
+        "- Inspect `action`, `similar`, `warnings`, `evaluation`, and the optimized `request`.\n"
+        "  Prefer updating or merging existing prompts when the proposal recommends\n"
+        "  `update_existing` or `merge_into_existing`.\n"
+        "- The optimized `request.content` must be copy-ready prompt text. Usage timing,\n"
+        "  triggers, surfaces, outputs, tags, and source refs belong in metadata fields,\n"
+        "  not as record-card headings inside the prompt body.\n"
+        "- Inspect `evaluation.prompt_ai_eval.rounds`. A high-quality proposal should pass\n"
+        "  both `professional_quality` and `adversarial_reuse`. If `must_fix` is not\n"
+        "  empty, revise the prompt and run `prompt propose` again instead of saving.\n"
+        f"- Only accept a proposal with `alcove prompt{home_part} save --proposal-id <id> --json`\n"
+        "  after confirming it should become reusable prompt memory. Save rejects\n"
+        "  proposals whose `evaluation.verdict` is not `ready` or `update_existing`.\n"
+        "- After save/update, inspect `prompt_eval`. A `needs_review` verdict should only\n"
+        "  appear after explicit force writes or legacy repair; do not treat it as a\n"
+        "  polished active prompt.\n"
+        f"- Use direct `alcove prompt{home_part} save --force ...` only for explicit repair or\n"
+        "  operator-confirmed direct writes.\n"
+        "- Article summaries, one-off project notes, and raw chat dumps belong in a\n"
+        "  managed KB unless the reusable instruction has been extracted and proposed.\n\n"
         "## Retrieval Model\n\n"
         "- For read-only questions, start with Alcove MCP/CLI search to discover candidates.\n"
         "- Treat search results as leads, not final truth.\n"
@@ -280,10 +346,17 @@ def _hub_skill(default_kb: str, home_part: str) -> str:
         f'alcove pin{home_part} add "Title" --kind regular --summary "..." --content "..." --tag tag --json\n'
         f'alcove pin{home_part} search "query" --kind todo --json\n'
         f"alcove pin{home_part} render-html --json\n"
-        f'alcove prompt{home_part} save "Prompt Name" --content "..." --tag prompt --json\n'
+        f'alcove prompt{home_part} recommend "scenario" --json\n'
+        f'alcove prompt{home_part} compose "scenario" --json\n'
+        f'alcove prompt{home_part} propose "Prompt Name" --content "..." --tag prompt --json\n'
+        f"alcove prompt{home_part} proposal <proposal-id> --json\n"
+        f"alcove prompt{home_part} save --proposal-id <proposal-id> --json\n"
         f'alcove project{home_part} add alias /path/to/project --note "..." --json\n'
         f'alcove task{home_part} add "Task" --notes "..." --json\n'
-        f"alcove mount{home_part} add /path/to/folder --name name --json\n"
+        f"alcove mount{home_part} add /path/to/folder --name name --profile docs --json\n"
+        f'alcove mount{home_part} update name --profile docs --exclude "**/_build/**" --json\n'
+        f"alcove mount{home_part} scan name --dry-run --json\n"
+        f"alcove mount{home_part} scan name --json\n"
         f'alcove connector{home_part} fetch "connectors/<id>#<path>" --json\n'
         f"alcove blog{home_part} list --status '' --json\n"
         f"alcove blog{home_part} check --json\n"
@@ -325,7 +398,9 @@ def _managed_kb_skill(default_kb: str, home_part: str) -> str:
         "- Do not route generic `本地知识库` wording to unrelated global or project-specific tools unless the user explicitly names that tool.\n\n"
         "## Write Routing\n\n"
         "- Use Alcove CLI/MCP commands for durable writes: inbox actions, OKF notes, revisions, pins, tasks, prompts, projects, mounts, connectors, links, refreshes, and exports.\n"
-        "- Direct file edits are repair fallbacks only. Run `alcove validate` or the nearest refresh/scan/rebuild command afterward.\n\n"
+        "- Direct file edits are repair fallbacks only. Run `alcove validate` or the nearest refresh/scan/rebuild command afterward.\n"
+        "- Mounted repository indexes are policy-filtered knowledge indexes. Use mount refs for README/docs/notes evidence; use `rg` or direct source reads for code-specific questions.\n"
+        "\n"
         "## Fallback Routing Without Skills\n\n"
         "| Intent | Read path | Governed write path |\n"
         "| --- | --- | --- |\n"
@@ -362,9 +437,9 @@ def managed_kb_claude_artifacts(root: Path, kb: str) -> list[ProfileArtifact]:
             _template_path("managed-kb/skills/notes-search/SKILL.md"),
         ),
         ProfileArtifact(
-            root / ".claude" / "skills" / "social_post_manager" / "SKILL.md",
-            _managed_kb_social_post_manager_skill(kb, root),
-            _template_path("managed-kb/skills/social_post_manager/SKILL.md"),
+            root / ".claude" / "skills" / "alcove-capture" / "SKILL.md",
+            _managed_kb_capture_skill(kb, root),
+            _template_path("managed-kb/skills/alcove-capture/SKILL.md"),
         ),
     ]
 
@@ -377,9 +452,9 @@ def managed_kb_codex_artifacts(root: Path, kb: str) -> list[ProfileArtifact]:
             _template_path("managed-kb/skills/notes-search/SKILL.md"),
         ),
         ProfileArtifact(
-            root / ".agents" / "skills" / "social_post_manager" / "SKILL.md",
-            _managed_kb_social_post_manager_skill(kb, root),
-            _template_path("managed-kb/skills/social_post_manager/SKILL.md"),
+            root / ".agents" / "skills" / "alcove-capture" / "SKILL.md",
+            _managed_kb_capture_skill(kb, root),
+            _template_path("managed-kb/skills/alcove-capture/SKILL.md"),
         ),
     ]
 
@@ -415,7 +490,7 @@ alcove validate{home_part} --json
 Inbox posts require explicit per-post confirmation before archive, note, todo,
 or delete. A raw link means capture to inbox, not permission to process items.
 
-Project skills: `social_post_manager`, `notes-search`, `alcove-kb`.
+Project skills: `alcove-capture`, `notes-search`, `alcove-kb`.
 
 If a listed project skill is unavailable, use the commands above as fallback.
 {ALCOVE_SECTION_END}
@@ -566,17 +641,17 @@ provenance tracing; `knowledge/` is the formal knowledge base.
 """
 
 
-def _managed_kb_social_post_manager_skill(kb: str, root: Path) -> str:
+def _managed_kb_capture_skill(kb: str, root: Path) -> str:
     _ = (kb, root)
     return """---
-name: social_post_manager
+name: alcove-capture
 description: Use when capturing social/web links into an Alcove inbox or reviewing, summarizing, archiving, noting, deleting, or deferring managed-KB inbox items.
 type: project
 ---
 
-# Social Post Manager
+# Alcove Capture
 
-This skill keeps the original social-media-posts workflow while routing all
+This skill keeps the managed knowledge capture workflow while routing all
 knowledge behavior through Alcove and all capture behavior through Clipsmith.
 Clipsmith project page: https://octopusgarage.github.io/clipsmith/
 

@@ -7,6 +7,12 @@ import json
 from types import SimpleNamespace
 
 from alcove import notifications
+from alcove.notification_delivery import (
+    combined_notification_status,
+    notification_bool,
+    notification_sink_label,
+    notification_sinks,
+)
 
 
 def test_feishu_signature_matches_custom_bot_contract() -> None:
@@ -15,6 +21,35 @@ def test_feishu_signature_matches_custom_bot_contract() -> None:
     ).decode("utf-8")
 
     assert notifications.feishu_signature(timestamp="1234567890", secret="secret") == expected  # noqa: S106
+
+
+def test_notification_delivery_policy_normalizes_sinks_and_status() -> None:
+    policy = {
+        "channel": "telegram",
+        "include_ai_summary": False,
+        "sinks": [
+            {"type": "feishu", "name": "Team Bot"},
+            {"type": "feishu", "name": "Team Bot", "include_ai_summary": True},
+        ],
+    }
+
+    sinks = notification_sinks(policy, inheritable_keys=("include_ai_summary",))
+    assert sinks == [
+        {"include_ai_summary": False, "type": "feishu", "name": "Team Bot"},
+        {"include_ai_summary": True, "type": "feishu", "name": "Team Bot"},
+    ]
+    assert notification_bool(policy, sinks[0], "include_ai_summary", True) is False
+    assert notification_bool(policy, sinks[1], "include_ai_summary", False) is True
+
+    results: dict[str, dict[str, object]] = {}
+    first = notification_sink_label(sinks[0], results)
+    results[first] = {"status": "sent"}
+    second = notification_sink_label(sinks[1], results)
+    results[second] = {"status": "failed"}
+
+    assert first == "team-bot"
+    assert second == "team-bot-2"
+    assert combined_notification_status(results) == "partial"
 
 
 def test_send_feishu_message_posts_text_payload_with_optional_signature(
@@ -121,3 +156,25 @@ def test_send_tcb_notification_uses_notify_attach_protocol(monkeypatch, tmp_path
     assert str(report_md) in command
     assert str(report_html) in command
     assert calls[0]["input"] == "Core summary"
+
+
+def test_send_tcb_notification_normalizes_failed_deliveries(monkeypatch) -> None:
+    class Completed:
+        returncode = 0
+        stdout = '{"status":"sent","deliveries":[{"channel":"lark","ok":false}]}\n'
+        stderr = ""
+
+    def fake_run(command, input, text, capture_output, timeout, check):
+        return Completed()
+
+    monkeypatch.setattr(notifications.subprocess, "run", fake_run)
+
+    result = notifications.send_tcb_notification(
+        sink={"type": "tcb", "channel": "lark"},
+        title="Radar: Tech News",
+        text="Core summary",
+        attachments=[],
+    )
+
+    assert result["status"] == "failed"
+    assert result["deliveries"] == [{"channel": "lark", "ok": False}]

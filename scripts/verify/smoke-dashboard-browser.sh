@@ -33,8 +33,9 @@ alcove pin --home "$home" add "Dashboard Browser Pin" \
   --tag dashboard \
   --json > "$fixtures/pin-add.json"
 alcove prompt --home "$home" save "Dashboard Browser Prompt" \
+  --force \
   --description "Browser smoke prompt." \
-  --content "Use dashboard browser smoke." \
+  --content "Use dashboard browser smoke results to review navigation, search behavior, module counts, and visible regression risk before reporting verification." \
   --tag dashboard \
   --json > "$fixtures/prompt-save.json"
 alcove task --home "$home" add "Dashboard Browser Task" \
@@ -191,6 +192,10 @@ alcove connector --home "$home" github-stars index "$fixtures/dashboard-stars.js
   --tag dashboard \
   --json > "$fixtures/github-stars-index.json"
 alcove dashboard --home "$home" build --json > "$fixtures/dashboard-build.json"
+run uv run scripts/verify/audit-dashboard-data.py \
+  --home "$home" \
+  --snapshot "$home/dashboard/snapshot.json" \
+  --json > "$fixtures/dashboard-audit.json"
 
 run python3 - "$home/dashboard" "$root/screenshots" "$report" <<'PY'
 from __future__ import annotations
@@ -464,14 +469,15 @@ with serve(dashboard_root) as base_url:
                         planner_filter.count() == 1,
                         body[:300],
                     )
-                    expected_initial_count = "8 OF 75 SHOWN" if label == "mobile" else "12 OF 75 SHOWN"
                     initial_planner_body = page.locator("main").inner_text()
                     add_check(
                         checks,
                         f"{label}_planner_semantic_items",
                         "Dashboard Dense Task 00" in initial_planner_body
+                        and "Dashboard Dense Idea 00" in initial_planner_body
+                        and "Dashboard Dense Routine 00" in initial_planner_body
                         and "SEARCH PLANNER ITEMS" in initial_planner_body
-                        and expected_initial_count in initial_planner_body,
+                        and "75 PLANNER ITEMS" in initial_planner_body,
                         initial_planner_body[:500],
                     )
                     planner_filter.fill("Dashboard Dense Task 41")
@@ -533,6 +539,18 @@ with serve(dashboard_root) as base_url:
                         "Dashboard Dense Routine 00" in routine_chip_body
                         and "Dashboard Dense Task 00" not in routine_chip_body,
                         routine_chip_body[:400],
+                    )
+                    page.get_by_role("button", name="All").click()
+                    page.wait_for_timeout(200)
+                    all_chip_body = page.locator("main").inner_text()
+                    add_check(
+                        checks,
+                        f"{label}_planner_all_chip_restores_all_groups",
+                        "Dashboard Dense Task 00" in all_chip_body
+                        and "Dashboard Dense Idea 00" in all_chip_body
+                        and "Dashboard Dense Routine 00" in all_chip_body
+                        and "75 PLANNER ITEMS" in all_chip_body,
+                        all_chip_body[:500],
                     )
                     page.get_by_role("button", name="High priority").click()
                     page.wait_for_timeout(200)
@@ -637,6 +655,18 @@ with serve(dashboard_root) as base_url:
                 and "Information Radars" in radars_body_after_click,
                 radars_body_after_click[:300],
             )
+            page.goto(f"{base_url}#/pins", wait_until="networkidle")
+            page.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
+            page.wait_for_timeout(100)
+            page.locator(".topbar nav a[href='#/planner']").click()
+            page.wait_for_timeout(300)
+            add_check(
+                checks,
+                f"{label}_nav_click_resets_scroll",
+                page.evaluate("() => window.location.hash") == "#/planner"
+                and page.evaluate("() => window.scrollY") == 0,
+                f"hash={page.evaluate('() => window.location.hash')} scrollY={page.evaluate('() => window.scrollY')}",
+            )
             page.goto(base_url, wait_until="networkidle")
             home_body = page.locator("body").inner_text()
             home_body_lower = home_body.lower()
@@ -658,7 +688,7 @@ with serve(dashboard_root) as base_url:
                 and "managed kbs: 1" in home_main_lower
                 and "mounts: 1" in home_main_lower
                 and "connectors: 1" in home_main_lower
-                and "0 current / 1 configured / 0 stale" in home_main_lower,
+                and "1 active radar / 0 current reports / 0 stale reports" in home_main_lower,
                 home_main[:400],
             )
             search = page.locator("#global-search")

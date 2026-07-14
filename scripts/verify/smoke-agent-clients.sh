@@ -99,7 +99,10 @@ assert_file_contains "$hub/.agents/skills/alcove-hub/SKILL.md" "Alcove"
 assert_file_contains "$kb/AGENTS.md" "Alcove"
 assert_file_contains "$kb/CLAUDE.md" "Alcove"
 assert_file_contains "$kb/.agents/skills/alcove-kb/SKILL.md" "Alcove"
-assert_file_contains "$kb/.agents/skills/social_post_manager/SKILL.md" "Clipsmith"
+assert_file_contains "$kb/.agents/skills/alcove-capture/SKILL.md" "Alcove Capture"
+assert_file_contains "$kb/.agents/skills/alcove-capture/SKILL.md" "Clipsmith"
+assert_file_contains "$kb/.claude/skills/alcove-capture/SKILL.md" "Alcove Capture"
+assert_file_contains "$kb/.claude/skills/alcove-capture/SKILL.md" "Clipsmith"
 assert_file_contains "$kb/.claude/commands/inbox-peek.md" "alcove"
 
 alcove inbox --kb research_notes manual-add "Agent Client Smoke" \

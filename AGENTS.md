@@ -43,6 +43,12 @@ Agent quality gate:
   radars, connectors, mounts, OKF, smoke, eval, or install flows, update the
   related docs or state why no docs change is needed. Use `$alcove-doc-sync`
   for the checklist.
+- Treat entry-mode impact as part of every feature change. Most day-to-day
+  usage starts from the Hub workspace, so new or changed behavior must answer:
+  does `alcove-hub` need routing/protocol updates, does the managed-KB entry
+  need workflow updates, and should global MCP expose only a lightweight tool or
+  command hint? Update the relevant skill templates, MCP toolsets, docs, and
+  smoke/eval coverage in the same change.
 
 Selection rule:
 

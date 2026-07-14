@@ -250,7 +250,7 @@ Target structure:
 
 ```text
 ~/.alcove/mounts/                                  Alcove-owned global index state
-├── mounts.json                                    mount registry
+├── mounts.json                                    mount registry and index policies
 └── indexes/
     └── <mount-id>.json                            indexed file metadata and text snippets
 └── okf/
@@ -274,7 +274,7 @@ Mounted KB rules:
 
 - Do not copy all external files into a managed KB.
 - Do not force external folders into OKF structure.
-- Build lightweight searchable indexes.
+- Build lightweight searchable indexes governed by per-mount index policy.
 - Write derived OKF-compatible Markdown under `~/.alcove/mounts/okf/` so Codex,
   Claude Code, and shell tools can inspect mounted content without custom JSON
   parsing.
@@ -284,16 +284,31 @@ Mounted KB rules:
 Mount indexing rules:
 
 - `mount scan` reads text files with `.md`, `.markdown`, `.txt`, and `.rst`
-  extensions, skipping `.git`, `.hg`, `.svn`, `.venv`, `node_modules`, and
-  `__pycache__`.
+  extensions, then applies the mount index policy before writing JSON or OKF
+  mirrors.
+- Every mount can choose a profile:
+  - `raw`: backward-compatible text-file indexing.
+  - `notes`: broad Markdown/TXT/RST indexing for personal note folders.
+  - `docs`: README, docs, guides, wiki, ADR/RFC, and book source files, with
+    source, build, dependency, archive, and agent-control folders excluded.
+  - `site`: blog/site content such as `content/**`, `posts/**`, `notes/**`,
+    docs, README, and `llms*.txt`.
+  - `capture-bundles`: captured article bundles such as `post.md`,
+    `summary.md`, and `raw/rendered.txt`.
+- Per-mount `include`, `exclude`, and `max_file_size_kb` settings refine the
+  selected profile. `alcove mount scan <id> --dry-run --json` previews indexed
+  and skipped counts without writing derived state.
 - JSON indexes under `indexes/<mount-id>.json` remain the programmatic search
   cache used by `alcove search`.
 - OKF-compatible Markdown indexes are derived caches, not the source of truth:
   `okf/<mount-id>/index.md` has `type: Mount Index` and
-  `schema: okf/mount-index/v1`; each item has `type: Mounted Item` and
-  `schema: okf/mounted-item/v1`.
+  `schema: okf/mount-index/v1`, including the resolved index policy; each item
+  has `type: Mounted Item` and `schema: okf/mounted-item/v1`.
 - Deleted source files are removed from both JSON and OKF-compatible derived indexes
   on the next scan.
+- Code-specific questions should use normal AI-led source inspection over the
+  mounted repository. The mount index is optimized for knowledge retrieval, not
+  complete source-code indexing.
 
 ### 1.3 Connector Knowledge Base
 
@@ -619,6 +634,8 @@ OKF-compatible Markdown surface instead of a YAML prompt dictionary.
 ```text
 ~/.alcove/prompts/
 ├── <prompt-id>.md                               OKF-compatible Markdown source of truth
+├── candidates/
+│   └── index.json                               scanned prompt candidates
 └── index.json                                   derived searchable prompt index
 ```
 
@@ -630,12 +647,27 @@ type: Prompt
 schema: okf/prompt/v1
 title: Code Review Lens
 description: Reusable review prompt.
+kind: eval_prompt
+domain: review
+intent: review
+surfaces:
+  - codex
+  - claude-code
 tags:
   - review
 status: active
 use_cases:
   - PR review
+triggers:
+  - regression review
+inputs:
+  - diff
+outputs:
+  - findings
 source_refs: []
+quality:
+  status: curated
+  score: 0.9
 created_at: "2026-07-09T00:00:00+00:00"
 updated_at: "2026-07-09T00:00:00+00:00"
 ---
@@ -654,15 +686,34 @@ Data location: ~/.alcove/prompts/
 Main format: Markdown + YAML frontmatter
 Derived index: ~/.alcove/prompts/index.json
 Search row type: Prompt
-MCP/CLI: save, search, get, archive, tags, rebuild-index
+MCP/CLI: propose, proposal, save, search, recommend, compose, get, archive, tags, rebuild-index
+CLI-only batch curation: candidates scan/list/promote
 ```
 
 Prompt indexing rules:
 
 - `*.md` prompt files are the source of truth.
+- YAML frontmatter stores retrieval/governance metadata; the `## Prompt` body is
+  copy-ready reusable prompt text and must not duplicate metadata-card sections
+  such as use case, trigger, tags, or output labels.
 - `index.json` is a derived cache for global search and MCP lookups.
-- `prompt save` and confirmed `prompt archive` rebuild the index automatically.
+- `prompt propose` is the default write preflight: it cleans input, fills
+  metadata, generates copy-ready prompt text, finds similar prompts, and
+  recommends create/update/merge/reject.
+- `prompt save --proposal-id <id>` and confirmed `prompt archive` rebuild the
+  index automatically. For `update_existing`, save merges the proposal into the
+  existing active prompt instead of overwriting prior reusable instructions.
+  `prompt save --force` is reserved for explicit repair or operator-confirmed
+  direct writes.
 - `prompt search` and `prompt tags` rebuild the index when it is missing or stale.
+- `prompt recommend` ranks active prompts for a scenario; agents should call
+  `prompt get` before applying full content when they need exact source text.
+- `prompt compose` builds a deterministic Prompt Pack from top-ranked prompts
+  for direct AI reuse without writing a new prompt record.
+- `prompt audit` checks metadata completeness, duplicate content, portability,
+  and quality score so the library stays curated instead of becoming a raw dump.
+- `prompt candidates scan/list/promote` turns historical prompt folders into a
+  scored candidate queue before writing curated prompt records.
 - `prompt rebuild-index` exists for migrations and manual repair.
 - Index rebuild validates strict prompt frontmatter under the Alcove OKF
   Profile: `type: Prompt`,
@@ -801,6 +852,25 @@ entry problems instead of forcing one heavy global install.
    OKF operations. Global pins/prompts/projects/tasks remain available but are
    not the default destination for article/archive work.
 ```
+
+Feature development rule:
+
+```text
+Every user-facing feature change must evaluate all entry profiles:
+├── Hub workspace: primary daily conversation path; update `alcove-hub` routing
+│   or protocol steps when user intent, write flow, or module behavior changes.
+├── Global-lite MCP: keep lightweight by default; expose only safe common tools
+│   or command hints unless the user installs a wider toolset.
+├── Managed KB workspace: keep capture/inbox/OKF workflows KB-scoped and update
+│   KB skills only when the feature affects those workflows.
+└── Local service/dashboard: update deterministic scheduler, dashboard, exports,
+    smoke, and AI eval only when the behavior reaches those surfaces.
+```
+
+Most real usage starts from the Hub workspace, even when the actual work later
+lands in this repository or a managed KB. Development changes should therefore
+include the relevant Hub skill or protocol update in the same diff, or state why
+the feature is internal and needs no Hub-facing behavior.
 
 Profile installation modes:
 
@@ -969,7 +1039,7 @@ lite
 ├── command hints for CLI-only workflows
 ├── search
 ├── pins
-├── prompts save/search/get
+├── prompts propose/save/search/recommend/compose/get
 ├── tasks and ideas
 └── inbox manual-add when a default KB is configured
 

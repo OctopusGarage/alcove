@@ -7,41 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from alcove import __version__
-from alcove.application import AlcoveApplication
-from alcove.automations import AutomationsModule
-from alcove.blog_monitor import BlogMonitorModule
-from alcove.connectors.apple_notes import AppleNotesImportRequest, AppleNotesLocalImportRequest
-from alcove.connectors.chrome_bookmarks import (
-    ChromeBookmarksImportRequest,
-    ChromeBookmarksLocalImportRequest,
-)
-from alcove.connectors.github_stars import GitHubStarsImportRequest, GitHubStarsUrlImportRequest
-from alcove.dashboard import DashboardModule, serve_dashboard
+from alcove.cli_registry import CliDispatchContext, dispatch_cli_command
 from alcove.errors import AlcoveError, WorkspaceNotFoundError
-from alcove.home import AlcoveHome, KnowledgeBaseRecord
-from alcove.inbox_models import InboxNoteRequest
-from alcove.knowledge import (
-    AddConceptRequest,
-    AddEntityRequest,
-    AddQuestionRequest,
-    NoteSourceRequest,
-    ReviseKnowledgeRequest,
-)
-from alcove.linking import LinkSourceRequest
-from alcove.mcp_server import run_mcp_server
-from alcove.mounts import AddMountRequest
-from alcove.paths import compact_user_path
-from alcove.pins import AddPinRequest, UpdatePinRequest
-from alcove.projects import AddProjectRequest
-from alcove.prompts import AddPromptRequest
-from alcove.publishers import PublisherModule
-from alcove.profile_installer import ProfileInstaller
 from alcove.runtime import AlcoveRuntime
-from alcove.search import SearchRequest
-from alcove.service import ServiceModule
-from alcove.tasks import AddIdeaRequest, AddRoutineRequest, AddTaskRequest
-from alcove.usage import UsageRecorder
-from alcove.watchers import WatcherModule
 from alcove.workspace import Workspace
 
 
@@ -72,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     health.add_argument("--deep", action="store_true")
     health.add_argument("--refresh-stale-connectors", action="store_true")
     health.add_argument("--refresh-all-connectors", action="store_true")
+    health.add_argument("--fixture-context", action="store_true", help=argparse.SUPPRESS)
     health.add_argument("--json", action="store_true")
 
     install = sub.add_parser("install", help="Install Alcove MCP config for agents")
@@ -190,6 +159,8 @@ def build_parser() -> argparse.ArgumentParser:
     service_tick.add_argument("--skip-radars", action="store_true")
     service_tick.add_argument("--skip-automations", action="store_true")
     service_tick.add_argument("--skip-publishers", action="store_true")
+    service_tick.add_argument("--skip-mounts", action="store_true")
+    service_tick.add_argument("--mount-refresh-days", type=int, default=2)
     service_tick.add_argument("--skip-health-fix", action="store_true")
     service_tick.add_argument("--today", default="")
     service_tick.add_argument("--json", action="store_true")
@@ -247,13 +218,6 @@ def build_parser() -> argparse.ArgumentParser:
     automation_git.add_argument("--timeout-seconds", type=int, default=60)
     automation_git.add_argument("--notify", action="store_true")
     automation_git.add_argument("--json", action="store_true")
-    automation_import = automation_sub.add_parser(
-        "import-social-radar", help="Import legacy Social Radar automation jobs"
-    )
-    automation_import.add_argument("--home", default=argparse.SUPPRESS)
-    automation_import.add_argument("source_home", nargs="?", default="~/.social_radar")
-    automation_import.add_argument("--json", action="store_true")
-
     watch = sub.add_parser("watch", help="Manage watched external update sources")
     watch.add_argument("--home")
     watch_sub = watch.add_subparsers(dest="watch_command", required=True)
@@ -340,13 +304,6 @@ def build_parser() -> argparse.ArgumentParser:
     radar_status.add_argument("radar_id", nargs="?", default="")
     radar_status.add_argument("--home", default=argparse.SUPPRESS)
     radar_status.add_argument("--json", action="store_true")
-    radar_import = radar_sub.add_parser(
-        "import-social-radar", help="Import legacy Social Radar data"
-    )
-    radar_import.add_argument("source_home", nargs="?", default="~/.social_radar")
-    radar_import.add_argument("--home", default=argparse.SUPPRESS)
-    radar_import.add_argument("--force", action="store_true")
-    radar_import.add_argument("--json", action="store_true")
     radar_preset = radar_sub.add_parser("preset", help="Work with packaged radar presets")
     radar_preset.add_argument("--home", default=argparse.SUPPRESS)
     radar_preset_sub = radar_preset.add_subparsers(dest="radar_preset_command", required=True)
@@ -596,21 +553,118 @@ def build_parser() -> argparse.ArgumentParser:
     prompt.add_argument("--home")
     prompt_sub = prompt.add_subparsers(dest="prompt_command", required=True)
     prompt_save = prompt_sub.add_parser("save", help="Save or update a global prompt")
-    prompt_save.add_argument("title")
-    prompt_save.add_argument("--content", required=True)
+    prompt_save.add_argument("title", nargs="?")
+    prompt_save.add_argument("--content", default="")
+    prompt_save.add_argument("--proposal-id", default="")
+    prompt_save.add_argument("--force", action="store_true")
     prompt_save.add_argument("--description", default="")
     prompt_save.add_argument("--tag", action="append", default=[])
-    prompt_save.add_argument("--tags", default="")
+    prompt_save.add_argument("--tags", action="append", default=[])
     prompt_save.add_argument("--use-case", action="append", default=[])
-    prompt_save.add_argument("--use-cases", default="")
+    prompt_save.add_argument("--use-cases", action="append", default=[])
     prompt_save.add_argument("--source-ref", action="append", default=[])
-    prompt_save.add_argument("--source-refs", default="")
+    prompt_save.add_argument("--source-refs", action="append", default=[])
+    prompt_save.add_argument("--kind", default="full_prompt")
+    prompt_save.add_argument("--domain", default="")
+    prompt_save.add_argument("--intent", default="")
+    prompt_save.add_argument("--surface", action="append", default=[])
+    prompt_save.add_argument("--surfaces", action="append", default=[])
+    prompt_save.add_argument("--trigger", action="append", default=[])
+    prompt_save.add_argument("--triggers", action="append", default=[])
+    prompt_save.add_argument("--input", action="append", default=[])
+    prompt_save.add_argument("--inputs", action="append", default=[])
+    prompt_save.add_argument("--output", action="append", default=[])
+    prompt_save.add_argument("--outputs", action="append", default=[])
+    prompt_save.add_argument("--quality-status", default="")
+    prompt_save.add_argument("--quality-score", type=float)
+    prompt_save.add_argument("--quality-notes", default="")
     prompt_save.add_argument("--json", action="store_true")
+    prompt_propose = prompt_sub.add_parser(
+        "propose", help="Prepare and deduplicate a prompt before saving"
+    )
+    prompt_propose.add_argument("title", nargs="?")
+    prompt_propose.add_argument("--content", required=True)
+    prompt_propose.add_argument("--description", default="")
+    prompt_propose.add_argument("--tag", action="append", default=[])
+    prompt_propose.add_argument("--tags", action="append", default=[])
+    prompt_propose.add_argument("--use-case", action="append", default=[])
+    prompt_propose.add_argument("--use-cases", action="append", default=[])
+    prompt_propose.add_argument("--source-ref", action="append", default=[])
+    prompt_propose.add_argument("--source-refs", action="append", default=[])
+    prompt_propose.add_argument("--kind", default="full_prompt")
+    prompt_propose.add_argument("--domain", default="")
+    prompt_propose.add_argument("--intent", default="")
+    prompt_propose.add_argument("--surface", action="append", default=[])
+    prompt_propose.add_argument("--surfaces", action="append", default=[])
+    prompt_propose.add_argument("--trigger", action="append", default=[])
+    prompt_propose.add_argument("--triggers", action="append", default=[])
+    prompt_propose.add_argument("--input", action="append", default=[])
+    prompt_propose.add_argument("--inputs", action="append", default=[])
+    prompt_propose.add_argument("--output", action="append", default=[])
+    prompt_propose.add_argument("--outputs", action="append", default=[])
+    prompt_propose.add_argument("--quality-status", default="")
+    prompt_propose.add_argument("--quality-score", type=float)
+    prompt_propose.add_argument("--quality-notes", default="")
+    prompt_propose.add_argument(
+        "--ai-eval-provider",
+        choices=["none", "codex", "claude"],
+        default="",
+        help="Optionally run a real Codex/Claude prompt-quality reviewer for this proposal",
+    )
+    prompt_propose.add_argument("--json", action="store_true")
+    prompt_proposal = prompt_sub.add_parser("proposal", help="Show a saved prompt proposal")
+    prompt_proposal.add_argument("proposal_id")
+    prompt_proposal.add_argument("--json", action="store_true")
     prompt_search = prompt_sub.add_parser("search", help="Search reusable global prompts")
     prompt_search.add_argument("query", nargs="?", default="")
     prompt_search.add_argument("--tag", default="")
     prompt_search.add_argument("--status", default="active")
+    prompt_search.add_argument("--kind", default="")
+    prompt_search.add_argument("--domain", default="")
+    prompt_search.add_argument("--surface", default="")
     prompt_search.add_argument("--json", action="store_true")
+    prompt_recommend = prompt_sub.add_parser(
+        "recommend", help="Recommend reusable prompts for a scenario"
+    )
+    prompt_recommend.add_argument("scenario")
+    prompt_recommend.add_argument("--limit", type=int, default=5)
+    prompt_recommend.add_argument("--status", default="active")
+    prompt_recommend.add_argument("--surface", default="")
+    prompt_recommend.add_argument("--json", action="store_true")
+    prompt_compose = prompt_sub.add_parser(
+        "compose", help="Compose a ready-to-use prompt pack for a scenario"
+    )
+    prompt_compose.add_argument("scenario")
+    prompt_compose.add_argument("--limit", type=int, default=4)
+    prompt_compose.add_argument("--status", default="active")
+    prompt_compose.add_argument("--surface", default="")
+    prompt_compose.add_argument("--max-chars-per-prompt", type=int, default=1800)
+    prompt_compose.add_argument("--json", action="store_true")
+    prompt_audit = prompt_sub.add_parser("audit", help="Audit prompt library quality")
+    prompt_audit.add_argument("--status", default="active")
+    prompt_audit.add_argument("--json", action="store_true")
+    prompt_candidates = prompt_sub.add_parser(
+        "candidates", help="Manage imported prompt candidates"
+    )
+    prompt_candidates_sub = prompt_candidates.add_subparsers(
+        dest="prompt_candidates_command", required=True
+    )
+    prompt_candidates_scan = prompt_candidates_sub.add_parser(
+        "scan", help="Scan source files or folders into prompt candidates"
+    )
+    prompt_candidates_scan.add_argument("paths", nargs="+")
+    prompt_candidates_scan.add_argument("--json", action="store_true")
+    prompt_candidates_list = prompt_candidates_sub.add_parser(
+        "list", help="List scanned prompt candidates"
+    )
+    prompt_candidates_list.add_argument("--min-score", type=float, default=0.0)
+    prompt_candidates_list.add_argument("--json", action="store_true")
+    prompt_candidates_promote = prompt_candidates_sub.add_parser(
+        "promote", help="Promote high-quality candidates into the prompt library"
+    )
+    prompt_candidates_promote.add_argument("--min-score", type=float, default=0.72)
+    prompt_candidates_promote.add_argument("--limit", type=int, default=0)
+    prompt_candidates_promote.add_argument("--json", action="store_true")
     prompt_get = prompt_sub.add_parser("get", help="Get a reusable global prompt")
     prompt_get.add_argument("prompt_id")
     prompt_get.add_argument("--json", action="store_true")
@@ -745,13 +799,6 @@ def build_parser() -> argparse.ArgumentParser:
     task_digest.add_argument("--today", default="")
     task_digest.add_argument("--notify", action="store_true")
     task_digest.add_argument("--json", action="store_true")
-    import_social_radar = task_sub.add_parser(
-        "import-social-radar",
-        help="Import todos, ideas, and routines from a Social Radar todos.json file",
-    )
-    import_social_radar.add_argument("--source", default="~/.social_radar/data/todos.json")
-    import_social_radar.add_argument("--json", action="store_true")
-
     mount = sub.add_parser("mount", help="Work with mounted external sources")
     mount.add_argument("--workspace")
     mount.add_argument("--home")
@@ -762,13 +809,25 @@ def build_parser() -> argparse.ArgumentParser:
     mount_add.add_argument("--type", default="local-folder")
     mount_add.add_argument("--tag", action="append", default=[])
     mount_add.add_argument("--tags", default="")
+    mount_add.add_argument("--profile", default="raw")
+    mount_add.add_argument("--include", action="append", default=[])
+    mount_add.add_argument("--exclude", action="append", default=[])
+    mount_add.add_argument("--max-file-size-kb", type=int, default=976)
     mount_add.add_argument("--json", action="store_true")
+    mount_update = mount_sub.add_parser("update", help="Update mount index policy")
+    mount_update.add_argument("mount_id")
+    mount_update.add_argument("--profile", default="")
+    mount_update.add_argument("--include", action="append", default=[])
+    mount_update.add_argument("--exclude", action="append", default=[])
+    mount_update.add_argument("--max-file-size-kb", type=int, default=0)
+    mount_update.add_argument("--json", action="store_true")
     mount_list = mount_sub.add_parser("list", help="List mounts")
     mount_list.add_argument("--status", default="active")
     mount_list.add_argument("--json", action="store_true")
     mount_scan = mount_sub.add_parser("scan", help="Scan mounted sources")
     mount_scan.add_argument("mount_id", nargs="?")
     mount_scan.add_argument("--include-diagnostics", action="store_true")
+    mount_scan.add_argument("--dry-run", action="store_true")
     mount_scan.add_argument("--json", action="store_true")
 
     connector = sub.add_parser("connector", help="Work with external connectors")
@@ -980,8 +1039,17 @@ def _split_csv(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _split_csv_values(values: str | list[str]) -> list[str]:
+    if isinstance(values, str):
+        return _split_csv(values)
+    items: list[str] = []
+    for value in values:
+        items.extend(_split_csv(value))
+    return items
+
+
 def _tags(args) -> list[str]:
-    return [*getattr(args, "tag", []), *_split_csv(getattr(args, "tags", ""))]
+    return [*getattr(args, "tag", []), *_split_csv_values(getattr(args, "tags", []))]
 
 
 def _routine_schedule_from_args(args, *, include_default: bool = False) -> dict[str, Any]:
@@ -1002,7 +1070,7 @@ def _routine_schedule_from_args(args, *, include_default: bool = False) -> dict[
 def _refs(args) -> list[str]:
     return [
         *getattr(args, "source_ref", []),
-        *_split_csv(getattr(args, "source_refs", "")),
+        *_split_csv_values(getattr(args, "source_refs", [])),
     ]
 
 
@@ -1059,62 +1127,6 @@ def _print_search_rows(rows: list[dict]) -> None:
         )
 
 
-def _connector_cli_report(
-    report: dict,
-    *,
-    include_items: bool,
-    include_diff: bool = False,
-) -> dict:
-    payload = dict(report)
-    _move_connector_storage_paths(payload)
-    items = payload.get("items")
-    if isinstance(items, list):
-        payload["item_count"] = len(items)
-        if not include_items:
-            payload.pop("items", None)
-    _summarize_diff_payload(payload, include_diff=include_diff)
-    for source in payload.get("sources", []):
-        if isinstance(source, dict):
-            _move_connector_storage_paths(source)
-            _summarize_diff_payload(source, include_diff=include_diff)
-    return payload
-
-
-def _move_connector_storage_paths(payload: dict) -> None:
-    for key in ["export_file", "export_dir", "index_path", "source_file"]:
-        if key in payload:
-            payload.pop(key)
-
-
-def _connector_storage_path(payload: dict, key: str) -> object:
-    if key in payload:
-        return payload[key]
-    debug = payload.get("debug") if isinstance(payload.get("debug"), dict) else {}
-    storage = debug.get("storage") if isinstance(debug.get("storage"), dict) else {}
-    return storage.get(key, "")
-
-
-def _summarize_diff_payload(payload: dict, *, include_diff: bool) -> None:
-    diff = payload.get("diff")
-    if include_diff or not isinstance(diff, dict):
-        return
-    payload["diff_summary"] = {
-        "added_count": len(diff.get("added") or []),
-        "removed_count": len(diff.get("removed") or []),
-        "updated_count": len(diff.get("updated") or []),
-        "unchanged": int(diff.get("unchanged") or 0),
-    }
-    payload.pop("diff", None)
-
-
-def _kb_dict(record: KnowledgeBaseRecord) -> dict:
-    return {
-        "name": record.name,
-        "path": compact_user_path(record.path),
-        "config_path": compact_user_path(record.config_path),
-    }
-
-
 def _argument_error(parser: argparse.ArgumentParser, message: str) -> int:
     parser.print_usage(sys.stderr)
     print(f"{parser.prog}: error: {message}", file=sys.stderr)
@@ -1134,6 +1146,12 @@ def _json_error_payload(args: argparse.Namespace, exc: Exception) -> dict:
             "remediation_hint": _error_remediation_hint(args, exc),
         }
     }
+    operation = str(getattr(exc, "operation", "") or "")
+    if operation:
+        payload["error"]["operation"] = operation
+    remediation_command = str(getattr(exc, "remediation_command", "") or "")
+    if remediation_command:
+        payload["error"]["remediation_command"] = remediation_command
     if command:
         payload["error"]["command"] = command
     if connector:
@@ -1151,29 +1169,14 @@ def _error_remediation_hint(args: argparse.Namespace, exc: Exception) -> str:
     if connector == "chrome-bookmarks":
         return "Export Chrome bookmarks as valid JSON or pass a readable Chrome Bookmarks file."
     if connector == "apple-notes":
-        return "Check macOS Notes automation permissions, osascript availability, or the Apple Notes export directory."
+        return (
+            "Check that Notes.app is available and unlocked, and grant Automation access "
+            "for this terminal or agent process to control Notes. Then rerun the Apple "
+            "Notes import command."
+        )
     if isinstance(exc, FileNotFoundError):
         return "Check that the referenced path exists and is readable."
     return "Fix the input and retry the command."
-
-
-def _print_install_result(result: dict) -> None:
-    if result.get("profile"):
-        print(f"profile: {result['profile']}")
-    if result.get("home"):
-        print(f"home: {result['home']}")
-    if result.get("kb"):
-        print(f"kb: {result['kb']}")
-    if result.get("path"):
-        print(f"path: {result['path']}")
-    if result.get("workspace"):
-        print(f"workspace: {result['workspace']}")
-    for file in result.get("files", []):
-        action = file.get("action")
-        if action is None:
-            action = "installed" if file.get("installed") else "not_found"
-        target = file.get("target") or "file"
-        print(f"{target} | {action} | {file['path']}")
 
 
 def _workspace_from_args(args) -> Workspace | None:
@@ -1223,1579 +1226,33 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command is None:
             return _argument_error(parser, "the following arguments are required: command")
-        if args.command == "init":
-            workspace = Workspace.init(Path(args.path))
-            print(f"Initialized Alcove workspace at {workspace.root}")
-            return 0
-        if args.command == "status":
-            workspace = Workspace.discover(Path(args.path))
-            status = workspace.status()
-            if args.json:
-                print(json.dumps(status, ensure_ascii=False, indent=2))
-            else:
-                print(f"Alcove workspace: {status['root']}")
-            return 0
-        if args.command == "doctor":
-            runtime = _runtime_from_args(args, require_workspace=True)
-            report = AlcoveApplication(runtime).system.doctor_payload()
-            if args.json:
-                print(json.dumps(report, ensure_ascii=False, indent=2))
-            else:
-                for check in report["checks"]:
-                    print(f"{check['status']} | {check['name']} | {check.get('message', '')}")
-            return 1 if report["status"] == "issues" else 0
-        if args.command == "health":
-            runtime = _health_runtime_from_args(args)
-            report = AlcoveApplication(runtime).system.health_payload(
-                fix=args.fix,
-                strict=args.strict,
-                deep=args.deep,
-                refresh_stale_connectors=args.refresh_stale_connectors,
-                refresh_all_connectors=args.refresh_all_connectors,
-            )
-            if args.json:
-                print(json.dumps(report, ensure_ascii=False, indent=2))
-            else:
-                print(f"status: {report['status']}")
-                for issue in report["issues"]:
-                    print(
-                        f"{issue['severity']} | {issue['module']} | "
-                        f"{issue['kind']} | {issue['path']} | {issue['message']}"
-                    )
-                for action in report["actions"]:
-                    print(f"action | {action['module']} | {action['action']} | {action['path']}")
-            return 1 if report["status"] == "issues" else 0
-        if args.command == "install":
-            runtime = _runtime_from_args(args, require_workspace=True)
-            result = AlcoveApplication(runtime).system.install_payload(
-                args.target,
-                status=args.status,
-                uninstall=args.uninstall,
-                dry_run=args.print_config,
-                mcp_toolset=args.toolset,
-            )
-            if args.json:
-                print(json.dumps(result, ensure_ascii=False, indent=2))
-            elif args.print_config and "configs" in result:
-                for target, config in result["configs"].items():
-                    print(f"# {target}\n{config}")
-            else:
-                _print_install_result(result)
-            return 0
-        if args.command == "home":
-            if args.home_command == "init":
-                home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
-                payload = {
-                    "status": "initialized",
-                    "home": compact_user_path(home.root),
-                    "paths": {
-                        "config": compact_user_path(home.paths().config),
-                        "knowledge_bases": compact_user_path(home.paths().knowledge_bases),
-                        "projects": compact_user_path(home.paths().projects),
-                        "prompts": compact_user_path(home.paths().prompts),
-                        "pins": compact_user_path(home.paths().pins),
-                        "tasks": compact_user_path(home.paths().tasks),
-                        "mounts": compact_user_path(home.paths().mounts),
-                        "connectors": compact_user_path(home.paths().connectors),
-                        "stats": compact_user_path(home.paths().stats),
-                    },
-                }
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False, indent=2))
-                else:
-                    print(f"Alcove home: {home.root}")
-                return 0
-            return _argument_error(parser, "the following arguments are required: home_command")
-        if args.command == "okf":
-            runtime = AlcoveRuntime.resolve(home=args.home)
-            app = AlcoveApplication(runtime)
-            if args.okf_command == "catalog" and args.okf_catalog_command == "build":
-                payload = app.system.okf_catalog_build_payload(
-                    include_all_status=args.include_all_status
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False, indent=2))
-                else:
-                    print(f"okf catalog: {payload['root']} | files: {len(payload['files'])}")
-                return 0
-            return _argument_error(parser, "the following arguments are required: okf_command")
-        if args.command == "usage":
-            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
-            recorder = UsageRecorder(home)
-            if args.usage_command == "summary":
-                payload = recorder.write_rollups()
-            elif args.usage_command == "prune":
-                payload = recorder.prune(retention_days=args.days, now=args.now or None)
-            else:
-                return _argument_error(
-                    parser, "the following arguments are required: usage_command"
-                )
-            if args.json:
-                print(json.dumps(payload, ensure_ascii=False, indent=2))
-            else:
-                print(json.dumps(payload, ensure_ascii=False, indent=2))
-            return 0
-        if args.command == "service":
-            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
-            service_module = ServiceModule(home)
-            dashboard = bool(getattr(args, "dashboard", False))
-            scheduler = bool(getattr(args, "scheduler", False))
-            if args.service_command == "install":
-                service_payload = service_module.install(
-                    dashboard=dashboard,
-                    scheduler=scheduler,
-                    host=args.host,
-                    port=args.port,
-                    interval_minutes=args.interval_minutes,
-                    load=args.load,
-                )
-            elif args.service_command == "uninstall":
-                service_payload = service_module.uninstall(
-                    dashboard=dashboard,
-                    scheduler=scheduler,
-                    unload=args.unload,
-                )
-            elif args.service_command == "status":
-                service_payload = service_module.status(dashboard=dashboard, scheduler=scheduler)
-            elif args.service_command == "start":
-                service_payload = service_module.start(dashboard=dashboard, scheduler=scheduler)
-            elif args.service_command == "stop":
-                service_payload = service_module.stop(dashboard=dashboard, scheduler=scheduler)
-            elif args.service_command == "restart":
-                service_module.stop(dashboard=dashboard, scheduler=scheduler)
-                service_payload = service_module.start(dashboard=dashboard, scheduler=scheduler)
-                service_payload["status"] = "restarted"
-            elif args.service_command == "tick":
-                service_payload = service_module.tick(
-                    retention_days=args.retention_days,
-                    refresh_connectors=not args.skip_connectors,
-                    check_watchers=not args.skip_watchers,
-                    check_blogs=not args.skip_blogs,
-                    check_radars=not args.skip_radars,
-                    run_automations=not args.skip_automations,
-                    run_publishers=not args.skip_publishers,
-                    fix_health=not args.skip_health_fix,
-                    today=args.today,
-                )
-            else:
-                return _argument_error(
-                    parser, "the following arguments are required: service_command"
-                )
-            if args.json:
-                print(json.dumps(service_payload, ensure_ascii=False, indent=2))
-            else:
-                print(json.dumps(service_payload, ensure_ascii=False, indent=2))
-            return 0
-        if args.command == "automation":
-            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
-            automations = AutomationsModule(home)
-            if args.automation_command == "list":
-                payload = automations.list_jobs(status=args.status)
-            elif args.automation_command == "run":
-                payload = automations.run(args.job_id, allow_agent=args.allow_agent)
-            elif args.automation_command == "run-due":
-                payload = automations.run_due(allow_agent=args.allow_agent)
-            elif args.automation_command == "add-shell":
-                payload = automations.add_shell(
-                    name=args.name,
-                    command=args.cmd,
-                    cwd=args.cwd,
-                    ttl_hours=args.ttl_hours,
-                    timeout_seconds=args.timeout_seconds,
-                    notify=args.notify,
-                )
-            elif args.automation_command == "add-git-sync":
-                payload = automations.add_git_sync(
-                    name=args.name,
-                    repo_path=args.repo_path,
-                    commit_message=args.commit_message,
-                    ttl_hours=args.ttl_hours,
-                    timeout_seconds=args.timeout_seconds,
-                    notify=args.notify,
-                )
-            elif args.automation_command == "import-social-radar":
-                payload = automations.import_social_radar(args.source_home)
-            else:
-                return _argument_error(
-                    parser, "the following arguments are required: automation_command"
-                )
-            if args.json:
-                print(json.dumps(payload, ensure_ascii=False, indent=2))
-            else:
-                print(json.dumps(payload, ensure_ascii=False, indent=2))
-            return 0
-        if args.command == "publish":
-            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
-            publishers = PublisherModule(home)
-            if args.publish_command == "init":
-                if args.publisher != "apple-notes":
-                    return _argument_error(parser, "supported publisher: apple-notes")
-                payload = publishers.init_apple_notes(root_folder=args.root_folder)
-            elif args.publish_command == "list":
-                payload = publishers.list(status=args.status)
-            elif args.publish_command == "run":
-                payload = publishers.run(
-                    args.publisher,
-                    target_id=args.target,
-                    force=args.force,
-                )
-            else:
-                return _argument_error(
-                    parser, "the following arguments are required: publish_command"
-                )
-            if args.json:
-                print(json.dumps(payload, ensure_ascii=False, indent=2))
-            else:
-                print(json.dumps(payload, ensure_ascii=False, indent=2))
-            return 0
-        if args.command == "watch":
-            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
-            watcher_module = WatcherModule(home)
-            if args.watch_command == "add":
-                watch_payload = watcher_module.add(
-                    title=args.title,
-                    url=args.url,
-                    kind=args.kind,
-                    kb=args.kb,
-                    tags=_tags(args),
-                    ttl_hours=args.ttl_hours,
-                )
-            elif args.watch_command == "list":
-                watch_payload = watcher_module.list_sources(status=args.status)
-            elif args.watch_command == "check":
-                watch_payload = watcher_module.check(
-                    source_id=args.source_id, stale_only=args.stale
-                )
-            else:
-                return _argument_error(
-                    parser, "the following arguments are required: watch_command"
-                )
-            if args.json:
-                print(json.dumps(watch_payload, ensure_ascii=False, indent=2))
-            else:
-                print(json.dumps(watch_payload, ensure_ascii=False, indent=2))
-            return 0
-        if args.command == "blog":
-            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
-            blog_module = BlogMonitorModule(home)
-            if args.blog_command == "add":
-                blog_payload = blog_module.add(
-                    name=args.name,
-                    url=args.url,
-                    source_id=args.source_id,
-                    discover_method=args.discover,
-                    link_pattern=args.link_pattern,
-                    days_back=args.days_back,
-                    capture_enabled=args.capture,
-                    capture_adapter=args.adapter,
-                    kb=args.kb,
-                    inbox_path=args.inbox_path,
-                    summary_enabled=args.summary,
-                    notify_enabled=args.notify,
-                    tags=_tags(args),
-                    ttl_hours=args.ttl_hours,
-                )
-            elif args.blog_command == "list":
-                blog_payload = blog_module.list_sources(status=args.status)
-            elif args.blog_command == "seed":
-                blog_payload = blog_module.seed(source_id=args.source_id)
-            elif args.blog_command == "check":
-                blog_payload = blog_module.check(
-                    source_id=args.source_id,
-                    stale_only=args.stale,
-                    capture_override=False if args.no_capture else None,
-                    summary_override=True if args.summary else None,
-                    notify_override=True if args.notify else None,
-                )
-            else:
-                return _argument_error(parser, "the following arguments are required: blog_command")
-            if args.json:
-                print(json.dumps(blog_payload, ensure_ascii=False, indent=2))
-            else:
-                print(json.dumps(blog_payload, ensure_ascii=False, indent=2))
-            return 0
-        if args.command == "radar":
-            from alcove.radars import RadarModule
 
-            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
-            radar_module = RadarModule(home)
-            if args.radar_command == "list":
-                radar_payload = radar_module.list(status=args.status)
-            elif args.radar_command == "init":
-                if not args.from_preset:
-                    return _argument_error(
-                        parser, "--from-preset is required for radar init in this release"
-                    )
-                radar_payload = radar_module.init_from_preset(
-                    args.from_preset, args.radar_id, force=args.force
-                )
-            elif args.radar_command == "run":
-                radar_payload = radar_module.run(
-                    args.radar_id,
-                    skip_fetch=args.skip_fetch,
-                    force=args.force,
-                    ai=args.ai,
-                    notify=args.notify,
-                )
-            elif args.radar_command == "status":
-                radar_payload = radar_module.status(args.radar_id)
-            elif args.radar_command == "import-social-radar":
-                radar_payload = radar_module.import_social_radar(
-                    args.source_home,
-                    force=args.force,
-                )
-            elif args.radar_command == "preset":
-                if args.radar_preset_command != "list":
-                    return _argument_error(
-                        parser, "the following arguments are required: radar_preset_command"
-                    )
-                radar_payload = radar_module.preset_list()
-            else:
-                return _argument_error(
-                    parser, "the following arguments are required: radar_command"
-                )
-            if args.json:
-                print(json.dumps(radar_payload, ensure_ascii=False, indent=2))
-            else:
-                print(json.dumps(radar_payload, ensure_ascii=False, indent=2))
-            return 0
-        if args.command == "hub":
-            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
-            profiles = ProfileInstaller(home)
-            if args.hub_command == "init":
-                result = (
-                    profiles.hub_status(
-                        args.path,
-                        default_kb=args.default_kb,
-                        targets=args.target,
-                    )
-                    if args.status
-                    else profiles.hub_init(
-                        args.path,
-                        default_kb=args.default_kb,
-                        targets=args.target,
-                        link=args.link,
-                    )
-                )
-            elif args.hub_command == "install":
-                result = (
-                    profiles.hub_status(
-                        args.path,
-                        default_kb=args.default_kb,
-                        targets=args.target,
-                    )
-                    if args.status
-                    else profiles.hub_install(
-                        args.path,
-                        default_kb=args.default_kb,
-                        targets=args.target,
-                        link=args.link,
-                    )
-                )
-            else:
-                return _argument_error(parser, "the following arguments are required: hub_command")
-            if args.json:
-                print(json.dumps(result, ensure_ascii=False, indent=2))
-            else:
-                _print_install_result(result)
-            return 0
-        if args.command == "global":
-            runtime = _runtime_from_args(args)
-            if args.global_command == "install":
-                result = AlcoveApplication(runtime).system.global_install_payload(
-                    args.target,
-                    status=args.status,
-                    uninstall=args.uninstall,
-                    dry_run=args.print_config,
-                    mcp_toolset=args.toolset,
-                    default_kb=args.default_kb,
-                )
-                if args.json:
-                    print(json.dumps(result, ensure_ascii=False, indent=2))
-                elif args.print_config and "configs" in result:
-                    for target, config in result["configs"].items():
-                        print(f"# {target}\n{config}")
-                else:
-                    _print_install_result(result)
-                return 0
-            return _argument_error(parser, "the following arguments are required: global_command")
-        if args.command == "kb":
-            home = AlcoveHome.init(Path(args.home)) if args.home else AlcoveHome.init()
-            if args.kb_command == "add":
-                record = home.register_knowledge_base(args.name, args.path)
-                payload = {"status": "registered", "knowledge_base": _kb_dict(record)}
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False, indent=2))
-                else:
-                    print(f"knowledge_base: {record.name} | {record.path}")
-                return 0
-            if args.kb_command == "list":
-                records = [_kb_dict(record) for record in home.list_knowledge_bases()]
-                if args.json:
-                    print(json.dumps(records, ensure_ascii=False, indent=2))
-                else:
-                    for record in records:
-                        print(f"{record['name']} | {record['path']}")
-                return 0
-            if args.kb_command == "install":
-                profiles = ProfileInstaller(home)
-                result = (
-                    profiles.kb_status(
-                        args.name,
-                        targets=args.target,
-                    )
-                    if args.status
-                    else profiles.kb_install(
-                        args.name,
-                        targets=args.target,
-                        link=args.link,
-                    )
-                )
-                if args.json:
-                    print(json.dumps(result, ensure_ascii=False, indent=2))
-                else:
-                    _print_install_result(result)
-                return 0
-            return _argument_error(parser, "the following arguments are required: kb_command")
-        if args.command == "inbox":
-            runtime = _runtime_from_args(args, require_workspace=True)
-            app = AlcoveApplication(runtime)
-            if args.inbox_command == "peek":
-                post = app.inbox.inbox_peek_payload()["item"]
-                if post is None:
-                    if args.json:
-                        print(json.dumps({"error": "inbox empty"}, ensure_ascii=False))
-                    else:
-                        print("Inbox is empty.")
-                else:
-                    if args.json:
-                        print(json.dumps(post, ensure_ascii=False, default=str))
-                    else:
-                        _print_inbox_post(post)
-                return 0
-            if args.inbox_command == "read":
-                post = app.inbox.inbox_read_payload(args.name)["item"]
-                if args.json:
-                    print(json.dumps(post, ensure_ascii=False, default=str))
-                else:
-                    _print_inbox_post(post)
-                return 0
-            if args.inbox_command == "classify":
-                draft = app.inbox.inbox_classify_payload(args.name, args.topic)
-                print(json.dumps(draft, ensure_ascii=False, default=str))
-                return 0
-            if args.inbox_command == "archive":
-                payload = app.inbox.inbox_archive_payload(
-                    args.name,
-                    args.topic,
-                    summary=args.summary,
-                    tags=_tags(args) or None,
-                    no_auto_tags=args.no_auto_tags,
-                    supersede_similar=args.supersede_similar,
-                    validate=args.validate,
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False, default=str))
-                else:
-                    _print_path("archive", Path(payload["archive"]))
-                    _print_path("source", Path(payload["source"]))
-                    print(f"tags: {','.join(payload['tags'])}")
-                return 0
-            if args.inbox_command == "note":
-                payload = app.inbox.inbox_note_payload(
-                    InboxNoteRequest(
-                        name=args.name,
-                        topic=args.topic,
-                        summary=args.summary,
-                        tags=_tags(args),
-                        selected_takeaways=_selected_takeaways(args.selected_takeaways),
-                        why=args.why,
-                        connection=args.connection,
-                        action=args.action,
-                        personal_note=args.personal_note,
-                        no_auto_tags=args.no_auto_tags,
-                        supersede_similar=args.supersede_similar,
-                    ),
-                    validate=args.validate,
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False, default=str))
-                else:
-                    _print_path("archive", Path(payload["archive"]))
-                    _print_path("source", Path(payload["source"]))
-                    _print_path("concept", Path(payload["concept"]) if payload["concept"] else None)
-                    print(f"tags: {','.join(payload['tags'])}")
-                return 0
-            if args.inbox_command == "manual-add":
-                payload = app.inbox.inbox_manual_add_payload(
-                    title=args.title,
-                    content=args.content,
-                    source=args.source,
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"inbox: {payload['id']} | {payload['path']}")
-                return 0
-            if args.inbox_command == "todo":
-                print(
-                    json.dumps(
-                        app.inbox.inbox_todo_payload(args.name, args.reason), ensure_ascii=False
-                    )
-                )
-                return 0
-            if args.inbox_command == "delete":
-                print(
-                    json.dumps(
-                        app.inbox.inbox_delete_payload(args.name, confirm=args.confirm),
-                        ensure_ascii=False,
-                    )
-                )
-                return 0
-            return _argument_error(parser, "the following arguments are required: inbox_command")
-        if args.command == "knowledge":
-            runtime = _runtime_from_args(args, require_workspace=True)
-            app = AlcoveApplication(runtime)
-            if args.knowledge_command == "note-source":
-                payload = app.knowledge.note_source_payload(
-                    NoteSourceRequest(
-                        platform=args.platform,
-                        title=args.title,
-                        topic=args.topic,
-                        resource=args.resource,
-                        summary=args.summary,
-                        tags=args.tag,
-                    )
-                )
-                _print_path("source", Path(payload["source_path"]))
-                _print_path(
-                    "concept",
-                    Path(payload["concept_path"]) if payload["concept_path"] else None,
-                )
-                return 0
-            if args.knowledge_command == "add-note":
-                payload = app.knowledge.knowledge_add_concept_payload(
-                    AddConceptRequest(
-                        topic=args.topic,
-                        title=args.title,
-                        summary=args.summary,
-                        tags=_tags(args),
-                    )
-                )
-                print(json.dumps(payload, ensure_ascii=False))
-                return 0
-            if args.knowledge_command == "revise":
-                payload = app.knowledge.knowledge_revise_payload(
-                    ReviseKnowledgeRequest(
-                        path=args.path,
-                        summary=args.summary,
-                        answer=args.answer,
-                        append=args.append,
-                        tags=_tags(args),
-                        source_refs=_refs(args),
-                        reason=args.reason,
-                        status=args.status,
-                    )
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False, indent=2))
-                else:
-                    _print_path("revised", Path(payload["path"]))
-                return 0
-            if args.knowledge_command == "delete":
-                payload = app.knowledge.knowledge_delete_payload(
-                    args.path,
-                    confirm=args.confirm,
-                    reason=args.reason,
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False, indent=2))
-                elif payload["status"] == "preview":
-                    print(
-                        "delete preview: "
-                        f"{payload['type']} | {payload['title']} | {payload['path']}"
-                    )
-                    print("rerun with --confirm to mark this knowledge item as deleted")
-                else:
-                    print(f"deleted: {payload['path']}")
-                return 0
-            if args.knowledge_command == "add-question":
-                payload = app.knowledge.knowledge_add_question_payload(
-                    AddQuestionRequest(
-                        topic=args.topic,
-                        question=args.question,
-                        answer=args.answer,
-                        tags=_tags(args),
-                        source_refs=_refs(args),
-                    )
-                )
-                print(json.dumps(payload, ensure_ascii=False))
-                return 0
-            if args.knowledge_command == "add-entity":
-                payload = app.knowledge.knowledge_add_entity_payload(
-                    AddEntityRequest(
-                        topic=args.topic,
-                        name=args.name,
-                        kind=args.kind,
-                        summary=args.summary,
-                        use_cases=args.use_cases,
-                        open_questions=args.open_questions,
-                        tags=_tags(args),
-                        source_refs=_refs(args),
-                    )
-                )
-                print(json.dumps(payload, ensure_ascii=False))
-                return 0
-            if args.knowledge_command == "promote":
-                payload = app.knowledge.knowledge_promote_payload(
-                    args.source,
-                    topic=args.topic,
-                    summary=args.summary,
-                )
-                print(json.dumps(payload, ensure_ascii=False))
-                return 0
-            if args.knowledge_command == "refresh":
-                result = app.knowledge.knowledge_refresh_payload(
-                    args.topic,
-                    in_place=args.in_place,
-                    summary=args.summary,
-                )
-                print(json.dumps(result, ensure_ascii=False, default=str))
-                return 0
-            if args.knowledge_command == "topics":
-                print(json.dumps(app.knowledge.knowledge_topics_payload(), ensure_ascii=False))
-                return 0
-            return _argument_error(
-                parser,
-                "the following arguments are required: knowledge_command",
-            )
-        if args.command == "search":
-            runtime = _runtime_from_args(args)
-            workspace = runtime.workspace
-            app = AlcoveApplication(runtime)
-            if args.unindexed:
-                if workspace is None:
-                    return _argument_error(parser, "search --unindexed requires --workspace")
-                issues = app.search.search_unindexed_payload()["issues"]
-                if args.json:
-                    print(json.dumps({"issues": issues}, ensure_ascii=False, indent=2))
-                else:
-                    for issue in issues:
-                        print(f"{issue['kind']} | {issue['path']} | {issue['message']}")
-                return 1 if issues else 0
-            if args.tags:
-                results = app.search.search_tags_payload()["tags"][: max(args.limit, 0)]
-                if args.json:
-                    print(json.dumps(results, ensure_ascii=False, indent=2))
-                else:
-                    for row in results:
-                        print(f"{row['tag']} | {row['count']}")
-                return 0
-            if args.tag_doctor:
-                results = app.search.search_tag_doctor_payload()["issues"][: max(args.limit, 0)]
-                if args.json:
-                    print(json.dumps(results, ensure_ascii=False, indent=2))
-                else:
-                    for row in results:
-                        print(f"{row['canonical']} | {row['count']} | {', '.join(row['variants'])}")
-                return 0
-            if args.recent is not None:
-                results = app.search.search_recent_payload(args.recent)["results"]
-            else:
-                results = app.search.search(
-                    SearchRequest(
-                        query=args.query,
-                        type_filter=args.type_filter,
-                        tag=args.tag,
-                        topic=args.topic,
-                        platform=args.platform,
-                        date_from=args.date_from,
-                        date_to=args.date_to,
-                        min_confidence=args.min_confidence,
-                        status=args.status,
-                        limit=args.limit,
-                    ),
-                    surface="cli",
-                )
-            if args.json:
-                print(json.dumps(results, ensure_ascii=False, indent=2))
-            else:
-                _print_search_rows(results)
-            return 0
-        if args.command == "pin":
-            runtime = _runtime_from_args(args)
-            app = AlcoveApplication(runtime)
-            if args.pin_command == "add":
-                payload = app.global_home.pin_add_payload(
-                    AddPinRequest(
-                        title=args.title,
-                        description=args.description,
-                        summary=args.summary,
-                        content=args.content,
-                        kind=args.kind,
-                        tags=_tags(args),
-                        priority=args.priority,
-                        source_refs=_refs(args),
-                        resources=_resources(args),
-                        content_format=args.content_format,
-                    )
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    _print_path("pin", Path(payload["path"]))
-                return 0
-            if args.pin_command == "get":
-                payload = app.global_home.pin_get_payload(args.pin_id)
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False, indent=2))
-                else:
-                    pin = payload["pin"]
-                    print(f"{pin['priority']} | {pin['kind']} | {pin['status']} | {pin['title']}")
-                    if pin.get("summary"):
-                        print(pin["summary"])
-                    if pin.get("content"):
-                        print(pin["content"])
-                return 0
-            if args.pin_command == "list":
-                payload = app.global_home.pin_list_payload(args.tag, args.status)
-                results = payload["pins"]
-                if args.json:
-                    print(json.dumps(results, ensure_ascii=False, indent=2))
-                else:
-                    for pin in results:
-                        print(
-                            f"{pin['priority']} | {pin['kind']} | {pin['status']} | {pin['title']} | {pin['path']}"
-                        )
-                return 0
-            if args.pin_command == "search":
-                payload = app.global_home.pin_search_payload(
-                    query=args.query,
-                    kind=args.kind,
-                    tag=args.tag,
-                    status=args.status,
-                )
-                results = payload["pins"]
-                if args.json:
-                    print(json.dumps(results, ensure_ascii=False, indent=2))
-                else:
-                    for pin in results:
-                        print(
-                            f"{pin['priority']} | {pin['kind']} | {pin['status']} | {pin['title']} | {pin['path']}"
-                        )
-                return 0
-            if args.pin_command == "update":
-                payload = app.global_home.pin_update_payload(
-                    UpdatePinRequest(
-                        pin_id=args.pin_id,
-                        title=args.title,
-                        description=args.description,
-                        summary=args.summary,
-                        content=args.content,
-                        kind=args.kind,
-                        tags=_optional_tags(args),
-                        priority=args.priority,
-                        source_refs=_optional_refs(args),
-                        resources=_optional_resources(args),
-                        status=args.status,
-                        content_format=args.content_format,
-                    )
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"{payload['status']}: {payload['path']}")
-                return 0
-            if args.pin_command == "rebuild-index":
-                payload = app.global_home.pin_rebuild_index_payload()
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"{payload['status']}: {payload['index_path']}")
-                return 0
-            if args.pin_command == "render-html":
-                payload = app.global_home.pin_render_html_payload(args.output)
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"{payload['status']}: {payload['path']}")
-                return 0
-            if args.pin_command == "archive":
-                payload = app.global_home.pin_archive_payload(args.pin_id, confirm=args.confirm)
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"{payload['status']}: {payload['path']}")
-                return 0
-            return _argument_error(parser, "the following arguments are required: pin_command")
-        if args.command == "project":
-            runtime = _runtime_from_args(args)
-            app = AlcoveApplication(runtime)
-            if args.project_command == "add":
-                payload = app.global_home.project_add_payload(
-                    AddProjectRequest(alias=args.alias, path=args.path, note=args.note)
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"project: {payload['project']['alias']} | {payload['project']['path']}")
-                return 0
-            if args.project_command == "get":
-                payload = app.global_home.project_get_payload(args.alias)
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    project = payload["project"]
-                    print(f"{project['alias']} | {project['path']} | {project['note']}")
-                return 0
-            if args.project_command == "find":
-                payload = app.global_home.project_find_payload(args.keyword)
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False, indent=2))
-                else:
-                    for project in payload["projects"]:
-                        print(f"{project['source']} | {project['alias']} | {project['path']}")
-                return 0
-            if args.project_command == "list":
-                payload = app.global_home.project_list_payload()
-                if args.json:
-                    print(json.dumps(payload["projects"], ensure_ascii=False, indent=2))
-                else:
-                    for project in payload["projects"]:
-                        print(f"{project['alias']} | {project['path']} | {project['note']}")
-                return 0
-            if args.project_command == "remove":
-                payload = app.global_home.project_remove_payload(args.alias)
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"{payload['status']}: {args.alias}")
-                return 0
-            if args.project_command == "roots-set":
-                payload = app.global_home.project_roots_set_payload(args.roots)
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False, indent=2))
-                else:
-                    print("roots: " + ", ".join(payload["roots"]))
-                return 0
-            return _argument_error(parser, "the following arguments are required: project_command")
-        if args.command == "prompt":
-            runtime = _runtime_from_args(args)
-            app = AlcoveApplication(runtime)
-            if args.prompt_command == "save":
-                payload = app.global_home.prompt_save_payload(
-                    AddPromptRequest(
-                        title=args.title,
-                        content=args.content,
-                        description=args.description,
-                        tags=_tags(args),
-                        use_cases=args.use_case + _split_csv(args.use_cases),
-                        source_refs=_refs(args),
-                    )
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"prompt: {payload['prompt']['id']} | {payload['path']}")
-                return 0
-            if args.prompt_command == "search":
-                payload = app.global_home.prompt_search_payload(
-                    query=args.query,
-                    tag=args.tag,
-                    status=args.status,
-                )
-                if args.json:
-                    print(json.dumps(payload["prompts"], ensure_ascii=False, indent=2))
-                else:
-                    for prompt in payload["prompts"]:
-                        print(f"{prompt['status']} | {prompt['title']} | {prompt['id']}")
-                return 0
-            if args.prompt_command == "get":
-                payload = app.global_home.prompt_get_payload(args.prompt_id)
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False, indent=2))
-                else:
-                    prompt = payload["prompt"]
-                    print(f"# {prompt['title']}\n\n{prompt['content']}")
-                return 0
-            if args.prompt_command == "archive":
-                payload = app.global_home.prompt_archive_payload(
-                    args.prompt_id,
-                    confirm=args.confirm,
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"{payload['status']}: {payload['path']}")
-                return 0
-            if args.prompt_command == "tags":
-                payload = app.global_home.prompt_tags_payload()
-                if args.json:
-                    print(json.dumps(payload["tags"], ensure_ascii=False, indent=2))
-                else:
-                    for tag in payload["tags"]:
-                        print(f"{tag['tag']} | {tag['count']}")
-                return 0
-            if args.prompt_command == "rebuild-index":
-                payload = app.global_home.prompt_rebuild_index_payload()
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False, indent=2))
-                else:
-                    print(f"index: {payload['index_path']} | prompts: {payload['count']}")
-                return 0
-            return _argument_error(parser, "the following arguments are required: prompt_command")
-        if args.command == "idea":
-            runtime = _runtime_from_args(args)
-            app = AlcoveApplication(runtime)
-            if args.idea_command == "add":
-                payload = app.global_home.idea_add_payload(
-                    AddIdeaRequest(
-                        title=args.title,
-                        notes=args.notes,
-                        tags=_tags(args),
-                    )
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"idea: {payload['idea']['id']}")
-                return 0
-            if args.idea_command == "list":
-                payload = app.global_home.idea_list_payload(args.status)
-                results = payload["ideas"]
-                if args.json:
-                    print(json.dumps(results, ensure_ascii=False, indent=2))
-                else:
-                    for idea in results:
-                        print(f"{idea['status']} | {idea['title']} | {idea['id']}")
-                return 0
-            if args.idea_command == "promote":
-                payload = app.global_home.idea_promote_payload(
-                    args.idea_id,
-                    priority=args.priority,
-                    due=args.due,
-                    notes=args.notes,
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"task: {payload['task']['id']}")
-                return 0
-            if args.idea_command == "edit":
-                payload = app.global_home.idea_edit_payload(
-                    args.idea_id,
-                    title=args.title,
-                    notes=args.notes,
-                    tags=_optional_tags(args),
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"idea: {payload['idea']['id']}")
-                return 0
-            if args.idea_command == "archive":
-                payload = app.global_home.idea_archive_payload(args.idea_id)
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"idea: {payload['idea']['id']}")
-                return 0
-            if args.idea_command == "promote-routine":
-                payload = app.global_home.idea_promote_routine_payload(
-                    args.idea_id,
-                    priority=args.priority,
-                    next_due=args.next_due,
-                    notes=args.notes,
-                    schedule=_routine_schedule_from_args(args, include_default=True),
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"routine: {payload['routine']['id']}")
-                return 0
-            return _argument_error(parser, "the following arguments are required: idea_command")
-        if args.command == "task":
-            runtime = _runtime_from_args(args)
-            app = AlcoveApplication(runtime)
-            if args.task_command == "add":
-                payload = app.global_home.task_add_payload(
-                    AddTaskRequest(
-                        title=args.title,
-                        notes=args.notes,
-                        tags=_tags(args),
-                        priority=args.priority,
-                        due=args.due,
-                    )
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"task: {payload['task']['id']}")
-                return 0
-            if args.task_command == "list":
-                payload = app.global_home.task_list_payload(args.status)
-                results = payload["tasks"]
-                if args.json:
-                    print(json.dumps(results, ensure_ascii=False, indent=2))
-                else:
-                    for task in results:
-                        print(
-                            f"{task['priority']} | {task['status']} | "
-                            f"{task['title']} | {task['id']}"
-                        )
-                return 0
-            if args.task_command == "edit":
-                payload = app.global_home.task_edit_payload(
-                    args.task_id,
-                    title=args.title,
-                    notes=args.notes,
-                    tags=_optional_tags(args),
-                    priority=args.priority,
-                    due=args.due,
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"task: {payload['task']['id']}")
-                return 0
-            if args.task_command == "complete":
-                payload = app.global_home.task_complete_payload(args.task_id)
-                print(
-                    json.dumps(payload, ensure_ascii=False) if args.json else payload["task"]["id"]
-                )
-                return 0
-            if args.task_command == "cancel":
-                payload = app.global_home.task_cancel_payload(args.task_id)
-                print(
-                    json.dumps(payload, ensure_ascii=False) if args.json else payload["task"]["id"]
-                )
-                return 0
-            if args.task_command == "routine-add":
-                payload = app.global_home.routine_add_payload(
-                    AddRoutineRequest(
-                        title=args.title,
-                        notes=args.notes,
-                        tags=_tags(args),
-                        priority=args.priority,
-                        every_days=args.every_days,
-                        next_due=args.next_due,
-                        schedule=_routine_schedule_from_args(args),
-                    )
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"routine: {payload['routine']['id']}")
-                return 0
-            if args.task_command == "routine-list":
-                payload = app.global_home.routine_list_payload(args.status)
-                results = payload["routines"]
-                if args.json:
-                    print(json.dumps(results, ensure_ascii=False, indent=2))
-                else:
-                    for routine in results:
-                        print(
-                            f"{routine['priority']} | {routine['status']} | "
-                            f"{routine['next_due']} | {routine['title']} | {routine['id']}"
-                        )
-                return 0
-            if args.task_command == "routine-edit":
-                payload = app.global_home.routine_edit_payload(
-                    args.routine_id,
-                    title=args.title,
-                    notes=args.notes,
-                    tags=_optional_tags(args),
-                    priority=args.priority,
-                    schedule=_routine_schedule_from_args(args) or None,
-                    next_due=args.next_due,
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"routine: {payload['routine']['id']}")
-                return 0
-            if args.task_command == "routine-pause":
-                payload = app.global_home.routine_pause_payload(args.routine_id)
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"routine: {payload['routine']['id']}")
-                return 0
-            if args.task_command == "routine-resume":
-                payload = app.global_home.routine_resume_payload(args.routine_id, today=args.today)
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"routine: {payload['routine']['id']}")
-                return 0
-            if args.task_command == "routine-archive":
-                payload = app.global_home.routine_archive_payload(args.routine_id)
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"routine: {payload['routine']['id']}")
-                return 0
-            if args.task_command == "materialize-due":
-                payload = app.global_home.routine_materialize_due_payload(args.today)
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"created: {len(payload['created'])}")
-                return 0
-            if args.task_command == "digest":
-                payload = app.global_home.task_digest_payload(
-                    period=args.period,
-                    today=args.today,
-                    notify=args.notify,
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(payload["text"])
-                return 0
-            if args.task_command == "import-social-radar":
-                payload = app.global_home.task_import_social_radar_payload(args.source)
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False, indent=2))
-                else:
-                    print(
-                        "imported social-radar: "
-                        f"{payload['tasks']['imported']} tasks, "
-                        f"{payload['ideas']['imported']} ideas, "
-                        f"{payload['routines']['imported']} routines"
-                    )
-                return 0
-            return _argument_error(parser, "the following arguments are required: task_command")
-        if args.command == "mount":
-            runtime = _runtime_from_args(args)
-            app = AlcoveApplication(runtime)
-            if args.mount_command == "add":
-                payload = app.external.mount_add_payload(
-                    AddMountRequest(
-                        path=args.path,
-                        name=args.name,
-                        mount_type=args.type,
-                        tags=_tags(args),
-                    )
-                )
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False))
-                else:
-                    print(f"mount: {payload['mount']['id']}")
-                return 0
-            if args.mount_command == "list":
-                payload = app.external.mount_list_payload(args.status)
-                results = payload["mounts"]
-                if args.json:
-                    print(json.dumps(results, ensure_ascii=False, indent=2))
-                else:
-                    for mount in results:
-                        print(f"{mount['type']} | {mount['name']} | {mount['path']}")
-                return 0
-            if args.mount_command == "scan":
-                report = app.external.mount_scan_payload(
-                    args.mount_id,
-                    include_diagnostics=args.include_diagnostics,
-                )
-                if args.json:
-                    print(json.dumps(report, ensure_ascii=False, indent=2))
-                else:
-                    print(f"scanned: {report['scanned']}, skipped: {report['skipped']}")
-                return 0
-            return _argument_error(parser, "the following arguments are required: mount_command")
-        if args.command == "connector":
-            runtime = _runtime_from_args(args)
-            app = AlcoveApplication(runtime)
-            if args.connector_command == "status":
-                payload = app.external.connector_status_payload(args.connector)
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False, indent=2))
-                else:
-                    for source in payload["sources"]:
-                        print(
-                            f"{source['connector']}/{source['id']} | {source['status']} | "
-                            f"{source['item_count']} items | checked: {source['checked_at']}"
-                        )
-                return 0
-            if args.connector_command == "refresh":
-                payload = app.external.connector_refresh_payload(
-                    connector=args.connector,
-                    stale_only=not args.all,
-                )
-                if args.json:
-                    print(
-                        json.dumps(
-                            _connector_cli_report(
-                                payload,
-                                include_items=False,
-                                include_diff=args.include_diff,
-                            ),
-                            ensure_ascii=False,
-                            indent=2,
-                        )
-                    )
-                else:
-                    print(f"refreshed: {payload['refreshed']}, skipped: {payload['skipped']}")
-                return 0
-            if args.connector_command == "fetch":
-                payload = app.external.connector_fetch_payload(args.item_path)
-                if args.json:
-                    print(json.dumps(payload, ensure_ascii=False, indent=2))
-                else:
-                    print(
-                        f"{payload['connector']} | {payload['relative_path']} | {payload['item']['title']}"
-                    )
-                return 0
-            if args.connector_command == "apple-notes":
-                if args.apple_notes_command == "index":
-                    report = app.external.apple_notes_index_payload(
-                        AppleNotesImportRequest(
-                            export_dir=args.export_dir,
-                            tags=_tags(args),
-                        )
-                    )
-                    if args.json:
-                        print(
-                            json.dumps(
-                                _connector_cli_report(
-                                    report,
-                                    include_items=args.include_items,
-                                ),
-                                ensure_ascii=False,
-                                indent=2,
-                            )
-                        )
-                    else:
-                        print(f"indexed: {report['scanned']}, skipped: {report['skipped']}")
-                    return 0
-                if args.apple_notes_command == "import-local":
-                    report = app.external.apple_notes_import_local_payload(
-                        AppleNotesLocalImportRequest(
-                            export_dir=args.export_dir,
-                            tags=_tags(args),
-                            source_id=args.source_id,
-                        )
-                    )
-                    if args.json:
-                        print(
-                            json.dumps(
-                                _connector_cli_report(
-                                    report,
-                                    include_items=args.include_items,
-                                    include_diff=args.include_diff,
-                                ),
-                                ensure_ascii=False,
-                                indent=2,
-                            )
-                        )
-                    else:
-                        export_dir = _connector_storage_path(report, "export_dir")
-                        print(
-                            f"imported: {report['exported']}, indexed: {report['scanned']}, "
-                            f"skipped: {report['skipped']}, export: {export_dir}"
-                        )
-                    return 0
-                if args.apple_notes_command == "refresh":
-                    payload = app.external.connector_refresh_payload(
-                        connector="apple-notes",
-                        stale_only=not args.force,
-                        source_id=args.source_id,
-                    )
-                    if args.json:
-                        print(
-                            json.dumps(
-                                _connector_cli_report(
-                                    payload,
-                                    include_items=False,
-                                    include_diff=args.include_diff,
-                                ),
-                                ensure_ascii=False,
-                                indent=2,
-                            )
-                        )
-                    else:
-                        print(f"refreshed: {payload['refreshed']}, skipped: {payload['skipped']}")
-                    return 0
-                return _argument_error(
-                    parser,
-                    "the following arguments are required: apple_notes_command",
-                )
-            if args.connector_command == "github-stars":
-                if args.github_stars_command == "index":
-                    report = app.external.github_stars_index_payload(
-                        GitHubStarsImportRequest(
-                            export_file=args.export_file,
-                            tags=_tags(args),
-                        )
-                    )
-                    if args.json:
-                        print(
-                            json.dumps(
-                                _connector_cli_report(
-                                    report,
-                                    include_items=args.include_items,
-                                ),
-                                ensure_ascii=False,
-                                indent=2,
-                            )
-                        )
-                    else:
-                        print(f"indexed: {report['scanned']}, skipped: {report['skipped']}")
-                    return 0
-                if args.github_stars_command == "import-url":
-                    report = app.external.github_stars_import_url_payload(
-                        GitHubStarsUrlImportRequest(
-                            source=args.source,
-                            export_file=args.export_file,
-                            tags=_tags(args),
-                            limit=args.limit,
-                            max_pages=args.max_pages,
-                        )
-                    )
-                    if args.json:
-                        print(
-                            json.dumps(
-                                _connector_cli_report(
-                                    report,
-                                    include_items=args.include_items,
-                                    include_diff=args.include_diff,
-                                ),
-                                ensure_ascii=False,
-                                indent=2,
-                            )
-                        )
-                    else:
-                        export_file = _connector_storage_path(report, "export_file")
-                        print(
-                            f"imported: {report['exported']}, indexed: {report['scanned']}, "
-                            f"skipped: {report['skipped']}, export: {export_file}"
-                        )
-                    return 0
-                if args.github_stars_command == "refresh":
-                    payload = app.external.connector_refresh_payload(
-                        connector="github-stars",
-                        stale_only=not args.force,
-                        source_id=args.source_id,
-                    )
-                    if args.json:
-                        print(
-                            json.dumps(
-                                _connector_cli_report(
-                                    payload,
-                                    include_items=False,
-                                    include_diff=args.include_diff,
-                                ),
-                                ensure_ascii=False,
-                                indent=2,
-                            )
-                        )
-                    else:
-                        print(f"refreshed: {payload['refreshed']}, skipped: {payload['skipped']}")
-                    return 0
-                return _argument_error(
-                    parser,
-                    "the following arguments are required: github_stars_command",
-                )
-            if args.connector_command == "chrome-bookmarks":
-                if args.chrome_bookmarks_command == "index":
-                    report = app.external.chrome_bookmarks_index_payload(
-                        ChromeBookmarksImportRequest(
-                            export_file=args.export_file,
-                            tags=_tags(args),
-                        )
-                    )
-                    if args.json:
-                        print(
-                            json.dumps(
-                                _connector_cli_report(
-                                    report,
-                                    include_items=args.include_items,
-                                ),
-                                ensure_ascii=False,
-                                indent=2,
-                            )
-                        )
-                    else:
-                        print(f"indexed: {report['scanned']}, skipped: {report['skipped']}")
-                    return 0
-                if args.chrome_bookmarks_command == "import-local":
-                    report = app.external.chrome_bookmarks_import_local_payload(
-                        ChromeBookmarksLocalImportRequest(
-                            source_file=args.source_file,
-                            profile=args.profile,
-                            source_id=args.source_id,
-                            tags=_tags(args),
-                        )
-                    )
-                    if args.json:
-                        print(
-                            json.dumps(
-                                _connector_cli_report(
-                                    report,
-                                    include_items=args.include_items,
-                                    include_diff=args.include_diff,
-                                ),
-                                ensure_ascii=False,
-                                indent=2,
-                            )
-                        )
-                    else:
-                        source_file = _connector_storage_path(report, "source_file")
-                        print(
-                            f"imported: {report['exported']}, indexed: {report['scanned']}, "
-                            f"skipped: {report['skipped']}, source: {source_file}"
-                        )
-                    return 0
-                if args.chrome_bookmarks_command == "refresh":
-                    payload = app.external.connector_refresh_payload(
-                        connector="chrome-bookmarks",
-                        stale_only=not args.force,
-                        source_id=args.source_id,
-                    )
-                    if args.json:
-                        print(
-                            json.dumps(
-                                _connector_cli_report(
-                                    payload,
-                                    include_items=False,
-                                    include_diff=args.include_diff,
-                                ),
-                                ensure_ascii=False,
-                                indent=2,
-                            )
-                        )
-                    else:
-                        print(f"refreshed: {payload['refreshed']}, skipped: {payload['skipped']}")
-                    return 0
-                return _argument_error(
-                    parser,
-                    "the following arguments are required: chrome_bookmarks_command",
-                )
-            return _argument_error(
-                parser,
-                "the following arguments are required: connector_command",
-            )
-        if args.command == "link":
-            runtime = _runtime_from_args(args, require_workspace=True)
-            if args.link_command == "source":
-                result = AlcoveApplication(runtime).external.link_source_payload(
-                    LinkSourceRequest(
-                        item_path=args.item_path,
-                        topic=args.topic,
-                        summary=args.summary,
-                        create_concept=args.create_concept,
-                    )
-                )
-                if args.json:
-                    print(json.dumps(result, ensure_ascii=False, indent=2))
-                else:
-                    _print_path("source", Path(result["source_path"]))
-                    _print_path(
-                        "concept",
-                        Path(result["concept_path"]) if result["concept_path"] else None,
-                    )
-                return 0
-            return _argument_error(
-                parser,
-                "the following arguments are required: link_command",
-            )
-        if args.command == "export":
-            runtime = _runtime_from_args(args)
-            if args.export_command == "global":
-                result = AlcoveApplication(runtime).system.export_global_payload(args.output_dir)
-                if args.json:
-                    print(json.dumps(result, ensure_ascii=False, indent=2))
-                else:
-                    print(f"exported: {result['output_dir']}")
-                return 0
-            if args.export_command == "kb":
-                result = AlcoveApplication(runtime).system.export_kb_payload(
-                    args.name, args.output_dir
-                )
-                if args.json:
-                    print(json.dumps(result, ensure_ascii=False, indent=2))
-                else:
-                    print(f"exported: {result['output_dir']}")
-                return 0
-            if args.export_command == "all":
-                result = AlcoveApplication(runtime).system.export_all_payload(args.output_dir)
-                if args.json:
-                    print(json.dumps(result, ensure_ascii=False, indent=2))
-                else:
-                    print(f"exported: {result['output_dir']}")
-                return 0
-            return _argument_error(
-                parser,
-                "the following arguments are required: export_command",
-            )
-        if args.command == "dashboard":
-            home = AlcoveHome.init(args.home or None)
-            module = DashboardModule(home=home)
-            if args.dashboard_command == "build":
-                result = module.build(
-                    args.output or None,
-                    build_frontend=not args.skip_frontend_build,
-                )
-                if args.json:
-                    print(json.dumps(result, ensure_ascii=False, indent=2))
-                else:
-                    print(f"dashboard: {result['index']}")
-                return 0
-            if args.dashboard_command == "import-pins":
-                result = module.import_pins(
-                    regular_file=args.regular_file or None,
-                    todo_file=args.todo_file or None,
-                )
-                if args.json:
-                    print(json.dumps(result, ensure_ascii=False, indent=2))
-                else:
-                    for kind, payload in result.items():
-                        if isinstance(payload, dict) and "imported" in payload:
-                            print(f"{kind}: {payload['imported']} pins")
-                        else:
-                            print(f"{kind}: {payload}")
-                return 0
-            return _argument_error(
-                parser,
-                "the following arguments are required: dashboard_command",
-            )
-        if args.command == "serve":
-            if args.mcp:
-                workspace = _workspace_from_args(args)
-                workspace_arg = str(workspace.root) if workspace is not None else "."
-                run_mcp_server(workspace_arg, args.home or None, toolset=args.toolset)
-                return 0
-            if args.dashboard:
-                serve_dashboard(
-                    AlcoveHome.init(args.home or None),
-                    host=args.host,
-                    port=args.port,
-                )
-                return 0
-            return _argument_error(parser, "serve requires --mcp or --dashboard")
-        if args.command == "validate":
-            runtime = _runtime_from_args(args, require_workspace=True)
-            issues = AlcoveApplication(runtime).system.validate_payload(
-                strict_quality=args.strict_quality
-            )["issues"]
-            if args.json:
-                print(json.dumps({"issues": issues}, ensure_ascii=False, indent=2))
-            else:
-                for issue in issues:
-                    print(f"{issue['kind']} | {issue['path']} | {issue['message']}")
-            return 1 if issues else 0
-        if args.command == "gardener":
-            runtime = _runtime_from_args(args, require_workspace=True)
-            payload = AlcoveApplication(runtime).system.gardener_payload(prune=args.prune)
-            if args.json:
-                print(json.dumps(payload, ensure_ascii=False, indent=2))
-            else:
-                for issue in payload["issues"]:
-                    print(f"{issue['kind']} | {issue['path']} | {issue['message']}")
-                for action in payload["actions"]:
-                    print(f"{action['action']} | {action['path']}")
-            return 0
-        return _argument_error(parser, "the following arguments are required: command")
+        def workspace_runtime(value: argparse.Namespace) -> AlcoveRuntime:
+            return _runtime_from_args(value, require_workspace=True)
+
+        return dispatch_cli_command(
+            args,
+            CliDispatchContext(
+                parser=parser,
+                runtime_from_args=_runtime_from_args,
+                workspace_runtime_from_args=workspace_runtime,
+                health_runtime_from_args=_health_runtime_from_args,
+                workspace_from_args=_workspace_from_args,
+                tags_from_args=_tags,
+                optional_tags_from_args=_optional_tags,
+                refs_from_args=_refs,
+                optional_refs_from_args=_optional_refs,
+                resources_from_args=_resources,
+                optional_resources_from_args=_optional_resources,
+                selected_takeaways_from_args=_selected_takeaways,
+                routine_schedule_from_args=_routine_schedule_from_args,
+                split_csv_values=_split_csv_values,
+                print_inbox_post=_print_inbox_post,
+                print_path=_print_path,
+                print_search_rows=_print_search_rows,
+                argument_error=_argument_error,
+            ),
+        )
     except (AlcoveError, FileExistsError, FileNotFoundError, ValueError) as exc:
         if "args" in locals() and bool(getattr(args, "json", False)):
             print(json.dumps(_json_error_payload(args, exc), ensure_ascii=False, indent=2))

@@ -31,7 +31,7 @@ def test_radar_reports_for_eval_includes_ai_notification_contract() -> None:
                 {
                     "name": "stocks_ai_notify_contract",
                     "status": "passed",
-                    "detail": '{"ai":{"status":"failed"},"message_excerpt":"AI summary failed; sending deterministic radar report."}',
+                    "detail": '{"ai":{"status":"failed"},"message_excerpt":"AI summary unavailable; sending deterministic radar report."}',
                 },
             ],
         }
@@ -46,7 +46,7 @@ def test_radar_reports_for_eval_includes_ai_notification_contract() -> None:
         {
             "check": "stocks_ai_notify_contract",
             "status": "passed",
-            "detail": '{"ai":{"status":"failed"},"message_excerpt":"AI summary failed; sending deterministic radar report."}',
+            "detail": '{"ai":{"status":"failed"},"message_excerpt":"AI summary unavailable; sending deterministic radar report."}',
         },
     ]
 
@@ -216,7 +216,11 @@ def _write_minimal_packet_artifacts(
             ],
         },
     )
+    _write_json(fixtures / "prompt-propose.json", {})
+    _write_json(fixtures / "prompt-proposal.json", {})
     _write_json(fixtures / "prompt-search.json", [])
+    _write_json(fixtures / "prompt-recommend.json", [])
+    _write_json(fixtures / "prompt-compose.json", {})
     _write_json(fixtures / "task-add.json", {})
     _write_json(fixtures / "idea-add.json", {})
     _write_json(fixtures / "routine-add.json", {})
@@ -234,7 +238,10 @@ def _write_minimal_packet_artifacts(
     _write_json(fixtures / "apple-notes-search.json", [])
     _write_json(
         fixtures / "apple-notes-fetch.json",
-        {"status": "skipped", "reason": "No synthetic Apple Notes fixture search result"},
+        {
+            "status": "skipped",
+            "reason": "No synthetic Apple Notes fixture search result",
+        },
     )
     _write_json(fixtures / "chrome-bookmarks-search.json", [])
     _write_json(fixtures / "multilingual-knowledge-search.json", [])
@@ -252,13 +259,14 @@ def _write_minimal_packet_artifacts(
     _write_json(fixtures / "radar-list.json", {"definitions": [{"id": "sports-news"}]})
     _write_json(
         fixtures / "radar-run.json",
-        {"status": "completed", "id": "sports-news", "included": 1, "reports": {"md": "report.md"}},
+        {
+            "status": "completed",
+            "id": "sports-news",
+            "included": 1,
+            "reports": {"md": "report.md"},
+        },
     )
     _write_json(fixtures / "radar-status.json", {"radars": [{"id": "sports-news"}]})
-    _write_json(
-        fixtures / "radar-import-social-radar.json",
-        {"status": "imported", "count": 3, "radars": [{"id": "tech-news"}]},
-    )
     _write_json(fixtures / "link-source.json", {})
     _write_json(fixtures / "dashboard-build.json", {})
     _write_json(fixtures / "dashboard-render.json", {})
@@ -480,7 +488,10 @@ def _write_extended_smoke_reports(tmp_path: Path) -> dict[str, Path]:
             "status": "passed",
             "radars": ["tech-news", "world-news", "stocks", "sports-news"],
             "checks": [
-                {"name": "sports-news_mobile_no_horizontal_overflow", "status": "passed"},
+                {
+                    "name": "sports-news_mobile_no_horizontal_overflow",
+                    "status": "passed",
+                },
                 {
                     "name": "sports-news_brief",
                     "status": "passed",
@@ -703,6 +714,22 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
         },
     )
     _write_json(fixtures / "prompt-search.json", [{"title": "Smoke Prompt"}])
+    _write_json(
+        fixtures / "prompt-propose.json",
+        {"id": "proposal-1", "action": "create_new", "request": {"title": "Smoke Prompt"}},
+    )
+    _write_json(
+        fixtures / "prompt-proposal.json",
+        {"id": "proposal-1", "request": {"title": "Smoke Prompt", "outputs": ["findings"]}},
+    )
+    _write_json(
+        fixtures / "prompt-recommend.json",
+        [{"prompt": {"title": "Smoke Prompt"}, "score": 1.0}],
+    )
+    _write_json(
+        fixtures / "prompt-compose.json",
+        {"sources": [{"title": "Smoke Prompt"}], "prompt": "Smoke Prompt guidance."},
+    )
     _write_json(fixtures / "project-add.json", {"project": {"alias": "project-alpha"}})
     _write_json(
         fixtures / "project-find.json",
@@ -801,13 +828,14 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
     _write_json(fixtures / "radar-list.json", {"definitions": [{"id": "sports-news"}]})
     _write_json(
         fixtures / "radar-run.json",
-        {"status": "completed", "id": "sports-news", "included": 1, "reports": {"md": "report.md"}},
+        {
+            "status": "completed",
+            "id": "sports-news",
+            "included": 1,
+            "reports": {"md": "report.md"},
+        },
     )
     _write_json(fixtures / "radar-status.json", {"radars": [{"id": "sports-news"}]})
-    _write_json(
-        fixtures / "radar-import-social-radar.json",
-        {"status": "imported", "count": 3, "radars": [{"id": "tech-news"}]},
-    )
     _write_json(fixtures / "link-source.json", {"status": "linked"})
     _write_json(
         fixtures / "dashboard-build.json",
@@ -850,7 +878,7 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
     kb_root = smoke_root / "research_notes"
     (kb_root / ".agents" / "skills" / "alcove-kb").mkdir(parents=True)
     (kb_root / ".agents" / "skills" / "notes-search").mkdir(parents=True)
-    (kb_root / ".agents" / "skills" / "social_post_manager").mkdir(parents=True)
+    (kb_root / ".agents" / "skills" / "alcove-capture").mkdir(parents=True)
     (kb_root / ".claude" / "commands").mkdir(parents=True)
     (kb_root / "AGENTS.md").write_text("kb agents", encoding="utf-8")
     (kb_root / "CLAUDE.md").write_text("kb claude", encoding="utf-8")
@@ -861,7 +889,7 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
         "notes skill", encoding="utf-8"
     )
     long_manager_skill = "manager skill " + ("full command routing. " * 120)
-    (kb_root / ".agents" / "skills" / "social_post_manager" / "SKILL.md").write_text(
+    (kb_root / ".agents" / "skills" / "alcove-capture" / "SKILL.md").write_text(
         long_manager_skill, encoding="utf-8"
     )
     (kb_root / ".claude" / "commands" / "inbox-peek.md").write_text(
@@ -1041,6 +1069,10 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
     assert ambiguous_target["details"]["candidates"][0]["note_id"] == "dup-a"
     assert packet["evidence"]["smoke"]["publisher_service_tick"]["publishers"]["ran"] == 1
     assert packet["evidence"]["smoke"]["publisher_render_quality"]["status"] == "passed"
+    assert packet["evidence"]["smoke"]["prompt_propose"]["action"] == "create_new"
+    assert packet["evidence"]["smoke"]["prompt_proposal"]["id"] == "proposal-1"
+    assert packet["evidence"]["smoke"]["prompt_recommend"][0]["prompt"]["title"] == ("Smoke Prompt")
+    assert packet["evidence"]["smoke"]["prompt_compose"]["sources"][0]["title"] == ("Smoke Prompt")
     assert any(
         "render quality" in question.lower()
         for module in packet["modules"]
@@ -1168,7 +1200,7 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
     assert "search-map.md" in packet["evidence"]["smoke"]["okf_catalog"]["files"]
     assert packet["evidence"]["smoke"]["project_add"]["project"]["alias"] == "project-alpha"
     assert packet["evidence"]["smoke"]["project_find"]["projects"][0]["alias"] == "project-alpha"
-    assert packet["evidence"]["agent_entries"]["kb_social_post_manager"] == long_manager_skill
+    assert packet["evidence"]["agent_entries"]["kb_capture_skill"] == long_manager_skill
     assert packet["evidence"]["agent_entries"]["managed_kb_entry_root"].endswith(
         "smoke/research_notes"
     )
@@ -1176,7 +1208,7 @@ def test_build_eval_packet_covers_core_modules_and_quality_questions(tmp_path):
         packet["evidence"]["agent_entries"]["skill_availability"]["hub_codex_skill"]["exists"]
         is True
     )
-    assert "truncated" not in packet["evidence"]["agent_entries"]["kb_social_post_manager"]
+    assert "truncated" not in packet["evidence"]["agent_entries"]["kb_capture_skill"]
     assert "scripts/eval-ai.sh" in packet["evidence"]["agent_entries"]["claude_eval_ai_command"]
     assert "scripts/smoke.sh" in packet["evidence"]["agent_entries"]["codex_smoke_skill"]
     assert packet["operating_model"]["read_path"]["search_role"].endswith(
@@ -1318,7 +1350,7 @@ def test_eval_packet_agent_entries_follow_registered_kb_name(tmp_path):
     kb_root = smoke_root / "social_media_posts"
     (kb_root / ".agents" / "skills" / "alcove-kb").mkdir(parents=True)
     (kb_root / ".agents" / "skills" / "notes-search").mkdir(parents=True)
-    (kb_root / ".agents" / "skills" / "social_post_manager").mkdir(parents=True)
+    (kb_root / ".agents" / "skills" / "alcove-capture").mkdir(parents=True)
     (kb_root / ".claude" / "commands").mkdir(parents=True)
     (kb_root / "AGENTS.md").write_text("social kb agents", encoding="utf-8")
     (kb_root / "CLAUDE.md").write_text("social kb claude", encoding="utf-8")
@@ -1328,8 +1360,8 @@ def test_eval_packet_agent_entries_follow_registered_kb_name(tmp_path):
     (kb_root / ".agents" / "skills" / "notes-search" / "SKILL.md").write_text(
         "social notes skill", encoding="utf-8"
     )
-    (kb_root / ".agents" / "skills" / "social_post_manager" / "SKILL.md").write_text(
-        "social post manager", encoding="utf-8"
+    (kb_root / ".agents" / "skills" / "alcove-capture" / "SKILL.md").write_text(
+        "alcove capture", encoding="utf-8"
     )
     (kb_root / ".claude" / "commands" / "inbox-peek.md").write_text(
         "social inbox command", encoding="utf-8"
@@ -1352,7 +1384,7 @@ def test_eval_packet_agent_entries_follow_registered_kb_name(tmp_path):
     entries = packet["evidence"]["agent_entries"]
     assert entries["managed_kb_entry_root"].endswith("smoke/social_media_posts")
     assert entries["kb_agents"] == "social kb agents"
-    assert entries["kb_social_post_manager"] == "social post manager"
+    assert entries["kb_capture_skill"] == "alcove capture"
     assert not any("AGENTS.md" in warning for warning in packet["warnings"])
 
 
@@ -1478,14 +1510,19 @@ def test_eval_packet_includes_extended_smoke_evidence(tmp_path):
     assert "browser smoke" in module_questions["dashboard"]
     assert "export-restore" in module_questions["export_health"]
     assert "messy inbox" in module_questions["capture_inbox"]
-    assert "social radar migration" in module_questions["radars"]
+    assert "user definitions" in module_questions["radars"]
+    assert "deterministic report" in module_questions["radars"]
     assert "planner digest" in module_questions["global_memory"]
 
 
 def test_build_eval_packet_marks_compacted_content_as_truncated(tmp_path):
     smoke_root, real_home, integrations = _write_minimal_packet_artifacts(
         tmp_path,
-        inbox_read={"title": "Captured Post", "content": "x" * 1300, "content_truncated": False},
+        inbox_read={
+            "title": "Captured Post",
+            "content": "x" * 1300,
+            "content_truncated": False,
+        },
     )
 
     packet = build_eval_packet(
@@ -1597,3 +1634,28 @@ def test_build_eval_bundle_writes_packet_prompt_and_missing_artifact_warnings(tm
     assert "Refreshed suites: isolated, mcp_matrix" in prompt
     assert '"module_scores": [' in prompt
     assert "capture_inbox" in prompt
+    assert {module["id"] for module in packet["modules"]}.issuperset(
+        {"capture_inbox", "knowledge_okf", "global_memory", "mcp_entry"}
+    )
+
+
+def test_focused_isolated_eval_narrows_modules_to_refreshed_scope(tmp_path):
+    output_dir = tmp_path / "ai-eval"
+    result = build_eval_bundle(
+        output_dir=output_dir,
+        smoke_root=tmp_path / "missing-smoke",
+        real_home_report=tmp_path / "missing-real-home.json",
+        real_integrations_dir=tmp_path / "missing-integrations",
+        selected_suites=("isolated",),
+    )
+
+    packet = json.loads(result.packet_path.read_text(encoding="utf-8"))
+    prompt = result.prompt_path.read_text(encoding="utf-8")
+    modules = {module["id"]: module for module in packet["modules"]}
+
+    assert "mcp_entry" not in modules
+    assert "agent_entries" in modules
+    assert "dashboard" in modules
+    assert "dashboard browser" not in json.dumps(modules["dashboard"], ensure_ascii=False).lower()
+    assert "Manual inbox" in modules["capture_inbox"]["scope"]
+    assert "MCP stdio" not in prompt

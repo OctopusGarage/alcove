@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import plistlib
+import shutil
 
 from alcove.home import AlcoveHome
 from alcove.cli import main
+from alcove.mounts import AddMountRequest, MountsModule
 from alcove.radars import RadarDefinition, RadarModule, RadarSchedule, RadarSource
 from alcove.service import ServiceModule
 from alcove.tasks import AddRoutineRequest, AddTaskRequest, TasksModule
@@ -34,6 +36,33 @@ def test_service_install_writes_dashboard_and_scheduler_launch_agents(tmp_path, 
     assert scheduler["Label"] == "com.octopusgarage.alcove.scheduler"
     assert "alcove service tick" in scheduler["ProgramArguments"][-1]
     assert scheduler["StartInterval"] == 900
+
+
+def test_service_launchd_path_includes_nvm_codex_bin(tmp_path, monkeypatch):
+    user_home = tmp_path / "user-home"
+    monkeypatch.setenv("HOME", str(user_home))
+    nvm_bin = user_home / ".nvm" / "versions" / "node" / "v24.13.1" / "bin"
+    nvm_bin.mkdir(parents=True)
+    (nvm_bin / "codex").write_text("#!/bin/sh\n", encoding="utf-8")
+    (nvm_bin / "codex").chmod(0o755)
+
+    original_which = shutil.which
+
+    def fake_which(command: str) -> str | None:
+        if command == "codex":
+            return str(nvm_bin / "codex")
+        return original_which(command)
+
+    monkeypatch.setattr("alcove.service.shutil.which", fake_which)
+    home = AlcoveHome.init(user_home / ".alcove")
+
+    ServiceModule(home).install(dashboard=False, scheduler=True)
+
+    scheduler_plist = user_home / "Library/LaunchAgents/com.octopusgarage.alcove.scheduler.plist"
+    scheduler = plistlib.loads(scheduler_plist.read_bytes())
+    path_entries = scheduler["EnvironmentVariables"]["PATH"].split(":")
+    assert str(nvm_bin) in path_entries
+    assert len(path_entries) == len(set(path_entries))
 
 
 def test_service_tick_materializes_routines_and_writes_stats(tmp_path):
@@ -75,6 +104,61 @@ def test_service_tick_materializes_routines_and_writes_stats(tmp_path):
     assert result["radars"]["ran"] == 1
     assert (home.paths().stats / "summary.json").is_file()
     assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
+def test_service_tick_refreshes_mounts_every_two_days(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    source = tmp_path / "mounted-docs"
+    source.mkdir()
+    note = source / "README.md"
+    note.write_text("# Mounted Docs\n\nInitial indexed content.", encoding="utf-8")
+    mount = MountsModule(home=home).add(
+        AddMountRequest(path=str(source), name="Mounted Docs", mount_type="local-folder")
+    )
+
+    first = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        run_publishers=False,
+        fix_health=False,
+        today="2026-07-10",
+    )
+    second = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        run_publishers=False,
+        fix_health=False,
+        today="2026-07-10",
+    )
+    note.write_text("# Mounted Docs\n\nUpdated indexed content.", encoding="utf-8")
+    third = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        run_publishers=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert first["mounts"]["status"] == "checked"
+    assert first["mounts"]["checked"] == 1
+    assert first["mounts"]["refreshed"] == 1
+    assert first["mounts"]["scanned"] == 1
+    assert second["mounts"]["status"] == "skipped"
+    assert second["mounts"]["reason"] == "not_due"
+    assert third["mounts"]["status"] == "checked"
+    assert third["mounts"]["checked"] == 1
+    assert third["mounts"]["scanned"] == 1
+    items = MountsModule(home=home).scan(mount.id)["items"]
+    assert items[0]["text"] == "# Mounted Docs\n\nUpdated indexed content."
 
 
 def test_service_tick_sends_configured_task_digest(tmp_path, monkeypatch):

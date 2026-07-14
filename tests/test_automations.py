@@ -79,55 +79,6 @@ def test_git_sync_noop_reports_success(tmp_path, monkeypatch):
     assert calls[0][1:3] == ["-C", str(repo)]
 
 
-def test_import_social_radar_tasks_and_git_repos(tmp_path):
-    home = AlcoveHome.init(tmp_path / ".alcove")
-    source = tmp_path / ".social_radar"
-    (source / "config").mkdir(parents=True)
-    (source / "tasks").mkdir()
-    (source / "config/tasks.json").write_text(
-        json.dumps(
-            {
-                "tasks": [
-                    {"name": "apple_notes_export", "enabled": True, "order": 1, "timeout": 600}
-                ],
-                "git_repos": [
-                    {
-                        "name": "notes_repo",
-                        "path": str(tmp_path / "notes"),
-                        "enabled": True,
-                        "commit_message": "chore: sync notes",
-                        "timeout": 60,
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    (source / "tasks/apple_notes_backup.py").write_text(
-        "\n".join(
-            [
-                "from scripts.tasks.base import ClaudeTask",
-                'BACKUP_DIR = "/Users/example/notes"',
-                "class AppleNotesExportTask(ClaudeTask):",
-                '    name = "apple_notes_export"',
-                "    def __init__(self):",
-                '        super().__init__(name=self.name, prompt=f"Export to {BACKUP_DIR}")',
-                "task = AppleNotesExportTask()",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    result = AutomationsModule(home).import_social_radar(source)
-    listed = AutomationsModule(home).list_jobs()
-
-    assert result["status"] == "imported"
-    assert {job["id"] for job in listed["jobs"]} == {"apple-notes-export", "notes-repo"}
-    agent = next(job for job in listed["jobs"] if job["kind"] == "agent")
-    assert agent["allow_service"] is False
-    assert agent["prompt"] == "Export to ~/notes"
-
-
 def test_cli_automation_add_list_run(tmp_path, capsys):
     home = tmp_path / ".alcove"
     marker = tmp_path / "marker.txt"
