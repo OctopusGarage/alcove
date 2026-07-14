@@ -304,11 +304,12 @@ class _ExternalCapabilities(_Capability):
             self.runtime.require_workspace(),
             home=self.runtime.home,
         ).link_source(request)
+        title = _linked_source_title(payload, fallback=request.item_path)
         self._record_action(
             area="knowledge",
             action="knowledge.link_source",
-            summary=f"Linked source into KB: {request.item_path}",
-            metadata={"item_path": request.item_path, "topic": request.topic},
+            summary=f"Linked source into KB: {title}",
+            metadata={"item_path": request.item_path, "topic": request.topic, "title": title},
         )
         return self._governed_write(
             payload,
@@ -335,3 +336,12 @@ class _ExternalCapabilities(_Capability):
             },
             metadata={"connector": connector.replace("_", "-")},
         )
+
+
+def _linked_source_title(payload: dict[str, Any], *, fallback: str) -> str:
+    source = payload.get("source")
+    if isinstance(source, dict):
+        title = str(source.get("title") or "").strip()
+        if title:
+            return title
+    return fallback

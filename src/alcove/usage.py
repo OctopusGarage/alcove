@@ -291,7 +291,8 @@ class UsageRecorder:
         if len(normalized) <= 4:
             return normalized
         if len(normalized) <= max_chars:
-            return f"{normalized[:8].rstrip()}...{normalized[-4:].lstrip()}"
+            preview_chars = min(16, max(4, len(normalized) - 4))
+            return f"{normalized[:preview_chars].rstrip()}..."
         return f"{normalized[:max_chars].rstrip()}..."
 
     @staticmethod

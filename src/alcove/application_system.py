@@ -55,6 +55,16 @@ class _SystemCapabilities(_Capability):
             uninstall=uninstall,
             dry_run=dry_run,
         )
+        if not status and not uninstall and not dry_run:
+            from alcove.publishers import PublisherModule
+            from alcove.service import ServiceModule
+
+            result["publisher"] = PublisherModule(installer.home).init_apple_notes()
+            result["service"] = ServiceModule(installer.home).install(
+                dashboard=False,
+                scheduler=True,
+                load=False,
+            )
         return {"profile": "global-lite", **result}
 
     def export_global_payload(self, output_dir: str) -> dict[str, Any]:

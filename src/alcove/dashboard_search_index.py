@@ -139,19 +139,21 @@ def _knowledge_rows(snapshot: dict[str, Any]) -> list[dict[str, str]]:
             for item in kb.get("omitted_items") or []
             if isinstance(item, dict)
         ]
+        omitted_count = int(kb.get("omitted_item_count") or 0)
+        text_parts = [
+            f"{kb.get('item_count', 0)} knowledge items",
+            f"{kb.get('inbox_count', 0)} inbox items",
+            f"{kb.get('archive_count', 0)} archived items",
+        ]
+        if omitted_count > 0:
+            text_parts.insert(1, f"{omitted_count} omitted from snapshot list")
+            if omitted_titles:
+                text_parts.insert(2, "omitted: " + ", ".join(omitted_titles))
         rows.append(
             {
                 "type": "knowledge-base",
                 "title": str(kb.get("name") or ""),
-                "text": " ".join(
-                    [
-                        f"{kb.get('item_count', 0)} knowledge items",
-                        f"{kb.get('omitted_item_count', 0)} omitted from snapshot list",
-                        "omitted: " + ", ".join(omitted_titles),
-                        f"{kb.get('inbox_count', 0)} inbox items",
-                        f"{kb.get('archive_count', 0)} archived items",
-                    ]
-                ),
+                "text": " ".join(text_parts),
                 "href": "/knowledge",
             }
         )

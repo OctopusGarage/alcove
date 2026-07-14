@@ -215,3 +215,9 @@ Operating rule: in a business workspace, "record this", "整理成笔记",
 "查一下这个空间里的资料", and similar scene-local knowledge requests should
 use `alcove workspace okf ...` first. Global pins, tasks, ideas, and prompts
 remain global Alcove modules and should preserve the workspace tag.
+
+Workspace agents use a mixed memory policy. Low-risk, explicit, stable facts
+that belong to the workspace can be saved directly, preferably by maintaining a
+source file under `documents/` and importing it into workspace OKF. Sensitive,
+private, ambiguous, or unstable information requires confirmation before it is
+written.

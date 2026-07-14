@@ -218,6 +218,9 @@ Rules:
 
 - Start from this workspace's configured scope, tags, and default KB.
 - For workspace-local documents, notes, and recall, prefer `alcove workspace okf ...`.
+- Use the `alcove-workspace` skill's mixed memory policy: auto-save low-risk
+  explicit workspace facts, but ask before saving sensitive, private,
+  ambiguous, or unstable information.
 - Escalate system administration to the Hub workspace instead of performing it
   here by default.
 - Durable writes still go through Alcove CLI/MCP commands.
@@ -447,6 +450,14 @@ def _workspace_skill(default_kb: str, home_part: str) -> str:
         "- If the workspace OKF is not initialized, run `alcove workspace okf init <workspace-id> --json` before saving scene-local knowledge.\n"
         "- Prompt saves must still use the governed propose/save flow; do not turn raw notes or chat fragments into prompts.\n"
         "- Do not perform Hub-only administration from here by default. Installing entries, editing global MCP, changing services, export/backup, connector/mount administration, radar definitions, publisher configuration, and health fixes belong in the Hub unless the user explicitly authorizes the command.\n\n"
+        "## Workspace Memory Protocol\n\n"
+        "At the end of a relevant user turn, decide whether the conversation introduced durable workspace memory. Use a mixed policy:\n\n"
+        "- Auto-save low-risk, explicit, stable facts that belong to this workspace: household or business routines, object locations, care procedures, maintenance notes, recipes, preferences, and long-running non-sensitive todos.\n"
+        "- Ask before saving sensitive, private, ambiguous, or unstable information: medical or veterinary diagnosis and treatment changes, finance and debt, bank cards, identity documents, secrets, other people's private data, unconfirmed plans, and information likely to expire.\n"
+        "- Do not save internal reasoning, transient chat, raw prompts, or speculative conclusions.\n"
+        "- Search workspace OKF first when updating an existing subject. Prefer maintaining a human-readable source file in `documents/` and then importing it with `workspace okf import-file --no-copy`; use `workspace okf add-note` for small synthesized notes.\n"
+        "- Use `task` for actionable follow-ups and routines that should be tracked, `pin` only for tiny durable references, and `prompt` only for reviewed reusable instructions.\n"
+        "- After saving, return a compact receipt with the title, storage path, classification, tags, and the verification query or command.\n\n"
         "## Common Commands\n\n"
         "```sh\n"
         f"alcove workspace{home_part} okf init <workspace-id> --json\n"

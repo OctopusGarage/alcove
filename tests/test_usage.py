@@ -48,6 +48,21 @@ def test_usage_recorder_writes_privacy_safe_search_events(tmp_path):
     assert summary["search"]["types"] == {"GitHub Star": 2}
 
 
+def test_usage_recorder_keeps_short_query_previews_readable(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    recorder = UsageRecorder(home)
+
+    event = recorder.record_search(
+        surface="dashboard",
+        query="Cleanup obsolete",
+        result_count=1,
+    )
+
+    assert event["metrics"]["query_preview"] == "Cleanup obso..."
+    assert event["summary"] == "Search: Cleanup obso..."
+    assert "Cleanup obsolete" not in json.dumps(event, ensure_ascii=False)
+
+
 def test_usage_summary_keeps_recent_events_without_noisy_payloads(tmp_path):
     home = AlcoveHome.init(tmp_path / "home")
     recorder = UsageRecorder(home)

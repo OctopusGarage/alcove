@@ -849,10 +849,15 @@ class TasksModule:
             overdue = self._overdue_label(task.due, current=current)
             if overdue:
                 details.append(overdue)
-        line = task.title
+        line = self._task_display_title(task)
         if task.notes:
             details.append(f"Note: {task.notes}")
         return "\n   ".join([line, *details])
+
+    def _task_display_title(self, task: Task) -> str:
+        if task.source_routine_id:
+            return f"{task.title} (routine due)"
+        return task.title
 
     def _idea_line(self, idea: Idea) -> str:
         if not idea.notes:

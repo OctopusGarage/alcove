@@ -60,7 +60,10 @@ class ExternalIndexedItemPresenter:
         ).strip()
         account = str(self.item.get("account") or "").strip()
         folder = str(self.item.get("folder_path") or "").strip()
-        context = " / ".join(dict.fromkeys(part for part in [account, folder] if part))
+        context_parts = [account, folder]
+        if account and (folder == account or folder.startswith(f"{account}/")):
+            context_parts = [folder]
+        context = " / ".join(dict.fromkeys(part for part in context_parts if part))
         if context:
             return f"{connector_name} · {context}"
         return connector_name or self.origin_label()

@@ -6,6 +6,7 @@ from alcove.application import AlcoveApplication
 from alcove.connectors.github_stars import GitHubStarsImportRequest
 from alcove.home import AlcoveHome
 from alcove.knowledge import NoteSourceRequest
+from alcove.linking import LinkSourceRequest
 from alcove.mounts import AddMountRequest
 from alcove.pins import AddPinRequest
 from alcove.prompts import AddPromptRequest
@@ -126,6 +127,45 @@ def test_application_external_mutations_record_usage_and_activity(tmp_path):
     assert mount_payload["write_contract"]["area"] == "mount"
     assert scan_payload["write_contract"]["action"] == "mount.scan"
     assert connector_payload["write_contract"]["source_of_truth"] == "connector indexes"
+
+
+def test_application_link_source_activity_uses_source_title_not_connector_ref(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    workspace = Workspace.init(tmp_path / "kb")
+    app = AlcoveApplication(AlcoveRuntime.resolve(workspace=workspace.root, home=home.root))
+    export_file = tmp_path / "stars.json"
+    export_file.write_text(
+        json.dumps(
+            [
+                {
+                    "full_name": "octopusgarage/alcove",
+                    "html_url": "https://github.com/OctopusGarage/alcove",
+                    "description": "Usage analytics.",
+                    "topics": ["usage"],
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    app.external.github_stars_index_payload(
+        GitHubStarsImportRequest(export_file=str(export_file), tags=["usage"])
+    )
+
+    payload = app.external.link_source_payload(
+        LinkSourceRequest(
+            item_path="connectors/github-stars#octopusgarage/alcove",
+            topic="agent-engineering/usage",
+        )
+    )
+    activity = _activity(home)
+    event = next(event for event in activity if event["action"] == "knowledge.link_source")
+
+    assert payload["status"] == "linked"
+    assert event["summary"] == "Linked source into KB: octopusgarage/alcove"
+    assert "connectors/github-stars#" not in event["summary"]
+    assert event["metadata"]["item_path"] == "connectors/github-stars#octopusgarage/alcove"
+    assert event["metadata"]["title"] == "octopusgarage/alcove"
 
 
 def _activity(home: AlcoveHome) -> list[dict]:

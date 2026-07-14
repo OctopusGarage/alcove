@@ -94,6 +94,13 @@ def test_profile_source_templates_match_default_generated_artifacts(tmp_path):
     assert workspace_source.read_text(encoding="utf-8") == workspace_pack.skill_content(
         default_kb="research_notes", home_part=""
     )
+    workspace_skill = workspace_pack.skill_content(default_kb="research_notes", home_part="")
+    assert "Workspace Memory Protocol" in workspace_skill
+    assert "Auto-save low-risk, explicit, stable facts" in workspace_skill
+    assert (
+        "Ask before saving sensitive, private, ambiguous, or unstable information"
+        in workspace_skill
+    )
     for artifact in kb_pack.codex_artifacts(root, default_kb="research_notes"):
         assert artifact.source_path is not None
         assert artifact.source_path.read_text(encoding="utf-8") == artifact.content
@@ -232,6 +239,9 @@ def test_cli_workspace_init_creates_lightweight_business_workspace(tmp_path, mon
     assert "family" in registry
     assert "Alcove Business Workspace" in skill
     assert "lightweight" in skill
+    assert "Workspace Memory Protocol" in skill
+    assert "Auto-save low-risk, explicit, stable facts" in skill
+    assert "Ask before saving sensitive, private, ambiguous, or unstable information" in skill
     assert "Do not perform Hub-only administration" in skill
     assert "alcove service" not in skill
     assert "alcove export" not in skill
@@ -606,6 +616,39 @@ def test_cli_global_install_writes_lite_mcp_without_kb_or_workspace(
     assert not (user_home / ".codex" / "skills").exists()
 
 
+def test_cli_global_install_enables_background_apple_notes_publishing_by_default(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    user_home = tmp_path / "user-home"
+    monkeypatch.setenv("HOME", str(user_home))
+    alcove_home = tmp_path / "alcove-home"
+
+    code = main(
+        [
+            "global",
+            "install",
+            "--home",
+            str(alcove_home),
+            "--target",
+            "codex",
+            "--json",
+        ]
+    )
+    output = capsys.readouterr()
+
+    assert code == 0
+    payload = json.loads(output.out)
+    assert payload["publisher"]["status"] == "initialized"
+    assert payload["service"]["status"] == "installed"
+    assert payload["service"]["targets"] == ["scheduler"]
+    assert (alcove_home / "publishers" / "definitions" / "apple-notes.yml").is_file()
+    assert (
+        user_home / "Library" / "LaunchAgents" / "com.octopusgarage.alcove.scheduler.plist"
+    ).is_file()
+
+
 def test_cli_global_install_can_bind_default_kb_for_lite_mcp(
     tmp_path,
     monkeypatch,
@@ -660,6 +703,8 @@ def test_cli_global_install_non_json_uses_default_home_and_prints_config_path(
     assert code == 0
     assert "profile: global-lite" in output.out
     assert f"home: {alcove_home.resolve()}" in output.out
+    assert "publisher: apple-notes | initialized" in output.out
+    assert "service: installed | scheduler" in output.out
     assert str(user_home / ".codex" / "config.toml") in output.out
 
 

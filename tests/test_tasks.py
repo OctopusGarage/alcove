@@ -319,6 +319,25 @@ def test_task_digest_text_is_readable_and_keeps_ids_in_payload(tmp_path):
     assert digest["items"]["routines"][0]["id"] == routine.id
 
 
+def test_task_digest_marks_routine_generated_pending_tasks(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = TasksModule(home=home)
+    routine = module.routine_add(
+        AddRoutineRequest(
+            title="Smoke Routine",
+            schedule={"frequency": "weekly", "interval": 1, "weekdays": ["sun"]},
+            next_due="2026-07-12",
+        )
+    )
+    module.routine_materialize_due(today="2026-07-12")
+
+    digest = module.task_digest(period="weekly", today="2026-07-12")
+
+    assert "1. Smoke Routine (routine due)" in digest["text"]
+    assert "🔁 Active routines (1)\n\n1. Smoke Routine" in digest["text"]
+    assert digest["items"]["tasks"][0]["source_routine_id"] == routine.id
+
+
 def test_task_digest_can_notify_multiple_sinks(tmp_path, monkeypatch):
     home = AlcoveHome.init(tmp_path / ".alcove")
     module = TasksModule(home=home)

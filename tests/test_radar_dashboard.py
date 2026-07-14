@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from alcove.dashboard import DashboardModule
 from alcove.home import AlcoveHome
 from alcove.radars import RadarDefinition, RadarModule, RadarSource
@@ -49,6 +51,41 @@ def test_dashboard_snapshot_lists_generic_radars(tmp_path) -> None:
         row["type"] == "radar" and row["title"] == "Sports News" and row["href"] == "/radars"
         for row in snapshot["search_index"]
     )
+
+
+def test_dashboard_snapshot_counts_current_active_radars_as_configured(tmp_path) -> None:
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    fixture = tmp_path / "items.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "title": "AI signal",
+                    "url": "https://example.test/ai",
+                    "summary": "Useful model release",
+                    "tags": ["AI"],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    module = RadarModule(home)
+    module.upsert_definition(
+        RadarDefinition(
+            id="sports-news",
+            name="Sports News",
+            sources=[RadarSource(id="fixture", adapter="fixture", params={"path": str(fixture)})],
+            profile={"interest_tags": ["AI"], "min_score_threshold": 0.5},
+        )
+    )
+
+    module.run("sports-news")
+    snapshot = DashboardModule(home).snapshot()
+
+    assert snapshot["radars"][0]["status"] == "current"
+    assert snapshot["radars"][0]["definition_status"] == "active"
+    assert snapshot["summary"]["counts"]["radars_current"] == 1
+    assert snapshot["summary"]["counts"]["radars_configured"] == 1
 
 
 def test_dashboard_snapshot_formats_radar_status_labels(tmp_path) -> None:

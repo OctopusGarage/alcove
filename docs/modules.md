@@ -170,8 +170,10 @@ a workspace-local OKF store for scene documents and notes.
 
 `hub` is special and uses the full `alcove-hub` profile. Other workspace ids use
 the lightweight `alcove-workspace` profile: scoped search, scene-local notes,
-pins, tasks, ideas, and prompt reuse. Hub-only administration remains in the
-Hub unless explicitly authorized.
+pins, tasks, ideas, prompt reuse, and mixed durable-memory capture. Low-risk
+explicit workspace facts can be saved directly; sensitive, private, ambiguous,
+or unstable information should be confirmed before writing. Hub-only
+administration remains in the Hub unless explicitly authorized.
 
 Workspace-local OKF is managed through `alcove workspace okf ...`. The command
 creates `documents/`, initializes `okf/` with the same managed-KB layout used by

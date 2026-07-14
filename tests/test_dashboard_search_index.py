@@ -86,6 +86,9 @@ def test_dashboard_search_index_projection_filters_and_summarizes_external_rows(
 
     pin = next(row for row in rows if row["type"] == "pin")
     assert pin["text"].count("Keep this exact line.") == 1
+    kb_row = next(row for row in rows if row["type"] == "knowledge-base")
+    assert kb_row["text"] == "2 knowledge items 0 inbox items 0 archived items"
+    assert "omitted:" not in kb_row["text"]
     knowledge_titles = {row["title"] for row in rows if row["type"] == "knowledge-item"}
     assert knowledge_titles == {"Real Source"}
     assert "Useful detail" in next(row for row in rows if row["title"] == "Real Source")["text"]

@@ -229,7 +229,10 @@ cd <workspace-path> && claude -p ...
 
 The generated lightweight `alcove-workspace` skill reads
 `.alcove-workspace.yml`, starts with configured scope, preserves workspace tags
-on writes, and routes Hub-only administration back to the Hub.
+on writes, applies a mixed memory policy for durable workspace facts, and routes
+Hub-only administration back to the Hub. Low-risk explicit facts can be saved
+directly to workspace OKF; sensitive, private, ambiguous, or unstable
+information requires confirmation first.
 
 ## Global MCP
 

@@ -14,6 +14,12 @@ def print_install_result(result: dict[str, Any]) -> None:
         print(f"path: {result['path']}")
     if result.get("workspace"):
         print(f"workspace: {result['workspace']}")
+    publisher = result.get("publisher")
+    if isinstance(publisher, dict):
+        print(f"publisher: {publisher.get('publisher')} | {publisher.get('status')}")
+    service = result.get("service")
+    if isinstance(service, dict):
+        print(f"service: {service.get('status')} | {', '.join(service.get('targets', []))}")
     for file in result.get("files", []):
         action = file.get("action")
         if action is None:

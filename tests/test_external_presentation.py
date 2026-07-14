@@ -59,6 +59,27 @@ def test_apple_notes_presentation_redacts_secret_like_text():
     assert presenter.safe_text() == "[redacted: secret-like connector content]"
 
 
+def test_apple_notes_source_label_omits_duplicate_account_prefix():
+    item = {
+        "source_kind": "connector",
+        "connector": "apple-notes",
+        "connector_name": "Apple Notes",
+        "type": "Apple Note",
+        "title": "Smoke",
+        "relative_path": "notes/x-coredata%3A%2F%2Fnote/smoke.json",
+        "account": "iCloud",
+        "folder_path": "iCloud/Smoke",
+        "text": "Smoke note.",
+        "status": "active",
+    }
+    ref = ExternalItemReference.connector("apple-notes", item["relative_path"])
+
+    presenter = ExternalIndexedItemPresenter(ref, item)
+
+    assert presenter.source_label() == "Apple Notes · iCloud/Smoke"
+    assert presenter.origin_label() == "Apple Notes / iCloud/Smoke"
+
+
 def test_mount_presentation_owns_source_ref_and_read_hint():
     item = {
         "source_kind": "mount",

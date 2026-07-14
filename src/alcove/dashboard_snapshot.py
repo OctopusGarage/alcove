@@ -245,7 +245,7 @@ class DashboardSnapshotBuilder:
             "radars": len(facts.radar_rows),
             "radars_current": len([row for row in facts.radar_rows if row["status"] == "current"]),
             "radars_configured": len(
-                [row for row in facts.radar_rows if row["status"] == "configured"]
+                [row for row in facts.radar_rows if row.get("definition_status") == "active"]
             ),
             "radars_stale": len([row for row in facts.radar_rows if row["status"] == "stale"]),
             "blog_sources": len(facts.blog_rows),
