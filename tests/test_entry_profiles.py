@@ -815,7 +815,7 @@ def test_cli_kb_install_restores_full_managed_kb_workflow_wrappers(
     notes_skill = (kb_root / ".agents" / "skills" / "notes-search" / "SKILL.md").read_text(
         encoding="utf-8"
     )
-    assert len(claude_doc.splitlines()) < 35
+    assert len(claude_doc.splitlines()) < 50
     assert claude_doc.startswith("<!-- ALCOVE ENTRY START -->")
     assert agents_doc.startswith("<!-- ALCOVE ENTRY START -->")
     assert "Skills and commands hold the detailed workflows" in claude_doc
@@ -826,6 +826,12 @@ def test_cli_kb_install_restores_full_managed_kb_workflow_wrappers(
     assert "AI-led OKF/local-file investigation" in claude_doc
     assert "CLI/MCP mutation commands" in claude_doc
     assert "当前知识库" in claude_doc
+    assert "receiving a supported social-media link authorizes and requires" in claude_doc
+    assert "full post content, metadata, and all available images/videos" in claude_doc
+    assert "without additional confirmation" in claude_doc
+    assert "receiving a supported social-media link authorizes and requires" in agents_doc
+    assert "full post content, metadata, and all available images/videos" in agents_doc
+    assert "without additional confirmation" in agents_doc
     assert "Clipsmith Capture Pipeline" not in claude_doc
     assert "clipsmith validate-bundle" not in claude_doc
     assert "alcove inbox" in agents_doc
@@ -833,6 +839,8 @@ def test_cli_kb_install_restores_full_managed_kb_workflow_wrappers(
     assert "--kb research_notes" not in agents_doc
     assert "alcove inbox note" in manager_skill
     assert "clipsmith sink inbox" in manager_skill
+    assert "sufficient authorization for this initial" in manager_skill
+    assert "process unrelated existing inbox items" in manager_skill
     assert "Do not save article summaries as prompts" in manager_skill
     assert "alcove inbox read <identifier> --full --json" in inbox_peek_command
     assert "truncated, OCR-heavy, or too thin" in inbox_peek_command

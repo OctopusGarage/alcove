@@ -149,7 +149,7 @@ Global MCP
 
 Managed KB workspace
   -> KB-local skills bias toward inbox and OKF operations
-  -> raw links capture to inbox
+  -> supported social-media links trigger complete post and media capture
   -> archive/note/todo/delete require explicit current-item confirmation
 ```
 

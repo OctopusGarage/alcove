@@ -49,7 +49,10 @@ class BlogDiscoveryModule:
         return articles
 
     def _discover_playwright(self, source: Any) -> list[Any]:
-        raw_items = self.host._extract_articles_with_playwright(source)
+        try:
+            raw_items = self.host._extract_articles_with_playwright(source)
+        except RuntimeError as exc:
+            return self._discover_playwright_fallback(source, exc)
         articles = []
         seen: set[str] = set()
         for item in raw_items:
@@ -69,8 +72,34 @@ class BlogDiscoveryModule:
             seen.add(href)
             articles.append(self.host._article(source, title=title, url=href, date=date))
         if not articles:
-            raise RuntimeError(f"Playwright found no article links for {source.url}")
+            return self._discover_playwright_fallback(
+                source,
+                RuntimeError(f"Playwright found no article links for {source.url}"),
+            )
         return articles
+
+    def _discover_playwright_fallback(self, source: Any, error: RuntimeError) -> list[Any]:
+        failures = []
+        try:
+            articles = self._discover_html(source)
+        except Exception as fallback_error:
+            failures.append(f"HTML fallback failed: {fallback_error}")
+        else:
+            if articles:
+                return articles
+            failures.append("HTML fallback found no article links")
+        for sitemap_url in _candidate_sitemap_urls(source.url):
+            try:
+                articles = self._discover_sitemap(source, url=sitemap_url)
+            except Exception as fallback_error:
+                failures.append(f"sitemap fallback {sitemap_url} failed: {fallback_error}")
+                continue
+            if articles:
+                return articles
+            failures.append(f"sitemap fallback {sitemap_url} found no article links")
+        if failures:
+            raise RuntimeError(f"{error}; {'; '.join(failures)}") from error
+        raise RuntimeError(str(error)) from error
 
     def _discover_feed(self, source: Any) -> list[Any]:
         raw = self.host._fetch_text(source.url)
@@ -96,8 +125,8 @@ class BlogDiscoveryModule:
                 articles.append(self.host._article(source, title=title, url=href, date=date))
         return articles
 
-    def _discover_sitemap(self, source: Any) -> list[Any]:
-        raw = self.host._fetch_text(source.url)
+    def _discover_sitemap(self, source: Any, *, url: str = "") -> list[Any]:
+        raw = self.host._fetch_text(url or source.url)
         root = ElementTree.fromstring(raw)  # noqa: S314
         source_domain = urlparse(source.url).netloc
         rows: list[tuple[datetime | None, Any]] = []
@@ -210,6 +239,17 @@ def _matches_link_pattern(url: str, pattern: str) -> bool:
     if pattern.startswith("/"):
         return urlparse(url).path.startswith(pattern)
     return pattern in url
+
+
+def _candidate_sitemap_urls(url: str) -> list[str]:
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        return []
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if len(path_parts) < 2 or path_parts[0] != "news":
+        return []
+    category = path_parts[1]
+    return [f"{parsed.scheme}://{parsed.netloc}/sitemap.xml/{category}/"]
 
 
 def _extract_article_card_date(value: str) -> tuple[str, str]:

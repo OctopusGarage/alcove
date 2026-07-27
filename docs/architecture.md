@@ -921,7 +921,7 @@ Global-lite
 └── alcove_command_hints points MCP clients to CLI-only Hub workflows
 
 Managed KB
-├── raw link                                            -> Clipsmith capture to inbox
+├── supported social-media link                         -> complete Clipsmith post/media capture to inbox
 ├── pending inbox item                                  -> peek, then explicit user action
 ├── archive / note / delete / todo                      -> requires current-item confirmation
 └── article summaries                                   -> KB Source/Concept, not Prompt
