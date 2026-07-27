@@ -17,13 +17,9 @@ from alcove.notification_delivery import (
     notification_sinks,
 )
 from alcove.planner_schedule import (
-    advance_next_due,
     digest_due,
     digest_state_key,
-    next_due_on_or_after,
-    routine_schedule_from_item,
-    schedule_every_days,
-    validate_routine_schedule,
+    RoutineSchedulePlan,
 )
 from alcove.home import AlcoveHome
 from alcove.markdown import normalize_slug
@@ -348,9 +344,9 @@ class TasksModule:
                     generated.append(task_data["id"])
                     routine["generated_task_ids"] = generated
                     created.append(self._task(task_data))
-                schedule = routine_schedule_from_item(routine)
+                schedule = RoutineSchedulePlan.from_item(routine)
                 while next_due <= current:
-                    next_due = advance_next_due(schedule, next_due)
+                    next_due = schedule.advance_after(next_due)
                 routine["next_due"] = next_due.isoformat()
                 routine["last_materialized_due"] = due_text
                 routine["updated_at"] = timestamp
@@ -380,9 +376,9 @@ class TasksModule:
             if priority is not None:
                 routine["priority"] = self._priority(priority)
             if schedule is not None:
-                normalized = validate_routine_schedule(schedule)
-                routine["schedule"] = normalized
-                routine["every_days"] = schedule_every_days(normalized)
+                schedule_plan = RoutineSchedulePlan.from_raw(schedule)
+                routine["schedule"] = schedule_plan.as_dict()
+                routine["every_days"] = schedule_plan.every_days
             if next_due is not None:
                 self._parse_date(next_due)
                 routine["next_due"] = next_due
@@ -404,8 +400,8 @@ class TasksModule:
             if routine.get("status") != "paused":
                 raise ValueError(f"Routine is not paused: {routine_id}")
             current = self._coerce_date(today) if today is not None else date.today()
-            schedule = routine_schedule_from_item(routine)
-            next_due = next_due_on_or_after(schedule, current)
+            schedule = RoutineSchedulePlan.from_item(routine)
+            next_due = schedule.next_due_on_or_after(current)
             routine["status"] = "active"
             routine["next_due"] = next_due.isoformat()
             routine["updated_at"] = now_iso()
@@ -562,10 +558,12 @@ class TasksModule:
         every_days: int,
         timestamp: str,
     ) -> Routine:
-        normalized_schedule = (
-            validate_routine_schedule(schedule)
+        schedule_plan = (
+            RoutineSchedulePlan.from_raw(schedule)
             if schedule
-            else {"frequency": "daily", "interval": max(int(every_days or 1), 1)}
+            else RoutineSchedulePlan.from_raw(
+                {"frequency": "daily", "interval": max(int(every_days or 1), 1)}
+            )
         )
         due = next_due or date.today().isoformat()
         self._parse_date(due)
@@ -576,9 +574,9 @@ class TasksModule:
             tags=self._normalize_tags(tags),
             status="active",
             priority=self._priority(priority),
-            every_days=schedule_every_days(normalized_schedule),
+            every_days=schedule_plan.every_days,
             next_due=due,
-            schedule=normalized_schedule,
+            schedule=schedule_plan.as_dict(),
             created_at=timestamp,
             updated_at=timestamp,
         )
@@ -708,7 +706,7 @@ class TasksModule:
         )
 
     def _routine(self, item: dict[str, Any]) -> Routine:
-        schedule = routine_schedule_from_item(item)
+        schedule = RoutineSchedulePlan.from_item(item)
         return Routine(
             id=str(item.get("id") or ""),
             title=str(item.get("title") or ""),
@@ -716,9 +714,9 @@ class TasksModule:
             tags=[str(tag) for tag in self._list(item.get("tags"))],
             status=str(item.get("status") or "active"),
             priority=str(item.get("priority") or "medium"),
-            every_days=schedule_every_days(schedule),
+            every_days=schedule.every_days,
             next_due=str(item.get("next_due") or ""),
-            schedule=schedule,
+            schedule=schedule.as_dict(),
             created_at=str(item.get("created_at") or ""),
             updated_at=str(item.get("updated_at") or ""),
             last_materialized_due=str(item.get("last_materialized_due") or ""),
