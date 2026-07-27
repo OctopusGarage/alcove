@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date, time, timedelta
 import calendar
 from typing import Any
@@ -27,7 +28,76 @@ DIGEST_WEEKDAYS = {
 }
 
 
+@dataclass(frozen=True)
+class RoutineSchedulePlan:
+    schedule: dict[str, Any]
+
+    @classmethod
+    def from_raw(cls, schedule: dict[str, Any]) -> RoutineSchedulePlan:
+        return cls(_normalize_routine_schedule(schedule))
+
+    @classmethod
+    def from_item(cls, item: dict[str, Any]) -> RoutineSchedulePlan:
+        raw = item.get("schedule")
+        if isinstance(raw, dict) and raw:
+            return cls.from_raw(raw)
+        every_days = _positive_int(item.get("every_days"), default=1)
+        return cls.from_raw({"frequency": "daily", "interval": every_days})
+
+    def as_dict(self) -> dict[str, Any]:
+        return dict(self.schedule)
+
+    @property
+    def frequency(self) -> str:
+        return str(self.schedule.get("frequency") or "daily")
+
+    @property
+    def interval(self) -> int:
+        return _positive_int(self.schedule.get("interval"), default=1)
+
+    @property
+    def every_days(self) -> int:
+        if self.frequency == "weekly":
+            return self.interval * 7
+        if self.frequency == "monthly":
+            return self.interval * 30
+        return self.interval
+
+    def advance_after(self, current_due: date) -> date:
+        if self.frequency == "daily":
+            return current_due + timedelta(days=self.interval)
+        if self.frequency == "weekly":
+            weekdays = [WEEKDAY_ORDER[day] for day in _list(self.schedule.get("weekdays"))]
+            probe = current_due + timedelta(days=1)
+            while True:
+                delta_weeks = (probe - current_due).days // 7
+                if probe.weekday() in weekdays and delta_weeks % self.interval == 0:
+                    return probe
+                probe += timedelta(days=1)
+        day_of_month = int(self.schedule.get("day_of_month") or 1)
+        month = current_due.month
+        year = current_due.year
+        for _ in range(self.interval):
+            month += 1
+            if month == 13:
+                month = 1
+                year += 1
+        last_day = calendar.monthrange(year, month)[1]
+        return date(year, month, min(day_of_month, last_day))
+
+    def next_due_on_or_after(self, current: date) -> date:
+        probe = current - timedelta(days=1)
+        next_due = self.advance_after(probe)
+        while next_due < current:
+            next_due = self.advance_after(next_due)
+        return next_due
+
+
 def validate_routine_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
+    return RoutineSchedulePlan.from_raw(schedule).as_dict()
+
+
+def _normalize_routine_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
     frequency = normalize_slug(str(schedule.get("frequency") or "daily"))
     interval = _positive_int(schedule.get("interval"), default=1)
     normalized: dict[str, Any] = {"frequency": frequency, "interval": interval}
@@ -49,54 +119,19 @@ def validate_routine_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
 
 
 def routine_schedule_from_item(item: dict[str, Any]) -> dict[str, Any]:
-    raw = item.get("schedule")
-    if isinstance(raw, dict) and raw:
-        return validate_routine_schedule(raw)
-    every_days = _positive_int(item.get("every_days"), default=1)
-    return {"frequency": "daily", "interval": every_days}
+    return RoutineSchedulePlan.from_item(item).as_dict()
 
 
 def schedule_every_days(schedule: dict[str, Any]) -> int:
-    interval = _positive_int(schedule.get("interval"), default=1)
-    frequency = str(schedule.get("frequency") or "daily")
-    if frequency == "weekly":
-        return interval * 7
-    if frequency == "monthly":
-        return interval * 30
-    return interval
+    return RoutineSchedulePlan.from_raw(schedule).every_days
 
 
 def advance_next_due(schedule: dict[str, Any], current_due: date) -> date:
-    frequency = str(schedule.get("frequency") or "daily")
-    interval = _positive_int(schedule.get("interval"), default=1)
-    if frequency == "daily":
-        return current_due + timedelta(days=interval)
-    if frequency == "weekly":
-        weekdays = [WEEKDAY_ORDER[day] for day in _list(schedule.get("weekdays"))]
-        probe = current_due + timedelta(days=1)
-        while True:
-            delta_weeks = (probe - current_due).days // 7
-            if probe.weekday() in weekdays and delta_weeks % interval == 0:
-                return probe
-            probe += timedelta(days=1)
-    day_of_month = int(schedule.get("day_of_month") or 1)
-    month = current_due.month
-    year = current_due.year
-    for _ in range(interval):
-        month += 1
-        if month == 13:
-            month = 1
-            year += 1
-    last_day = calendar.monthrange(year, month)[1]
-    return date(year, month, min(day_of_month, last_day))
+    return RoutineSchedulePlan.from_raw(schedule).advance_after(current_due)
 
 
 def next_due_on_or_after(schedule: dict[str, Any], current: date) -> date:
-    probe = current - timedelta(days=1)
-    next_due = advance_next_due(schedule, probe)
-    while next_due < current:
-        next_due = advance_next_due(schedule, next_due)
-    return next_due
+    return RoutineSchedulePlan.from_raw(schedule).next_due_on_or_after(current)
 
 
 def digest_due(
