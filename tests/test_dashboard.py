@@ -15,7 +15,7 @@ from alcove.connectors.chrome_bookmarks import (
 )
 from alcove.connectors.github_stars import GitHubStarsConnector, GitHubStarsImportRequest
 from alcove.dashboard import DashboardModule
-from alcove.dashboard_projection import DashboardProjection
+from alcove.dashboard_projection import DashboardHealthProjection, DashboardProjection
 from alcove.home import AlcoveHome
 from alcove.mounts import AddMountRequest, MountsModule
 from alcove.pins_import import PinsMarkdownImportModule
@@ -526,6 +526,77 @@ def test_dashboard_snapshot_includes_data_health_summary(tmp_path):
     assert snapshot["health"]["stats"]["daily_rollups"] >= 1
     assert str(tmp_path) not in json.dumps(snapshot["health"], ensure_ascii=False)
     assert "health secret" not in json.dumps(snapshot["health"], ensure_ascii=False)
+
+
+def test_dashboard_health_projection_owns_source_rows_totals_and_issues(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+
+    health = DashboardHealthProjection(home).summary(
+        knowledge_rows=[
+            {
+                "name": "research_notes",
+                "item_count": 2,
+                "inbox_count": 1,
+                "updated_at": "2026-07-10T00:00:00+08:00",
+            }
+        ],
+        mount_rows=[
+            {
+                "id": "mounted health",
+                "name": "Mounted Health",
+                "item_count": 0,
+                "updated_at": "2026-07-11T00:00:00+08:00",
+            }
+        ],
+        connector_rows=[
+            {
+                "connector": "apple-notes",
+                "freshness_status": "stale",
+                "count": 3,
+                "checked_at": "2026-07-12T00:00:00+08:00",
+            }
+        ],
+        usage_summary={"total_events": 5},
+    )
+
+    assert health["status"] == "needs-attention"
+    assert health["issue_count"] == 2
+    assert health["totals"] == {
+        "managed_kbs": 1,
+        "managed_items": 2,
+        "mounts": 1,
+        "mount_items": 0,
+        "connectors": 1,
+        "connector_items": 3,
+        "usage_events": 5,
+    }
+    assert health["data_sources"] == [
+        {
+            "kind": "managed-kb",
+            "name": "research_notes",
+            "status": "ok",
+            "item_count": 2,
+            "updated_at": "2026-07-10T00:00:00+08:00",
+            "command_hint": "alcove validate --kb research_notes --json",
+            "inbox_count": 1,
+        },
+        {
+            "kind": "mount",
+            "name": "Mounted Health",
+            "status": "empty",
+            "item_count": 0,
+            "updated_at": "2026-07-11T00:00:00+08:00",
+            "command_hint": "alcove mount scan mounted-health --json",
+        },
+        {
+            "kind": "connector",
+            "name": "apple-notes",
+            "status": "stale",
+            "item_count": 3,
+            "updated_at": "2026-07-12T00:00:00+08:00",
+            "command_hint": "alcove connector refresh --connector apple-notes --json",
+        },
+    ]
 
 
 def test_dashboard_uses_human_connector_source_labels(tmp_path):

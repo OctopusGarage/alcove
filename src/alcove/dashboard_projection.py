@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -9,6 +9,150 @@ from alcove.home import AlcoveHome
 from alcove.markdown import normalize_slug
 
 DASHBOARD_TIMEZONE = timezone(timedelta(hours=8))
+
+
+@dataclass(frozen=True)
+class DashboardHealthSource:
+    kind: str
+    name: str
+    status: str
+    item_count: int
+    command_hint: str
+    updated_at: str = ""
+    inbox_count: int | None = None
+
+    @classmethod
+    def managed_kb(cls, row: dict[str, Any]) -> "DashboardHealthSource":
+        item_count = int(row.get("item_count") or 0)
+        name = str(row.get("name") or "")
+        return cls(
+            kind="managed-kb",
+            name=name,
+            status="ok" if item_count > 0 else "empty",
+            item_count=item_count,
+            inbox_count=int(row.get("inbox_count") or 0),
+            updated_at=str(row.get("updated_at") or ""),
+            command_hint=dashboard_health_command_hint("managed-kb", name),
+        )
+
+    @classmethod
+    def mount(cls, row: dict[str, Any]) -> "DashboardHealthSource":
+        item_count = int(row.get("item_count") or 0)
+        mount_id = str(row.get("id") or "")
+        return cls(
+            kind="mount",
+            name=str(row.get("name") or mount_id),
+            status="ok" if item_count > 0 else "empty",
+            item_count=item_count,
+            updated_at=str(row.get("updated_at") or ""),
+            command_hint=dashboard_health_command_hint("mount", mount_id),
+        )
+
+    @classmethod
+    def connector(cls, row: dict[str, Any]) -> "DashboardHealthSource":
+        raw_status = str(row.get("freshness_status") or row.get("status") or "")
+        item_count = int(row.get("item_count") or row.get("count") or 0)
+        connector = str(row.get("connector") or row.get("id") or "")
+        return cls(
+            kind="connector",
+            name=connector,
+            status=raw_status or ("ok" if item_count > 0 else "empty"),
+            item_count=item_count,
+            updated_at=str(row.get("updated_at") or row.get("checked_at") or ""),
+            command_hint=dashboard_health_command_hint("connector", connector),
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        row: dict[str, Any] = {
+            "kind": self.kind,
+            "name": self.name,
+            "status": self.status,
+            "item_count": self.item_count,
+            "updated_at": self.updated_at,
+            "command_hint": self.command_hint,
+        }
+        if self.inbox_count is not None:
+            row["inbox_count"] = self.inbox_count
+        return row
+
+
+class DashboardHealthProjection:
+    """Private projection rules for dashboard data-health rows and totals."""
+
+    def __init__(self, home: AlcoveHome) -> None:
+        self.home = home
+
+    def summary(
+        self,
+        *,
+        knowledge_rows: list[dict[str, Any]],
+        connector_rows: list[dict[str, Any]],
+        mount_rows: list[dict[str, Any]],
+        usage_summary: dict[str, Any],
+    ) -> dict[str, Any]:
+        sources = self.sources(
+            knowledge_rows=knowledge_rows,
+            connector_rows=connector_rows,
+            mount_rows=mount_rows,
+        )
+        issue_count = len(
+            [source for source in sources if source.status in {"empty", "stale", "error"}]
+        )
+        stats_root = self.home.paths().stats
+        daily_root = stats_root / "daily"
+        return {
+            "status": "needs-attention" if issue_count else "ok",
+            "issue_count": issue_count,
+            "totals": self.totals(
+                knowledge_rows=knowledge_rows,
+                connector_rows=connector_rows,
+                mount_rows=mount_rows,
+                usage_summary=usage_summary,
+            ),
+            "stats": {
+                "summary_exists": (stats_root / "summary.json").is_file(),
+                "daily_rollups": (
+                    len(list(daily_root.glob("*.json"))) if daily_root.is_dir() else 0
+                ),
+                "updated_at": latest_mtime(
+                    [path for path in [stats_root / "summary.json"] if path.is_file()]
+                ),
+            },
+            "data_sources": [source.as_dict() for source in sources],
+        }
+
+    def sources(
+        self,
+        *,
+        knowledge_rows: list[dict[str, Any]],
+        connector_rows: list[dict[str, Any]],
+        mount_rows: list[dict[str, Any]],
+    ) -> list[DashboardHealthSource]:
+        return [
+            *[DashboardHealthSource.managed_kb(row) for row in knowledge_rows],
+            *[DashboardHealthSource.mount(row) for row in mount_rows],
+            *[DashboardHealthSource.connector(row) for row in connector_rows],
+        ]
+
+    def totals(
+        self,
+        *,
+        knowledge_rows: list[dict[str, Any]],
+        connector_rows: list[dict[str, Any]],
+        mount_rows: list[dict[str, Any]],
+        usage_summary: dict[str, Any],
+    ) -> dict[str, int]:
+        return {
+            "managed_kbs": len(knowledge_rows),
+            "managed_items": sum(int(row.get("item_count") or 0) for row in knowledge_rows),
+            "mounts": len(mount_rows),
+            "mount_items": sum(int(row.get("item_count") or 0) for row in mount_rows),
+            "connectors": len(connector_rows),
+            "connector_items": sum(
+                int(row.get("item_count") or row.get("count") or 0) for row in connector_rows
+            ),
+            "usage_events": int(usage_summary.get("total_events") or 0),
+        }
 
 
 class DashboardProjection:
@@ -191,107 +335,43 @@ class DashboardProjection:
         mount_rows: list[dict[str, Any]],
         usage_summary: dict[str, Any],
     ) -> dict[str, Any]:
-        data_sources: list[dict[str, Any]] = []
-        for row in knowledge_rows:
-            item_count = int(row.get("item_count") or 0)
-            data_sources.append(
-                {
-                    "kind": "managed-kb",
-                    "name": str(row.get("name") or ""),
-                    "status": "ok" if item_count > 0 else "empty",
-                    "item_count": item_count,
-                    "inbox_count": int(row.get("inbox_count") or 0),
-                    "updated_at": str(row.get("updated_at") or ""),
-                    "command_hint": self.health_command_hint(
-                        "managed-kb", str(row.get("name") or "")
-                    ),
-                }
-            )
-        for row in mount_rows:
-            item_count = int(row.get("item_count") or 0)
-            mount_id = str(row.get("id") or "")
-            data_sources.append(
-                {
-                    "kind": "mount",
-                    "name": str(row.get("name") or mount_id),
-                    "status": "ok" if item_count > 0 else "empty",
-                    "item_count": item_count,
-                    "updated_at": str(row.get("updated_at") or ""),
-                    "command_hint": self.health_command_hint("mount", mount_id),
-                }
-            )
-        for row in connector_rows:
-            raw_status = str(row.get("freshness_status") or row.get("status") or "")
-            item_count = int(row.get("item_count") or row.get("count") or 0)
-            connector = str(row.get("connector") or row.get("id") or "")
-            data_sources.append(
-                {
-                    "kind": "connector",
-                    "name": connector,
-                    "status": raw_status or ("ok" if item_count > 0 else "empty"),
-                    "item_count": item_count,
-                    "updated_at": str(row.get("updated_at") or row.get("checked_at") or ""),
-                    "command_hint": self.health_command_hint("connector", connector),
-                }
-            )
-        totals = {
-            "managed_kbs": len(knowledge_rows),
-            "managed_items": sum(int(row.get("item_count") or 0) for row in knowledge_rows),
-            "mounts": len(mount_rows),
-            "mount_items": sum(int(row.get("item_count") or 0) for row in mount_rows),
-            "connectors": len(connector_rows),
-            "connector_items": sum(
-                int(row.get("item_count") or row.get("count") or 0) for row in connector_rows
-            ),
-            "usage_events": int(usage_summary.get("total_events") or 0),
-        }
-        issue_count = len(
-            [
-                row
-                for row in data_sources
-                if str(row.get("status") or "") in {"empty", "stale", "error"}
-            ]
+        return DashboardHealthProjection(self.home).summary(
+            knowledge_rows=knowledge_rows,
+            connector_rows=connector_rows,
+            mount_rows=mount_rows,
+            usage_summary=usage_summary,
         )
-        stats_root = self.home.paths().stats
-        daily_root = stats_root / "daily"
-        return {
-            "status": "needs-attention" if issue_count else "ok",
-            "issue_count": issue_count,
-            "totals": totals,
-            "stats": {
-                "summary_exists": (stats_root / "summary.json").is_file(),
-                "daily_rollups": (
-                    len(list(daily_root.glob("*.json"))) if daily_root.is_dir() else 0
-                ),
-                "updated_at": self.latest_mtime(
-                    [path for path in [stats_root / "summary.json"] if path.is_file()]
-                ),
-            },
-            "data_sources": data_sources,
-        }
 
     def health_command_hint(self, kind: str, identifier: str) -> str:
-        value = identifier.strip()
-        if not value:
-            return ""
-        if kind == "managed-kb":
-            return f"alcove validate --kb {value} --json"
-        value = normalize_slug(value)
-        if not value:
-            return ""
-        if kind == "mount":
-            return f"alcove mount scan {value} --json"
-        if kind == "connector":
-            return f"alcove connector refresh --connector {value} --json"
-        return ""
+        return dashboard_health_command_hint(kind, identifier)
 
     def count_phrase(self, count: int, singular: str, plural: str | None = None) -> str:
         label = singular if count == 1 else plural or f"{singular}s"
         return f"{count} {label}"
 
     def latest_mtime(self, paths: list[Path]) -> str:
-        if not paths:
-            return ""
-        return datetime.fromtimestamp(max(path.stat().st_mtime for path in paths), UTC).isoformat(
-            timespec="seconds"
-        )
+        return latest_mtime(paths)
+
+
+def dashboard_health_command_hint(kind: str, identifier: str) -> str:
+    value = identifier.strip()
+    if not value:
+        return ""
+    if kind == "managed-kb":
+        return f"alcove validate --kb {value} --json"
+    value = normalize_slug(value)
+    if not value:
+        return ""
+    if kind == "mount":
+        return f"alcove mount scan {value} --json"
+    if kind == "connector":
+        return f"alcove connector refresh --connector {value} --json"
+    return ""
+
+
+def latest_mtime(paths: list[Path]) -> str:
+    if not paths:
+        return ""
+    return datetime.fromtimestamp(max(path.stat().st_mtime for path in paths), UTC).isoformat(
+        timespec="seconds"
+    )
