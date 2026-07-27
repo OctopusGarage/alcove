@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import json
 
+import pytest
+
+from alcove.blog_discovery import _candidate_sitemap_urls
 import alcove.notifications as notifications
 from alcove.blog_monitor import BlogArticle, BlogMonitorModule
 from alcove.cli import main
@@ -503,6 +506,83 @@ def test_blog_playwright_discovery_falls_back_to_category_sitemap_when_page_is_c
             "source_name": "OpenAI Engineering",
         }
     ]
+
+
+def test_blog_playwright_discovery_reports_empty_render_and_failed_fallbacks(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = BlogMonitorModule(home)
+    module.add(
+        name="OpenAI Engineering",
+        url="https://openai.com/news/engineering/",
+        source_id="openai",
+        discover_method="playwright",
+        link_pattern="/index/",
+    )
+    challenge_html = """
+<html><body>
+  <span id="challenge-error-text">Enable JavaScript and cookies to continue</span>
+</body></html>
+"""
+    empty_sitemap = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://openai.com/about/</loc>
+    <lastmod>2026-07-01T07:00:00.000Z</lastmod>
+  </url>
+</urlset>
+"""
+
+    def fake_fetch(url):
+        if url == "https://openai.com/sitemap.xml/engineering/":
+            return empty_sitemap
+        return challenge_html
+
+    monkeypatch.setattr(module, "_extract_articles_with_playwright", lambda _source: [])
+    monkeypatch.setattr(module, "_fetch_text", fake_fetch)
+
+    with pytest.raises(RuntimeError) as error:
+        module._discover(module._load_sources()[0])
+
+    message = str(error.value)
+    assert "Playwright found no article links for https://openai.com/news/engineering/" in message
+    assert "HTML fallback found no article links" in message
+    assert (
+        "sitemap fallback https://openai.com/sitemap.xml/engineering/ found no article links"
+        in message
+    )
+
+
+def test_blog_playwright_discovery_reports_html_and_sitemap_fallback_errors(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = BlogMonitorModule(home)
+    module.add(
+        name="OpenAI Engineering",
+        url="https://openai.com/news/engineering/",
+        source_id="openai",
+        discover_method="playwright",
+        link_pattern="/index/",
+    )
+
+    def fake_fetch(url):
+        if url == "https://openai.com/sitemap.xml/engineering/":
+            raise RuntimeError("sitemap unavailable")
+        raise RuntimeError("html unavailable")
+
+    monkeypatch.setattr(module, "_extract_articles_with_playwright", lambda _source: [])
+    monkeypatch.setattr(module, "_fetch_text", fake_fetch)
+
+    with pytest.raises(RuntimeError) as error:
+        module._discover(module._load_sources()[0])
+
+    message = str(error.value)
+    assert "HTML fallback failed: html unavailable" in message
+    assert "sitemap fallback https://openai.com/sitemap.xml/engineering/ failed" in message
+    assert "sitemap unavailable" in message
+
+
+def test_blog_candidate_sitemap_urls_require_news_category_url():
+    assert _candidate_sitemap_urls("file:///tmp/blog.html") == []
+    assert _candidate_sitemap_urls("https://openai.com/blog/engineering/") == []
 
 
 def test_blog_discovery_failure_marks_attention_and_sends_alert(tmp_path, monkeypatch):

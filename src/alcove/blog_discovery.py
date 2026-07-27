@@ -97,9 +97,7 @@ class BlogDiscoveryModule:
             if articles:
                 return articles
             failures.append(f"sitemap fallback {sitemap_url} found no article links")
-        if failures:
-            raise RuntimeError(f"{error}; {'; '.join(failures)}") from error
-        raise RuntimeError(str(error)) from error
+        raise RuntimeError(f"{error}; {'; '.join(failures)}") from error
 
     def _discover_feed(self, source: Any) -> list[Any]:
         raw = self.host._fetch_text(source.url)
