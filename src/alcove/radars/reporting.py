@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from html import escape
 import re
 from urllib.parse import urlparse
@@ -8,8 +9,9 @@ from alcove.radars.models import RadarDefinition, RadarItem
 
 
 def render_markdown(definition: RadarDefinition, items: list[RadarItem], *, run_day: str) -> str:
-    included = selected_report_items(definition, items)
-    source_counts = _source_counts(items)
+    selection = RadarReportSelection.from_items(definition, items)
+    included = selection.as_list()
+    source_counts = selection.source_counts
     lines = [
         f"# {definition.name} - {run_day}",
         "",
@@ -42,8 +44,9 @@ def render_markdown(definition: RadarDefinition, items: list[RadarItem], *, run_
 
 
 def render_html(definition: RadarDefinition, items: list[RadarItem], *, run_day: str) -> str:
-    included = selected_report_items(definition, items)
-    source_counts = _source_counts(items)
+    selection = RadarReportSelection.from_items(definition, items)
+    included = selection.as_list()
+    source_counts = selection.source_counts
     rows = "\n".join(_item_card(index, item) for index, item in enumerate(included, start=1))
     if not rows:
         rows = '<article class="empty">No items passed the threshold.</article>'
@@ -104,29 +107,65 @@ def render_html(definition: RadarDefinition, items: list[RadarItem], *, run_day:
     )
 
 
+@dataclass(frozen=True)
+class RadarReportSelection:
+    """Selected radar report items plus the run context renderers need."""
+
+    items: tuple[RadarItem, ...]
+    total_count: int
+    _source_counts: dict[str, int] = field(repr=False)
+
+    @classmethod
+    def from_items(
+        cls, definition: RadarDefinition, items: list[RadarItem]
+    ) -> RadarReportSelection:
+        ranked = sorted(
+            (item for item in items if item.included), key=lambda item: item.score, reverse=True
+        )
+        max_per_source = _max_per_source(definition)
+        selected: list[RadarItem] = []
+        selected_source_counts: dict[str, int] = {}
+        topic_keys: list[set[str]] = []
+        for item in ranked:
+            key = _topic_key(item.title)
+            if _is_duplicate_topic(key, topic_keys):
+                continue
+            if max_per_source:
+                count = selected_source_counts.get(item.source_id, 0)
+                if count >= max_per_source:
+                    continue
+                selected_source_counts[item.source_id] = count + 1
+            selected.append(item)
+            topic_keys.append(key)
+        limit = _report_limit(definition)
+        if limit:
+            selected = selected[:limit]
+        return cls(
+            items=tuple(selected),
+            total_count=len(items),
+            _source_counts=_source_counts(items),
+        )
+
+    @property
+    def included_count(self) -> int:
+        return len(self.items)
+
+    @property
+    def source_counts(self) -> dict[str, int]:
+        return dict(self._source_counts)
+
+    @property
+    def source_count(self) -> int:
+        return len(self._source_counts)
+
+    def as_list(self) -> list[RadarItem]:
+        return list(self.items)
+
+
 def selected_report_items(definition: RadarDefinition, items: list[RadarItem]) -> list[RadarItem]:
     """Return the final deduped, limited items shown in radar reports."""
 
-    ranked = sorted(
-        (item for item in items if item.included), key=lambda item: item.score, reverse=True
-    )
-    max_per_source = _max_per_source(definition)
-    included: list[RadarItem] = []
-    source_counts: dict[str, int] = {}
-    topic_keys: list[set[str]] = []
-    for item in ranked:
-        key = _topic_key(item.title)
-        if _is_duplicate_topic(key, topic_keys):
-            continue
-        if max_per_source:
-            count = source_counts.get(item.source_id, 0)
-            if count >= max_per_source:
-                continue
-            source_counts[item.source_id] = count + 1
-        included.append(item)
-        topic_keys.append(key)
-    limit = _report_limit(definition)
-    return included[:limit] if limit else included
+    return RadarReportSelection.from_items(definition, items).as_list()
 
 
 def _report_limit(definition: RadarDefinition) -> int:
@@ -235,14 +274,14 @@ def _item_card(index: int, item: RadarItem) -> str:
 
 def _profile_terms(definition: RadarDefinition) -> list[str]:
     terms: list[str] = []
-    for field in [
+    for profile_field in [
         "interest_tags",
         "news_categories",
         "watched_symbols",
         "sectors",
         "content_type_preference",
     ]:
-        value = definition.profile.get(field)
+        value = definition.profile.get(profile_field)
         if isinstance(value, list):
             terms.extend(str(item) for item in value if str(item).strip())
     return list(dict.fromkeys(terms))
