@@ -124,6 +124,7 @@ files = [
     "src/alcove/mcp_external_tools.py",
     "src/alcove/mcp_global_tools.py",
     "src/alcove/mcp_planner_tools.py",
+    "src/alcove/mcp_prompt_requests.py",
     "src/alcove/mcp_registrar.py",
     "src/alcove/mcp_resources.py",
     "src/alcove/mcp_server.py",

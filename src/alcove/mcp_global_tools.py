@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 from alcove.mcp_context import McpInvocationContext
+from alcove.mcp_prompt_requests import prompt_request
 from alcove.mcp_registrar import McpToolRegistrar
 from alcove.pins import AddPinRequest, UpdatePinRequest
 from alcove.projects import AddProjectRequest
-from alcove.prompts import AddPromptRequest
 
 
 def register_mcp_global_tools(
@@ -221,20 +221,20 @@ def register_mcp_global_tools(
         """Save a reusable prompt from a proposal, or force an explicit direct write."""
         return context.scoped_app(workspace, home).global_home.prompt_save_payload(
             (
-                AddPromptRequest(
+                prompt_request(
                     title=title,
                     content=content,
                     description=description,
-                    tags=tags or [],
-                    use_cases=use_cases or [],
-                    source_refs=source_refs or [],
+                    tags=tags,
+                    use_cases=use_cases,
+                    source_refs=source_refs,
                     kind=kind,
                     domain=domain,
                     intent=intent,
-                    surfaces=surfaces or [],
-                    triggers=triggers or [],
-                    inputs=inputs or [],
-                    outputs=outputs or [],
+                    surfaces=surfaces,
+                    triggers=triggers,
+                    inputs=inputs,
+                    outputs=outputs,
                 )
                 if not proposal_id
                 else None
@@ -263,20 +263,20 @@ def register_mcp_global_tools(
     ) -> dict[str, Any]:
         """Prepare, improve, deduplicate, and classify a prompt before saving."""
         return context.scoped_app(workspace, home).global_home.prompt_propose_payload(
-            AddPromptRequest(
+            prompt_request(
                 title=title,
                 content=content,
                 description=description,
-                tags=tags or [],
-                use_cases=use_cases or [],
-                source_refs=source_refs or [],
+                tags=tags,
+                use_cases=use_cases,
+                source_refs=source_refs,
                 kind=kind,
                 domain=domain,
                 intent=intent,
-                surfaces=surfaces or [],
-                triggers=triggers or [],
-                inputs=inputs or [],
-                outputs=outputs or [],
+                surfaces=surfaces,
+                triggers=triggers,
+                inputs=inputs,
+                outputs=outputs,
             )
         )
 

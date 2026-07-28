@@ -206,6 +206,13 @@ def test_mcp_project_and_prompt_tools_use_global_home(tmp_path):
         content="Check regressions and missing tests.",
         tags=["review"],
         force=True,
+        kind="playbook",
+        domain="agent-engineering",
+        intent="review",
+        surfaces=["codex"],
+        triggers=["diff"],
+        inputs=["patch"],
+        outputs=["findings"],
     )
     get_payload = prompt_get_tool("", home=str(home.root), prompt_id="review-lens")
     index_payload = prompt_rebuild_index_tool("", home=str(home.root))
@@ -214,6 +221,13 @@ def test_mcp_project_and_prompt_tools_use_global_home(tmp_path):
     assert project_payload["project"]["alias"] == "alcove"
     assert find_payload["projects"][0]["path"] == str(project_root.resolve())
     assert prompt_payload["prompt"]["id"] == "review-lens"
+    assert prompt_payload["prompt"]["kind"] == "playbook"
+    assert prompt_payload["prompt"]["domain"] == "agent-engineering"
+    assert prompt_payload["prompt"]["intent"] == "review"
+    assert prompt_payload["prompt"]["surfaces"] == ["codex"]
+    assert prompt_payload["prompt"]["triggers"] == ["diff"]
+    assert prompt_payload["prompt"]["inputs"] == ["patch"]
+    assert prompt_payload["prompt"]["outputs"] == ["findings"]
     assert get_payload["prompt"]["content"] == "Check regressions and missing tests."
     assert index_payload["status"] == "rebuilt"
     assert index_payload["count"] == 1
@@ -463,6 +477,13 @@ def test_mcp_server_default_home_routes_global_tools(tmp_path):
                     "Return findings, risks, and verification notes."
                 ),
                 "tags": ["review"],
+                "kind": "playbook",
+                "domain": "agent-engineering",
+                "intent": "review",
+                "surfaces": ["mcp"],
+                "triggers": ["default-home"],
+                "inputs": ["scenario"],
+                "outputs": ["prompt-pack"],
             },
         )
     )
@@ -488,6 +509,13 @@ def test_mcp_server_default_home_routes_global_tools(tmp_path):
         "create_new_after_review",
     }
     assert prompt_result.structured_content["prompt"]["id"] == "default-prompt"
+    assert prompt_result.structured_content["prompt"]["kind"] == "playbook"
+    assert prompt_result.structured_content["prompt"]["domain"] == "agent-engineering"
+    assert prompt_result.structured_content["prompt"]["intent"] == "review"
+    assert prompt_result.structured_content["prompt"]["surfaces"] == ["mcp"]
+    assert prompt_result.structured_content["prompt"]["triggers"] == ["default-home"]
+    assert prompt_result.structured_content["prompt"]["inputs"] == ["scenario"]
+    assert "prompt-pack" in prompt_result.structured_content["prompt"]["outputs"]
     assert compose_result.structured_content["sources"][0]["title"] == "Default Prompt"
     assert "Review the default home workflow" in compose_result.structured_content["prompt"]
     assert audit_result.structured_content["counts"]["prompts"] == 1
