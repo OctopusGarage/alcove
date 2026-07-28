@@ -68,6 +68,7 @@ files = [
     "src/alcove/application_global_home.py",
     "src/alcove/application_global_ideas.py",
     "src/alcove/application_global_planner.py",
+    "src/alcove/application_global_planner_payloads.py",
     "src/alcove/application_global_prompts.py",
     "src/alcove/application_global_routines.py",
     "src/alcove/application_global_tasks.py",

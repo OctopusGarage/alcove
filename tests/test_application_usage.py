@@ -11,7 +11,7 @@ from alcove.mounts import AddMountRequest
 from alcove.pins import AddPinRequest
 from alcove.prompts import AddPromptRequest
 from alcove.runtime import AlcoveRuntime
-from alcove.tasks import AddTaskRequest
+from alcove.tasks import AddIdeaRequest, AddRoutineRequest, AddTaskRequest
 from alcove.usage import UsageRecorder
 from alcove.workspace import Workspace
 
@@ -51,6 +51,43 @@ def test_application_global_mutations_record_usage_and_activity(tmp_path):
     assert prompt_payload["write_contract"]["action"] == "prompt.save"
     assert prompt_payload["prompt_eval"]["verdict"] in {"ready", "needs_review"}
     assert prompt_payload["prompt_eval"]["audit_status"] in {"ok", "warnings", "issues"}
+
+
+def test_application_planner_payloads_keep_scope_and_write_contracts(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    app = AlcoveApplication(AlcoveRuntime.resolve(home=home.root))
+
+    idea_payload = app.global_home.idea_add_payload(AddIdeaRequest(title="Planner Idea"))
+    promoted_payload = app.global_home.idea_promote_payload(
+        idea_payload["idea"]["id"],
+        priority="high",
+        due="2026-07-29",
+    )
+    routine_payload = app.global_home.routine_add_payload(
+        AddRoutineRequest(
+            title="Planner Routine",
+            schedule={"frequency": "weekly", "interval": 1, "weekdays": ["wed"]},
+            next_due="2026-07-29",
+        )
+    )
+    materialized_payload = app.global_home.routine_materialize_due_payload(today="2026-07-29")
+    tasks_payload = app.global_home.task_list_payload(status="")
+    ideas_payload = app.global_home.idea_list_payload(status="promoted")
+    routines_payload = app.global_home.routine_list_payload(status="active")
+
+    assert idea_payload["home"] == str(home.root)
+    assert idea_payload["write_contract"]["source_of_truth"] == "tasks"
+    assert promoted_payload["write_contract"]["action"] == "idea.promote"
+    assert promoted_payload["task"]["priority"] == "high"
+    assert routine_payload["routine"]["schedule"]["frequency"] == "weekly"
+    assert materialized_payload["write_contract"]["target"] == "2026-07-29"
+    assert materialized_payload["created"][0]["source_routine_id"] == "planner-routine"
+    assert {task["id"] for task in tasks_payload["tasks"]} == {
+        "planner-idea",
+        "planner-routine",
+    }
+    assert ideas_payload["count"] == 1
+    assert routines_payload["count"] == 1
 
 
 def test_application_managed_kb_mutation_records_usage_and_activity(tmp_path):
