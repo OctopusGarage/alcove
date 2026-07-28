@@ -85,9 +85,8 @@ class DashboardActivityRows:
                 continue
             area = str(row.get("area") or "")
             raw_updated_at = str(row.get("raw_updated_at") or "")
-            try:
-                event_time = datetime.fromisoformat(raw_updated_at)
-            except ValueError:
+            event_time = _parse_raw_time(raw_updated_at)
+            if event_time is None:
                 continue
             event_times.setdefault(area, []).append(event_time)
         return event_times
@@ -106,9 +105,8 @@ class DashboardActivityRows:
         }.get(file_area)
         if not event_area:
             return False
-        try:
-            file_time = datetime.fromisoformat(raw_updated_at)
-        except ValueError:
+        file_time = _parse_raw_time(raw_updated_at)
+        if file_time is None:
             return False
         return any(
             abs((file_time - event_time).total_seconds()) <= 300
@@ -261,3 +259,11 @@ class DashboardActivityRows:
             path = str(metadata.get("path") or "").strip()
             return path or str(event.get("summary") or action or "event")
         return str(event.get("summary") or action or "event")
+
+
+def _parse_raw_time(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)

@@ -5,6 +5,8 @@ import sys
 import time
 from datetime import datetime
 
+import pytest
+
 from alcove.search import SearchModule, SearchRequest
 from alcove.tasks import AddIdeaRequest, AddRoutineRequest, AddTaskRequest, TasksModule
 from alcove.workspace import Workspace
@@ -54,6 +56,20 @@ def test_task_add_list_and_complete_updates_status(tmp_path):
     assert completed.status == "done"
     assert pending_after_complete == []
     assert done[0].id == task.id
+
+
+def test_task_edit_rejects_ambiguous_prefix_without_mutating_items(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    module = TasksModule(home=home)
+    first = module.task_add(AddTaskRequest(title="Ship dashboard docs"))
+    second = module.task_add(AddTaskRequest(title="Ship dashboard tests"))
+
+    with pytest.raises(ValueError, match="Ambiguous task item id"):
+        module.task_edit("ship-dashboard", title="Wrong item edited")
+
+    titles = {task.id: task.title for task in module.task_list(status="")}
+    assert titles[first.id] == "Ship dashboard docs"
+    assert titles[second.id] == "Ship dashboard tests"
 
 
 def test_task_writes_are_serialized_across_processes(tmp_path):

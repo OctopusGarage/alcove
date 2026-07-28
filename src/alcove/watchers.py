@@ -223,7 +223,7 @@ class WatcherModule:
             kind=str(payload.get("kind") or "page"),
             kb=str(payload.get("kb") or ""),
             tags=[str(tag) for tag in payload.get("tags") or []],
-            ttl_hours=int(payload.get("ttl_hours") or DEFAULT_TTL_HOURS),
+            ttl_hours=_positive_int(payload.get("ttl_hours"), default=DEFAULT_TTL_HOURS),
             status=str(payload.get("status") or "active"),
             created_at=str(payload.get("created_at") or ""),
             updated_at=str(payload.get("updated_at") or ""),
@@ -253,8 +253,10 @@ class WatcherModule:
     def _is_stale(self, source: WatcherSource, timestamp: str) -> bool:
         if not source.checked_at:
             return True
-        checked_at = datetime.fromisoformat(source.checked_at)
-        current = datetime.fromisoformat(timestamp)
+        checked_at = _parse_time(source.checked_at)
+        current = _parse_time(timestamp)
+        if checked_at is None or current is None:
+            return True
         return current >= checked_at + timedelta(hours=max(source.ttl_hours, 1))
 
     def _replace_source(self, source: WatcherSource, **changes: str) -> WatcherSource:
@@ -277,3 +279,19 @@ class WatcherModule:
             "sources": compact_user_path(self.sources_root),
             "events": compact_user_path(self.events_path),
         }
+
+
+def _parse_time(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _positive_int(value: Any, *, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(parsed, 1)

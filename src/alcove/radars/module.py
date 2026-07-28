@@ -317,7 +317,10 @@ class RadarModule:
             ai_summary=self._mapping_field(payload, "ai_summary", "ai_summary must be a mapping"),
             schedule=RadarSchedule(
                 enabled=bool(schedule_payload.get("enabled", False)),
-                ttl_hours=int(schedule_payload.get("ttl_hours") or DEFAULT_TTL_HOURS),
+                ttl_hours=_positive_int(
+                    schedule_payload.get("ttl_hours"),
+                    default=DEFAULT_TTL_HOURS,
+                ),
                 daily_time=str(schedule_payload.get("daily_time") or ""),
                 timezone=str(schedule_payload.get("timezone") or ""),
             ),
@@ -509,3 +512,11 @@ def _parse_daily_time(value: str) -> time:
     if hour < 0 or hour > 23 or minute < 0 or minute > 59:
         raise ValueError("radar schedule daily_time must use HH:MM")
     return time(hour=hour, minute=minute)
+
+
+def _positive_int(value: Any, *, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default

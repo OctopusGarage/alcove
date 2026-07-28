@@ -620,12 +620,13 @@ class PublisherModule:
         last_values = [value.last_synced_at for value in state.values() if value.last_synced_at]
         if not last_values:
             return True
-        latest = max(last_values)
-        try:
-            latest_at = datetime.fromisoformat(latest)
-            current = datetime.fromisoformat(timestamp)
-        except ValueError:
+        parsed_values = [_parse_time(value) for value in last_values]
+        if any(value is None for value in parsed_values):
             return True
+        current = _parse_time(timestamp)
+        if current is None:
+            return True
+        latest_at = max(value for value in parsed_values if value is not None)
         delta = current - latest_at
         return delta.total_seconds() >= max(definition.schedule.ttl_hours, 1) * 3600
 
@@ -1032,6 +1033,14 @@ def _int_value(value: Any, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _parse_time(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def _safe_file_stem(value: str) -> str:

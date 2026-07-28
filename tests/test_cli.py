@@ -9,6 +9,7 @@ from alcove.connectors.github_stars import GitHubStarsConnector
 from alcove.home import AlcoveHome
 from alcove.pins import AddPinRequest, PinsModule
 from alcove.usage import UsageRecorder
+from alcove.watchers import WatcherModule
 
 
 def _write_post(root, platform, name, files):
@@ -234,6 +235,30 @@ def test_cli_usage_summary_and_prune(tmp_path, capsys):
     assert "usage summary secret" not in summary_output.out
     assert prune_code == 0
     assert json.loads(prune_output.out)["activity_removed"] == 1
+
+
+def test_cli_nested_home_groups_preserve_parent_home_option(tmp_path, monkeypatch, capsys):
+    user_home = tmp_path / "user-home"
+    monkeypatch.setenv("HOME", str(user_home))
+    home = AlcoveHome.init(tmp_path / "custom-home")
+    UsageRecorder(home).record_search(
+        surface="cli", query="private parent home query", result_count=1
+    )
+    WatcherModule(home).add(title="Parent Home Watch", url="https://example.test", kind="page")
+
+    usage_code = main(["usage", "--home", str(home.root), "summary", "--json"])
+    usage_output = capsys.readouterr()
+    watch_code = main(["watch", "--home", str(home.root), "list", "--json"])
+    watch_output = capsys.readouterr()
+    service_code = main(["service", "--home", str(home.root), "status", "--dashboard", "--json"])
+    service_output = capsys.readouterr()
+
+    assert usage_code == 0
+    assert json.loads(usage_output.out)["search"]["total"] == 1
+    assert watch_code == 0
+    assert json.loads(watch_output.out)["count"] == 1
+    assert service_code == 0
+    assert json.loads(service_output.out)["home"] == str(home.root)
 
 
 def test_cli_install_prints_mcp_config_without_writing(tmp_path, monkeypatch, capsys):

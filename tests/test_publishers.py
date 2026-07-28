@@ -150,6 +150,40 @@ def test_alcove_memory_write_triggers_due_publisher_before_ttl(tmp_path):
     assert after_clean["publishers"][0]["reason"] == "not_due"
 
 
+def test_publisher_due_check_handles_legacy_naive_last_synced_at(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = PublisherModule(home)
+    module.init_apple_notes(root_folder="iCloud/Alcove")
+    state_path = home.root / "publishers/state/apple-notes.yml"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        yaml.safe_dump(
+            {
+                "schema": "alcove/publisher-state/v1",
+                "publisher_id": "apple-notes",
+                "targets": {
+                    "pins_regular": {
+                        "note_id": "note-1",
+                        "folder_path": "iCloud/Alcove/pins",
+                        "title": "Regular Pins",
+                        "content_hash": "unchanged",
+                        "last_synced_at": "2026-07-12T08:00:00",
+                        "last_status": "success",
+                        "last_error": "",
+                    }
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = module.run_due(timestamp="2026-07-12T09:00:00+00:00")
+
+    assert result["ran"] == 0
+    assert result["publishers"][0]["reason"] == "not_due"
+
+
 def test_apple_notes_init_merges_missing_default_targets_without_overwriting(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     module = PublisherModule(home)
