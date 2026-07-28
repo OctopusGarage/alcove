@@ -673,8 +673,17 @@ class TasksModule:
         slug = normalize_slug(item_id)
         for item in items:
             candidate = str(item.get("id") or "")
-            if candidate == slug or candidate.startswith(slug):
+            if candidate == slug:
                 return item
+        matches = []
+        for item in items:
+            candidate = str(item.get("id") or "")
+            if candidate.startswith(slug):
+                matches.append(item)
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise ValueError(f"Ambiguous task item id: {item_id}")
         raise FileNotFoundError(f"Task item not found: {item_id}")
 
     def _idea(self, item: dict[str, Any]) -> Idea:

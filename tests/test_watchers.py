@@ -70,6 +70,24 @@ def test_watcher_stale_check_handles_legacy_naive_checked_at(tmp_path):
     assert result["sources"][0] == {"id": "legacy-blog", "status": "skipped"}
 
 
+def test_watcher_stale_check_handles_invalid_persisted_ttl_hours(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    page = tmp_path / "blog.html"
+    page.write_text("<html><title>First</title><body>v1</body></html>", encoding="utf-8")
+    module = WatcherModule(home)
+    module.add(title="Malformed TTL Blog", url=page.as_uri(), kind="page", ttl_hours=24)
+    source_path = home.root / "watchers/sources/malformed-ttl-blog.yml"
+    payload = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    payload["ttl_hours"] = "hourly"
+    payload["checked_at"] = "2026-07-12T08:00:00+00:00"
+    source_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+    result = module.check(stale_only=True, now="2026-07-12T09:00:00+00:00")
+
+    assert result["checked"] == 1
+    assert result["sources"][0]["status"] == "skipped"
+
+
 def test_cli_watch_add_list_and_check_file_url(tmp_path, capsys):
     home = tmp_path / ".alcove"
     page = tmp_path / "blog.html"

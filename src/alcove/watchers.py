@@ -223,7 +223,7 @@ class WatcherModule:
             kind=str(payload.get("kind") or "page"),
             kb=str(payload.get("kb") or ""),
             tags=[str(tag) for tag in payload.get("tags") or []],
-            ttl_hours=int(payload.get("ttl_hours") or DEFAULT_TTL_HOURS),
+            ttl_hours=_positive_int(payload.get("ttl_hours"), default=DEFAULT_TTL_HOURS),
             status=str(payload.get("status") or "active"),
             created_at=str(payload.get("created_at") or ""),
             updated_at=str(payload.get("updated_at") or ""),
@@ -287,3 +287,11 @@ def _parse_time(value: str) -> datetime | None:
     except ValueError:
         return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _positive_int(value: Any, *, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(parsed, 1)
