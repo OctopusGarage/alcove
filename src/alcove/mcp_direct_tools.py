@@ -8,9 +8,9 @@ from alcove.knowledge import NoteSourceRequest, ReviseKnowledgeRequest
 from alcove.linking import LinkSourceRequest
 from alcove.mcp_command_hints import command_hints_tool as command_hints_tool
 from alcove.mcp_context import McpInvocationContext, agent_payload
+from alcove.mcp_prompt_requests import prompt_request
 from alcove.pins import AddPinRequest, UpdatePinRequest
 from alcove.projects import AddProjectRequest
-from alcove.prompts import AddPromptRequest
 from alcove.search import SearchRequest
 from alcove.tasks import AddRoutineRequest, AddTaskRequest
 
@@ -289,17 +289,31 @@ def prompt_save_tool(
     home: str = "",
     proposal_id: str = "",
     force: bool = False,
+    kind: str = "full_prompt",
+    domain: str = "",
+    intent: str = "",
+    surfaces: list[str] | None = None,
+    triggers: list[str] | None = None,
+    inputs: list[str] | None = None,
+    outputs: list[str] | None = None,
 ) -> dict[str, Any]:
     """Save a reusable global prompt from a proposal, or force a direct write."""
     return _app(workspace, home).global_home.prompt_save_payload(
         (
-            AddPromptRequest(
+            prompt_request(
                 title=title,
                 content=content,
                 description=description,
-                tags=tags or [],
-                use_cases=use_cases or [],
-                source_refs=source_refs or [],
+                tags=tags,
+                use_cases=use_cases,
+                source_refs=source_refs,
+                kind=kind,
+                domain=domain,
+                intent=intent,
+                surfaces=surfaces,
+                triggers=triggers,
+                inputs=inputs,
+                outputs=outputs,
             )
             if not proposal_id
             else None
@@ -318,16 +332,30 @@ def prompt_propose_tool(
     use_cases: list[str] | None = None,
     source_refs: list[str] | None = None,
     home: str = "",
+    kind: str = "full_prompt",
+    domain: str = "",
+    intent: str = "",
+    surfaces: list[str] | None = None,
+    triggers: list[str] | None = None,
+    inputs: list[str] | None = None,
+    outputs: list[str] | None = None,
 ) -> dict[str, Any]:
     """Prepare, improve, deduplicate, and classify a reusable prompt before saving."""
     return _app(workspace, home).global_home.prompt_propose_payload(
-        AddPromptRequest(
+        prompt_request(
             title=title,
             content=content,
             description=description,
-            tags=tags or [],
-            use_cases=use_cases or [],
-            source_refs=source_refs or [],
+            tags=tags,
+            use_cases=use_cases,
+            source_refs=source_refs,
+            kind=kind,
+            domain=domain,
+            intent=intent,
+            surfaces=surfaces,
+            triggers=triggers,
+            inputs=inputs,
+            outputs=outputs,
         )
     )
 

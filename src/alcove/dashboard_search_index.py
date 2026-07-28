@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from alcove.search_text import deduplicated_search_text
+
 
 def build_dashboard_search_index(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
@@ -11,7 +13,7 @@ def build_dashboard_search_index(snapshot: dict[str, Any]) -> list[dict[str, str
             {
                 "type": "pin",
                 "title": str(pin["title"]),
-                "text": _deduplicated_search_text(
+                "text": deduplicated_search_text(
                     [
                         str(pin["title"]),
                         str(pin["summary"]),
@@ -258,22 +260,6 @@ def _search_text_summary(value: str, max_chars: int = 280) -> str:
     if len(text) <= max_chars:
         return text
     return text[: max_chars - 1].rstrip() + "…"
-
-
-def _deduplicated_search_text(parts: list[str]) -> str:
-    rows: list[str] = []
-    seen: set[str] = set()
-    for part in parts:
-        for line in part.splitlines() or [part]:
-            cleaned = line.strip()
-            if not cleaned:
-                continue
-            key = " ".join(cleaned.casefold().split())
-            if not key or key in seen:
-                continue
-            rows.append(cleaned)
-            seen.add(key)
-    return "\n".join(rows)
 
 
 def _public_resource(value: str) -> str:

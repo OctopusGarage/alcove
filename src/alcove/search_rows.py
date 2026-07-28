@@ -14,6 +14,7 @@ from alcove.okf import (
     string_or_none,
     value_list,
 )
+from alcove.search_text import deduplicated_search_text
 
 
 class SearchRow(TypedDict):
@@ -118,7 +119,7 @@ class SearchRowBuilder:
     def pin_item(self, pin: Any) -> SearchRow:
         created_at = str(pin.created_at or "")
         updated_at = str(getattr(pin, "updated_at", "") or "")
-        notes = _deduplicated_search_text(
+        notes = deduplicated_search_text(
             [
                 string_or_none(pin.description) or "",
                 string_or_none(getattr(pin, "summary", "")) or "",
@@ -341,22 +342,6 @@ class SearchRowBuilder:
         if quality:
             row["information_quality"] = quality
         return row
-
-
-def _deduplicated_search_text(parts: list[str]) -> str:
-    rows: list[str] = []
-    seen: set[str] = set()
-    for part in parts:
-        for line in part.splitlines() or [part]:
-            cleaned = line.strip()
-            if not cleaned:
-                continue
-            key = " ".join(cleaned.casefold().split())
-            if not key or key in seen:
-                continue
-            rows.append(cleaned)
-            seen.add(key)
-    return "\n".join(rows)
 
 
 def _first_date(mapping: dict[str, Any], *keys: str) -> str:
