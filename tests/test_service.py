@@ -245,6 +245,79 @@ def test_service_tick_sends_configured_task_digest_to_multiple_sinks(tmp_path, m
     assert "Digest sink item" in sent_feishu[0]
 
 
+def test_service_tick_builds_and_notifies_task_health_when_enabled(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    telegram: list[str] = []
+    feishu: list[str] = []
+
+    def fake_telegram(*, home, text):
+        telegram.append(text)
+        return {"status": "sent"}
+
+    def fake_feishu(*, home, sink, title, text, report_path=None):
+        feishu.append(f"{title}\n{text}")
+        return {"status": "sent"}
+
+    monkeypatch.setattr("alcove.service.send_telegram_message", fake_telegram)
+    monkeypatch.setattr("alcove.service.send_feishu_message", fake_feishu)
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=False,
+        notify_task_health=True,
+        today="2026-07-12",
+    )
+
+    assert result["task_health"]["status"] == "failed"
+    assert result["task_health"]["checked"] == 8
+    assert result["task_health"]["failed"] >= 1
+    assert result["task_health_notification"]["status"] == "sent"
+    assert "Alcove task health for 2026-07-12" in telegram[0]
+    assert "Alcove task health: 2026-07-12" in feishu[0]
+
+
+def test_cli_service_tick_can_skip_task_health_notification(tmp_path, monkeypatch, capsys):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    telegram: list[str] = []
+
+    def fake_telegram(*, home, text):
+        telegram.append(text)
+        return {"status": "sent"}
+
+    monkeypatch.setattr("alcove.service.send_telegram_message", fake_telegram)
+
+    code = main(
+        [
+            "service",
+            "tick",
+            "--home",
+            str(home.root),
+            "--skip-connectors",
+            "--skip-watchers",
+            "--skip-blogs",
+            "--skip-radars",
+            "--skip-automations",
+            "--skip-publishers",
+            "--skip-mounts",
+            "--skip-health-fix",
+            "--skip-task-health-notify",
+            "--json",
+        ]
+    )
+    output = capsys.readouterr()
+
+    assert code == 0
+    assert telegram == []
+    assert '"task_health": {' in output.out
+    assert "task_health_notification" not in output.out
+
+
 def test_cli_service_install_status_and_tick(tmp_path, monkeypatch, capsys):
     user_home = tmp_path / "user-home"
     alcove_home = user_home / ".alcove"
@@ -272,6 +345,7 @@ def test_cli_service_install_status_and_tick(tmp_path, monkeypatch, capsys):
             "--skip-connectors",
             "--skip-watchers",
             "--skip-radars",
+            "--skip-task-health-notify",
             "--json",
         ]
     )

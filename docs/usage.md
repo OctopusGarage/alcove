@@ -489,6 +489,7 @@ alcove service tick --home ~/.alcove --json
 alcove service tick --home ~/.alcove --skip-radars --json
 alcove service tick --home ~/.alcove --skip-automations --json
 alcove service tick --home ~/.alcove --mount-refresh-days 2 --json
+alcove service tick --home ~/.alcove --skip-task-health-notify --json
 ```
 
 Each tick materializes due routines, sends configured planner digests, refreshes
@@ -496,8 +497,12 @@ stale connector sources, checks watchers and monitored blogs, runs enabled
 scheduled radars, runs due user automation jobs, refreshes mounted knowledge
 indexes when their two-day maintenance window is due, rebuilds the global OKF
 catalog, runs health repair, refreshes usage rollups, prunes old usage events,
-and rebuilds the dashboard snapshot. Mount refresh uses the existing incremental
-scan and can be disabled for a manual tick with `--skip-mounts`. This is
+rebuilds the dashboard snapshot, and builds an Alcove-local `task_health`
+summary. The CLI service tick sends that summary once per local day through
+Alcove's Telegram/Feishu notification adapters when credentials are configured.
+Mount refresh uses the existing incremental scan and can be disabled for a
+manual tick with `--skip-mounts`; the daily health notification can be disabled
+for isolated manual checks with `--skip-task-health-notify`. This is
 deterministic maintenance; blog summary, radar AI analysis, automation
 notifications, and agent automation jobs are opt-in.
 

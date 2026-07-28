@@ -17,6 +17,8 @@ from alcove.blog_monitor import BlogMonitorModule
 from alcove.dashboard import DashboardModule
 from alcove.home import AlcoveHome
 from alcove.mounts import MountsModule
+from alcove.notification_delivery import combined_notification_status
+from alcove.notifications import send_feishu_message, send_telegram_message
 from alcove.paths import compact_user_path
 from alcove.publisher_dirty import mark_publisher_source_dirty
 from alcove.publishers import PublisherModule
@@ -133,8 +135,10 @@ class ServiceModule:
         refresh_mounts: bool = True,
         mount_refresh_days: int = DEFAULT_MOUNT_REFRESH_DAYS,
         fix_health: bool = True,
+        notify_task_health: bool = False,
         today: str = "",
     ) -> dict[str, Any]:
+        tick_time = _tick_now(today)
         runtime = AlcoveRuntime.from_modules(home=self.home)
         app = AlcoveApplication(runtime)
         usage = UsageRecorder(self.home)
@@ -203,7 +207,7 @@ class ServiceModule:
             },
             visible=False,
         )
-        return {
+        payload = {
             "status": "ok",
             "home": compact_user_path(self.home.root),
             "tasks": {"materialized": len(tasks), "items": [task.id for task in tasks]},
@@ -224,6 +228,145 @@ class ServiceModule:
             "usage": usage_payload,
             "prune": prune_payload,
         }
+        task_health = self._task_health_summary(payload)
+        payload["task_health"] = task_health
+        if notify_task_health:
+            payload["task_health_notification"] = self._notify_task_health_once_per_day(
+                task_health, tick_time=tick_time
+            )
+        return payload
+
+    def _task_health_summary(self, payload: dict[str, Any]) -> dict[str, Any]:
+        checks = [
+            self._module_health(
+                module="connectors",
+                payload=_dict_value(payload.get("connectors")),
+                metrics=("refreshed", "skipped", "errors"),
+                error_key="errors",
+            ),
+            self._module_health(
+                module="watchers",
+                payload=_dict_value(payload.get("watchers")),
+                metrics=("checked", "changed", "errors"),
+                error_key="errors",
+            ),
+            self._module_health(
+                module="blogs",
+                payload=_dict_value(payload.get("blogs")),
+                metrics=("checked", "new", "errors"),
+                error_key="errors",
+            ),
+            self._module_health(
+                module="radars",
+                payload=_dict_value(payload.get("radars")),
+                metrics=("ran", "skipped", "errors"),
+                error_key="errors",
+            ),
+            self._module_health(
+                module="automations",
+                payload=_dict_value(payload.get("automations")),
+                metrics=("ran", "skipped", "failed"),
+                error_key="failed",
+            ),
+            self._module_health(
+                module="publishers",
+                payload=_dict_value(payload.get("publishers")),
+                metrics=("ran", "updated", "errors"),
+                error_key="errors",
+            ),
+            self._module_health(
+                module="mounts",
+                payload=_dict_value(payload.get("mounts")),
+                metrics=("checked", "refreshed", "skipped"),
+                error_key="errors",
+            ),
+            self._health_module_summary(_dict_value(payload.get("health"))),
+        ]
+        failed = [check for check in checks if check["status"] == "failed"]
+        skipped = [check for check in checks if check["status"] == "skipped"]
+        return {
+            "status": "failed" if failed else "success",
+            "checked": len(checks),
+            "failed": len(failed),
+            "skipped": len(skipped),
+            "checks": checks,
+        }
+
+    def _module_health(
+        self,
+        *,
+        module: str,
+        payload: dict[str, Any],
+        metrics: tuple[str, ...],
+        error_key: str,
+    ) -> dict[str, Any]:
+        status = str(payload.get("status") or "unknown")
+        error_count = _int_value(payload.get(error_key))
+        task_status = (
+            "skipped" if status == "skipped" else "failed" if error_count > 0 else "success"
+        )
+        summary = " ".join(f"{key}={_int_value(payload.get(key))}" for key in metrics)
+        record: dict[str, Any] = {
+            "module": module,
+            "status": task_status,
+            "summary": summary,
+        }
+        if task_status == "failed":
+            record["error"] = f"{module} reported {error_key}={error_count}"
+        return record
+
+    def _health_module_summary(self, payload: dict[str, Any]) -> dict[str, Any]:
+        issue_count = _int_value(payload.get("issue_count"))
+        action_count = _int_value(payload.get("action_count"))
+        status = "failed" if issue_count > 0 else "success"
+        record: dict[str, Any] = {
+            "module": "health",
+            "status": status,
+            "summary": f"issues={issue_count} actions={action_count}",
+        }
+        if status == "failed":
+            record["error"] = f"health reported issue_count={issue_count}"
+        return record
+
+    def _notify_task_health_once_per_day(
+        self, task_health: dict[str, Any], *, tick_time: datetime
+    ) -> dict[str, Any]:
+        day = tick_time.date().isoformat()
+        state = self._load_state()
+        notifications = state.get("task_health_notifications")
+        notification_state = notifications if isinstance(notifications, dict) else {}
+        if notification_state.get(day) == "sent":
+            return {"status": "skipped", "reason": "already_sent", "day": day}
+        title = f"Alcove task health: {day}"
+        text = self._task_health_notification_text(task_health, day=day)
+        results = {
+            "telegram": send_telegram_message(home=self.home, text=text),
+            "feishu": send_feishu_message(home=self.home, sink={}, title=title, text=text),
+        }
+        status = combined_notification_status(results)
+        if status in {"sent", "partial"}:
+            notification_state[day] = "sent"
+            state["task_health_notifications"] = notification_state
+            self._save_state(state)
+        return {"status": status, "day": day, "sinks": results}
+
+    def _task_health_notification_text(self, task_health: dict[str, Any], *, day: str) -> str:
+        lines = [
+            f"Alcove task health for {day}",
+            "",
+            f"Status: {task_health.get('status')}",
+            f"Checked: {task_health.get('checked')}  Failed: {task_health.get('failed')}  Skipped: {task_health.get('skipped')}",
+            "",
+            "Modules:",
+        ]
+        for check in task_health.get("checks", []):
+            if not isinstance(check, dict):
+                continue
+            line = f"- {check.get('status')}: {check.get('module')} ({check.get('summary')})"
+            if check.get("error"):
+                line = f"{line} - {check.get('error')}"
+            lines.append(line)
+        return "\n".join(lines)
 
     def _refresh_mounts_if_due(self, *, interval_days: int, today: str) -> dict[str, Any]:
         mount_module = MountsModule(home=self.home)
@@ -516,3 +659,7 @@ def _int_value(value: Any) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _dict_value(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}

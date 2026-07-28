@@ -260,7 +260,7 @@ class ConnectorSourceRegistry:
         stale = []
         for source in self.list(connector):
             key = (str(source.get("connector") or ""), str(source.get("id") or ""))
-            if status_by_key.get(key, {}).get("status") == "stale":
+            if status_by_key.get(key, {}).get("status") in {"stale", "error"}:
                 stale.append(source)
         return stale
 

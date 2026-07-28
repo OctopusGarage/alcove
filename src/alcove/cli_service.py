@@ -56,6 +56,7 @@ def handle_service_command(
             refresh_mounts=not args.skip_mounts,
             mount_refresh_days=args.mount_refresh_days,
             fix_health=not args.skip_health_fix,
+            notify_task_health=not args.skip_task_health_notify,
             today=args.today,
         )
     else:

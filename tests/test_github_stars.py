@@ -573,6 +573,52 @@ def test_github_stars_refresh_stale_updates_registered_source(
     assert source["refresh"]["item_count"] == 2
 
 
+def test_github_stars_refresh_stale_retries_error_source(
+    tmp_path,
+    monkeypatch,
+):
+    workspace = Workspace.init(tmp_path / "workspace")
+    connector = GitHubStarsConnector(workspace)
+    registry = ConnectorSourceRegistry(workspace=workspace)
+    registry.upsert_github_stars(
+        source_id="octocat",
+        source="https://github.com/octocat?tab=stars",
+        username="octocat",
+        tags=["github-stars"],
+        export_file=workspace.paths().state
+        / "connectors"
+        / "github-stars"
+        / "exports"
+        / "octocat-starred.json",
+        index_path=workspace.paths().state / "connectors" / "github-stars" / "index.json",
+        item_count=1,
+        checked_at="2026-07-07T00:00:00+00:00",
+        changed_at="2026-07-07T00:00:00+00:00",
+        error="Remote end closed connection without response",
+    )
+
+    def fake_fetch(username: str, *, page: int, per_page: int):
+        assert username == "octocat"
+        if page > 1:
+            return []
+        return [
+            {
+                "full_name": "octopusgarage/alcove",
+                "html_url": "https://github.com/OctopusGarage/alcove",
+            }
+        ]
+
+    monkeypatch.setattr(connector, "_fetch_starred_page", fake_fetch)
+
+    result = connector.refresh_sources(stale_only=True)
+
+    assert result["refreshed"] == 1
+    assert result["errors"] == 0
+    source = ConnectorSourceRegistry(workspace=workspace).get("github-stars", "octocat")
+    assert source["refresh"]["status"] == "fresh"
+    assert source["refresh"]["last_error"] == ""
+
+
 def test_github_stars_refresh_reports_added_removed_updated_and_unchanged(
     tmp_path,
     monkeypatch,

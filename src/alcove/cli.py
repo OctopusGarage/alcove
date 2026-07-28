@@ -166,6 +166,7 @@ def build_parser() -> argparse.ArgumentParser:
     service_tick.add_argument("--skip-mounts", action="store_true")
     service_tick.add_argument("--mount-refresh-days", type=int, default=2)
     service_tick.add_argument("--skip-health-fix", action="store_true")
+    service_tick.add_argument("--skip-task-health-notify", action="store_true")
     service_tick.add_argument("--today", default="")
     service_tick.add_argument("--json", action="store_true")
 
