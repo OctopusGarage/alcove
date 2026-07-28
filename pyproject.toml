@@ -161,6 +161,7 @@ files = [
     "src/alcove/search_query.py",
     "src/alcove/search_rows.py",
     "src/alcove/search_sources.py",
+    "src/alcove/search_text.py",
     "src/alcove/service.py",
     "src/alcove/workspace.py",
     "src/alcove/watchers.py",
