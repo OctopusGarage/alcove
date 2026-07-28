@@ -253,8 +253,10 @@ class WatcherModule:
     def _is_stale(self, source: WatcherSource, timestamp: str) -> bool:
         if not source.checked_at:
             return True
-        checked_at = datetime.fromisoformat(source.checked_at)
-        current = datetime.fromisoformat(timestamp)
+        checked_at = _parse_time(source.checked_at)
+        current = _parse_time(timestamp)
+        if checked_at is None or current is None:
+            return True
         return current >= checked_at + timedelta(hours=max(source.ttl_hours, 1))
 
     def _replace_source(self, source: WatcherSource, **changes: str) -> WatcherSource:
@@ -277,3 +279,11 @@ class WatcherModule:
             "sources": compact_user_path(self.sources_root),
             "events": compact_user_path(self.events_path),
         }
+
+
+def _parse_time(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)

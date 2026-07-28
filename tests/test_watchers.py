@@ -4,6 +4,7 @@ from alcove.cli import main
 from alcove.home import AlcoveHome
 from alcove.watchers import WatcherModule
 from alcove.workspace import Workspace
+import yaml
 
 
 def test_watcher_add_and_check_detects_file_url_changes(tmp_path):
@@ -50,6 +51,23 @@ def test_watcher_change_can_add_update_to_managed_kb_inbox(tmp_path):
     assert "Watcher update: Research Blog" in (inbox_items[0] / "note.md").read_text(
         encoding="utf-8"
     )
+
+
+def test_watcher_stale_check_handles_legacy_naive_checked_at(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    page = tmp_path / "blog.html"
+    page.write_text("<html><title>First</title><body>v1</body></html>", encoding="utf-8")
+    module = WatcherModule(home)
+    module.add(title="Legacy Blog", url=page.as_uri(), kind="page", ttl_hours=24)
+    source_path = home.root / "watchers/sources/legacy-blog.yml"
+    payload = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    payload["checked_at"] = "2026-07-12T08:00:00"
+    source_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+    result = module.check(stale_only=True, now="2026-07-12T09:00:00+00:00")
+
+    assert result["checked"] == 1
+    assert result["sources"][0] == {"id": "legacy-blog", "status": "skipped"}
 
 
 def test_cli_watch_add_list_and_check_file_url(tmp_path, capsys):
