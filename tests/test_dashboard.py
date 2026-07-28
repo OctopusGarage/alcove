@@ -410,6 +410,32 @@ def test_dashboard_activity_prefers_explicit_actions_over_derived_file_updates(t
     assert all(row["name"] != "Planner updated" for row in activity)
 
 
+def test_dashboard_activity_handles_legacy_naive_action_times(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    tasks_path = home.root / "tasks" / "tasks.json"
+    tasks_path.parent.mkdir(parents=True, exist_ok=True)
+    tasks_path.write_text(json.dumps({"tasks": []}), encoding="utf-8")
+    activity_path = home.paths().logs / "activity.jsonl"
+    activity_path.parent.mkdir(parents=True, exist_ok=True)
+    activity_path.write_text(
+        json.dumps(
+            {
+                "area": "task",
+                "action": "task.add",
+                "summary": "Legacy task event",
+                "visible": True,
+                "updated_at": "2026-07-12T08:00:00",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    activity = DashboardModule(home=home).snapshot()["activity"]
+
+    assert any(row["name"] == "Legacy task event" for row in activity)
+
+
 def test_dashboard_activity_hides_unconfirmed_knowledge_delete_previews(tmp_path):
     home = AlcoveHome.init(tmp_path / "home")
     recorder = UsageRecorder(home)

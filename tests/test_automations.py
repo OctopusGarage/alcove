@@ -54,6 +54,29 @@ def test_run_due_skips_agent_jobs_unless_allowed(tmp_path):
     assert result["jobs"][0]["reason"] == "agent job requires --allow-agent or allow_service"
 
 
+def test_run_due_handles_legacy_naive_checked_at(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    marker = tmp_path / "should-not-run.txt"
+    module = AutomationsModule(home)
+    module.add_shell(
+        name="Legacy Automation",
+        command=f"printf unexpected > {marker}",
+        ttl_hours=24,
+        timeout_seconds=5,
+    )
+    job_path = home.root / "automations/jobs/legacy-automation.yml"
+    payload = yaml.safe_load(job_path.read_text(encoding="utf-8"))
+    payload["checked_at"] = "2026-07-12T08:00:00"
+    job_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+    result = module.run_due(now="2026-07-12T09:00:00+00:00")
+
+    assert result["ran"] == 0
+    assert result["skipped"] == 1
+    assert result["jobs"][0]["reason"] == "not_due"
+    assert not marker.exists()
+
+
 def test_git_sync_noop_reports_success(tmp_path, monkeypatch):
     home = AlcoveHome.init(tmp_path / ".alcove")
     repo = tmp_path / "repo"
