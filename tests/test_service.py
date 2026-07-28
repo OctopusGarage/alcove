@@ -106,6 +106,42 @@ def test_service_tick_materializes_routines_and_writes_stats(tmp_path):
     assert (home.root / "dashboard" / "snapshot.json").is_file()
 
 
+def test_service_tick_tolerates_invalid_persisted_radar_ttl_hours(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    definition_path = home.root / "radars" / "definitions" / "bad-radar.yml"
+    definition_path.parent.mkdir(parents=True, exist_ok=True)
+    definition_path.write_text(
+        """
+schema: alcove/radar-definition/v1
+id: bad-radar
+name: Bad Radar
+schedule:
+  enabled: false
+  ttl_hours: hourly
+sources:
+  - id: fixture
+    adapter: fixture
+""",
+        encoding="utf-8",
+    )
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        run_automations=False,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["radars"]["skipped"] == 1
+    assert result["radars"]["errors"] == 0
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
 def test_service_tick_refreshes_mounts_every_two_days(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     source = tmp_path / "mounted-docs"
