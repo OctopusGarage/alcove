@@ -550,10 +550,12 @@ credentials are present, Alcove sends one message per new article with the
 article title, URL, and the captured inbox `summary.md` content when available.
 Use `--discover playwright` for monitored blog index pages. This keeps discovery
 consistent with Clipsmith's browser-based capture model, runs unattended through
-the scheduled service, and does not invoke Codex, Claude, or `claude -p`. If
-discovery or capture fails, the source is marked `needs_attention`, the failed
-run is recorded, and Telegram receives an actionable alert when notifications
-are enabled.
+the scheduled service, and does not invoke Codex, Claude, or `claude -p`.
+Playwright discovery falls back to static HTML and category sitemap discovery
+when a rendered page is blocked or returns no usable article links. If discovery
+or capture still fails, the source is marked `needs_attention`, the failed run
+is recorded, and Telegram receives an actionable alert when notifications are
+enabled.
 For a user-triggered check from the Hub workspace, use `alcove blog check --json`
 or `alcove blog check <source-id> --json` to force an immediate run. `alcove
 service tick` is reserved for scheduled stale maintenance and may skip sources

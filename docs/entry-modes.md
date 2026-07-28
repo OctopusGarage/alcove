@@ -397,8 +397,9 @@ Use it for:
 
 Default rules:
 
-- A raw link means capture to inbox, not permission to process existing inbox
-  items.
+- A supported social-media link authorizes immediate complete capture of that
+  post into inbox, including its content, metadata, and all available media.
+  It does not authorize processing unrelated existing inbox items.
 - Archive/note/todo/delete require explicit confirmation for the current item.
 - OCR and bundle repair belong in Clipsmith; Alcove reads declared
   `capture.json.content_files`.

@@ -372,10 +372,13 @@ the same result contract. Summary and notification are disabled unless the
 source or command explicitly enables them.
 Blog index pages should use `discover.method: playwright`, which renders the
 page with the Playwright runtime available through the Clipsmith web skill and
-keeps discovery aligned with Clipsmith's browser-based capture model. Discovery
-and capture failures move the source to `needs_attention`, write a failed run,
-and optionally send a Telegram alert. The scheduler never starts Codex or
-Claude automatically; agent-assisted repair is a manual follow-up.
+keeps discovery aligned with Clipsmith's browser-based capture model. If
+Playwright is blocked or yields no usable article links, discovery falls back to
+static HTML and then category sitemap URLs derived from paths such as
+`/news/engineering/`. Discovery and capture failures move the source to
+`needs_attention`, write a failed run, and optionally send a Telegram alert. The
+scheduler never starts Codex or Claude automatically; agent-assisted repair is a
+manual follow-up.
 
 ## Automations
 

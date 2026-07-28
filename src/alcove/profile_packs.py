@@ -575,6 +575,14 @@ inspect OKF paths, source refs, mount refs, connector fetches, or local files
 before answering broad or nuanced questions. This is AI-led OKF/local-file investigation.
 Writes: use Alcove CLI/MCP mutation commands. Direct file edits are repair
 fallbacks only; validate afterward. Use unrelated tools only when explicitly named.
+Media captures: receiving a supported social-media link authorizes and requires
+complete capture of that post. Use the matching Clipsmith provider or skill to
+download the full post content, metadata, and all available images/videos, then
+sink the complete bundle back into this KB inbox. Keep bundle files at the item
+root and downloaded media under `assets/`; do not leave media only in a download
+or temporary directory. If the platform is unsupported, login is required, or
+any content cannot be downloaded, report that explicitly and do not claim the
+capture is complete.
 
 Common commands:
 
@@ -585,7 +593,10 @@ alcove validate{home_part} --json
 ```
 
 Inbox posts require explicit per-post confirmation before archive, note, todo,
-or delete. A raw link means capture to inbox, not permission to process items.
+or delete. This confirmation requirement does not apply to initial capture: a
+supported social-media link must be fully processed and downloaded into inbox
+without additional confirmation. It does not authorize processing unrelated
+existing inbox items.
 
 Project skills: `alcove-capture`, `notes-search`, `alcove-kb`.
 
@@ -760,8 +771,17 @@ declared by Clipsmith are reviewable without a separate Alcove-side OCR step.
 
 ## Capture Links
 
-If the user sends a downloadable social or web link, default to capture into
-inbox. Do not process existing inbox items just because a link was captured.
+If the user sends a supported social-media link, capture the complete post into
+inbox: full post content, metadata, and all available images/videos. A bare
+supported social-media link is sufficient authorization for this initial
+capture; do not ask for additional confirmation. For other downloadable web
+links, default to capturing the complete article or page into inbox. Do not
+process unrelated existing inbox items just because a new link was captured.
+
+The captured inbox item must be a complete local bundle. Keep bundle files at
+the item root and downloaded media under `assets/`. If the platform is
+unsupported, login is required, or any content cannot be downloaded, report
+that explicitly and do not claim the capture is complete.
 
 Expected capture flow:
 

@@ -40,7 +40,7 @@ sources:
       url: https://www.theguardian.com/sport/rss
 profile:
   languages: [en, zh]
-  interest_tags: [NBA, NFL, football, soccer, Formula 1, F1, tennis, injuries, transfer, playoffs, championship, record]
+  interest_tags: [NBA, NFL, football, soccer, World Cup, World Cup final, World Cup semi-final, semi-final, match report, result, victory, beat, defeat, Formula 1, F1, tennis, injuries, transfer, playoffs, championship, record]
   blocked_keywords: [sponsored, advertisement, betting odds, gambling, fantasy tips]
   content_type_preference: [match report, injury update, transfer news, analysis, standings]
   min_score_threshold: 0.55

@@ -6,11 +6,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 from alcove.home import AlcoveHome
 from alcove.paths import compact_user_path
 from alcove.radars import RadarDefinition, RadarModule, RadarSource
+from alcove.radars.models import RadarItem
 from alcove.radars import pipeline as radar_pipeline
+from alcove.radars.scoring import score_items
 
 
 def test_radar_run_fetches_scores_reports_and_writes_runtime_files(tmp_path) -> None:
@@ -99,6 +102,32 @@ def test_radar_run_fetches_scores_reports_and_writes_runtime_files(tmp_path) -> 
     assert "Tech News" in okf_path.read_text(encoding="utf-8")
     assert event["event"] == "radar.run.completed"
     assert event["radar_id"] == "tech-news"
+
+
+def test_sports_profile_includes_world_cup_match_result(tmp_path) -> None:
+    preset = yaml.safe_load(
+        Path("src/alcove/radars/presets/sports-news.yml").read_text(encoding="utf-8")
+    )
+    preset["sources"] = []
+    definition = RadarModule(AlcoveHome.init(tmp_path / ".alcove"))._definition(preset)
+    items = [
+        RadarItem(
+            source_id="bbc-sport",
+            adapter="rss",
+            title="Spain into World Cup final after victory over France",
+            summary=(
+                "Spain are into the 2026 World Cup final after goals from Mikel "
+                "Oyarzabal and Pedro Porro see them beat France 2-0 in their "
+                "semi-final in Dallas."
+            ),
+        )
+    ]
+
+    scored = score_items(definition, items)
+
+    assert scored[0].included is True
+    assert scored[0].score >= 0.55
+    assert "world cup" in scored[0].score_reason
 
 
 def test_radar_ai_summary_saves_artifact_and_notifies_success(tmp_path, monkeypatch) -> None:
