@@ -3,8 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 from alcove.mcp_context import McpInvocationContext
+from alcove.mcp_planner_requests import routine_add_request, task_add_request
 from alcove.mcp_registrar import McpToolRegistrar
-from alcove.tasks import AddIdeaRequest, AddRoutineRequest, AddTaskRequest
+from alcove.tasks import AddIdeaRequest
 
 
 def register_mcp_planner_tools(
@@ -25,10 +26,10 @@ def register_mcp_planner_tools(
     ) -> dict[str, Any]:
         """Create a personal task through the governed planner write path."""
         return context.scoped_app(workspace, home).global_home.task_add_payload(
-            AddTaskRequest(
+            task_add_request(
                 title=title,
                 notes=notes,
-                tags=tags or [],
+                tags=tags,
                 priority=priority,
                 due=due,
             )
@@ -180,14 +181,14 @@ def register_mcp_planner_tools(
     ) -> dict[str, Any]:
         """Create a recurring task template."""
         return context.scoped_app(workspace, home).global_home.routine_add_payload(
-            AddRoutineRequest(
+            routine_add_request(
                 title=title,
                 notes=notes,
-                tags=tags or [],
+                tags=tags,
                 priority=priority,
                 every_days=every_days,
                 next_due=next_due,
-                schedule=schedule or {},
+                schedule=schedule,
             )
         )
 
