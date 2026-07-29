@@ -2,7 +2,21 @@ from __future__ import annotations
 
 from typing import Any
 
-from alcove.tasks import AddRoutineRequest, AddTaskRequest
+from alcove.tasks import AddIdeaRequest, AddRoutineRequest, AddTaskRequest
+
+
+def idea_add_request(
+    *,
+    title: str,
+    notes: str = "",
+    tags: list[str] | None = None,
+) -> AddIdeaRequest:
+    """Build the planner idea write request shared by MCP adapter surfaces."""
+    return AddIdeaRequest(
+        title=title,
+        notes=notes,
+        tags=tags or [],
+    )
 
 
 def task_add_request(

@@ -3,9 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from alcove.mcp_context import McpInvocationContext
-from alcove.mcp_planner_requests import routine_add_request, task_add_request
+from alcove.mcp_planner_requests import idea_add_request, routine_add_request, task_add_request
 from alcove.mcp_registrar import McpToolRegistrar
-from alcove.tasks import AddIdeaRequest
 
 
 def register_mcp_planner_tools(
@@ -93,7 +92,7 @@ def register_mcp_planner_tools(
     ) -> dict[str, Any]:
         """Add a low-friction idea through the governed planner write path."""
         return context.scoped_app(workspace, home).global_home.idea_add_payload(
-            AddIdeaRequest(title=title, notes=notes, tags=tags or [])
+            idea_add_request(title=title, notes=notes, tags=tags)
         )
 
     @tool
