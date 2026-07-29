@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from alcove.mcp_pin_requests import pin_add_request, pin_update_request
 from alcove.mcp_context import McpInvocationContext
+from alcove.mcp_pin_requests import pin_add_request, pin_update_request
+from alcove.mcp_project_requests import project_add_request
 from alcove.mcp_prompt_requests import prompt_request
 from alcove.mcp_registrar import McpToolRegistrar
-from alcove.projects import AddProjectRequest
 
 
 def register_mcp_global_tools(
@@ -154,7 +154,7 @@ def register_mcp_global_tools(
     ) -> dict[str, Any]:
         """Create or update a global project alias."""
         return context.scoped_app(workspace, home).global_home.project_add_payload(
-            AddProjectRequest(alias=alias, path=path, note=note)
+            project_add_request(alias=alias, path=path, note=note)
         )
 
     @tool

@@ -9,8 +9,8 @@ from alcove.linking import LinkSourceRequest
 from alcove.mcp_command_hints import command_hints_tool as command_hints_tool
 from alcove.mcp_context import McpInvocationContext, agent_payload
 from alcove.mcp_pin_requests import pin_add_request, pin_update_request
+from alcove.mcp_project_requests import project_add_request
 from alcove.mcp_prompt_requests import prompt_request
-from alcove.projects import AddProjectRequest
 from alcove.search import SearchRequest
 from alcove.tasks import AddRoutineRequest, AddTaskRequest
 
@@ -269,7 +269,7 @@ def project_add_tool(
 ) -> dict[str, Any]:
     """Create or update a global project alias."""
     return _app(workspace, home).global_home.project_add_payload(
-        AddProjectRequest(alias=alias, path=path, note=note)
+        project_add_request(alias=alias, path=path, note=note)
     )
 
 
