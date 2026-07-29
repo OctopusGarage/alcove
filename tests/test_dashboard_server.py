@@ -10,20 +10,28 @@ from alcove.home import AlcoveHome
 from alcove.pins import AddPinRequest, PinsModule
 
 
-def _http_request(method: str, path: str, body: bytes = b"") -> bytes:
-    headers = [
+def _http_request(
+    method: str,
+    path: str,
+    body: bytes = b"",
+    *,
+    headers: dict[str, str] | None = None,
+) -> bytes:
+    header_lines = [
         f"{method} {path} HTTP/1.1",
         "Host: localhost",
         "Connection: close",
     ]
+    for key, value in (headers or {}).items():
+        header_lines.append(f"{key}: {value}")
     if body:
-        headers.extend(
+        header_lines.extend(
             [
                 "Content-Type: application/json",
                 f"Content-Length: {len(body)}",
             ]
         )
-    return ("\r\n".join(headers) + "\r\n\r\n").encode("ascii") + body
+    return ("\r\n".join(header_lines) + "\r\n\r\n").encode("ascii") + body
 
 
 def _parse_http_response(raw: bytes) -> tuple[str, dict[str, str], bytes]:
@@ -138,3 +146,52 @@ def test_dashboard_server_records_valid_client_events_and_rejects_bad_json(
     assert bad_status.startswith("HTTP/1.0 400 ")
     assert snapshot["usage"]["dashboard"]["routes"] == {"/tasks": 1}
     assert all(row.get("area") != "dashboard" for row in snapshot["activity"])
+
+
+def test_dashboard_server_rejects_foreign_origin_event_posts(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / "home")
+    event = {
+        "action": "dashboard.route",
+        "summary": "Dashboard route viewed",
+        "metadata": {"route": "/tasks"},
+    }
+    requests = [
+        _http_request(
+            "POST",
+            "/events",
+            json.dumps(event).encode("utf-8"),
+            headers={"Origin": "https://attacker.example"},
+        )
+    ]
+
+    responses = _serve_requests(monkeypatch, home, requests)
+    status, _, _ = _parse_http_response(responses[0])
+    snapshot = DashboardModule(home=home).snapshot()
+
+    assert status.startswith("HTTP/1.0 403 ")
+    assert snapshot["usage"]["dashboard"]["routes"] == {}
+
+
+def test_dashboard_server_accepts_same_origin_event_posts(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / "home")
+    event = {
+        "action": "dashboard.route",
+        "summary": "Dashboard route viewed",
+        "metadata": {"route": "/tasks"},
+    }
+    requests = [
+        _http_request(
+            "POST",
+            "/events",
+            json.dumps(event).encode("utf-8"),
+            headers={"Origin": "http://localhost"},
+        )
+    ]
+
+    responses = _serve_requests(monkeypatch, home, requests)
+    status, _, body = _parse_http_response(responses[0])
+    snapshot = DashboardModule(home=home).snapshot()
+
+    assert status == "HTTP/1.0 204 No Content"
+    assert body == b""
+    assert snapshot["usage"]["dashboard"]["routes"] == {"/tasks": 1}
