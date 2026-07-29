@@ -4,6 +4,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from alcove.dashboard import DashboardModule
 from alcove.home import AlcoveHome
@@ -40,7 +41,19 @@ def serve_dashboard(home: AlcoveHome, host: str = "127.0.0.1", port: int = 8765)
             if self.path.split("?", 1)[0] != "/events":
                 self.send_error(404)
                 return
+            if not self._same_origin_or_non_browser_request():
+                self.send_error(403)
+                return
             self._record_client_event()
+
+        def _same_origin_or_non_browser_request(self) -> bool:
+            origin = self.headers.get("Origin")
+            if not origin:
+                return True
+            host = self.headers.get("Host")
+            if not host:
+                return False
+            return urlsplit(origin).netloc.lower() == host.strip().lower()
 
         def _send_dynamic_snapshot(self, *, include_body: bool) -> None:
             body = json.dumps(

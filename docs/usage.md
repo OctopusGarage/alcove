@@ -392,6 +392,11 @@ alcove dashboard --home ~/.alcove build
 alcove serve --dashboard --home ~/.alcove --port 8765
 ```
 
+Dashboard event writes are accepted only from the same browser origin, or from
+local non-browser clients that do not send an `Origin` header. If you put the
+dashboard behind a reverse proxy, preserve the external `Host` header so browser
+event posts still match the page origin.
+
 For a LAN-facing dashboard, keep Alcove bound to localhost and expose it through
 a local reverse proxy. This keeps the Alcove process private while letting nginx
 own the LAN port and hostname:
