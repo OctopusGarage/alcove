@@ -426,7 +426,7 @@ class AutomationsModule:
             provider=str(payload.get("provider") or ""),
             prompt=str(payload.get("prompt") or ""),
             allow_service=bool(payload.get("allow_service", False)),
-            notify=dict(payload.get("notify") or {}),
+            notify=_dict_value(payload.get("notify")),
             status=str(payload.get("status") or "active"),
             created_at=str(payload.get("created_at") or ""),
             updated_at=str(payload.get("updated_at") or ""),
@@ -434,7 +434,7 @@ class AutomationsModule:
             last_run_at=str(payload.get("last_run_at") or ""),
             last_status=str(payload.get("last_status") or ""),
             last_error=str(payload.get("last_error") or ""),
-            source=dict(payload.get("source") or {}),
+            source=_dict_value(payload.get("source")),
         )
 
     def _validate_job(self, job: AutomationJob) -> None:
@@ -480,6 +480,10 @@ def _positive_int(value: Any, *, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(parsed, 1)
+
+
+def _dict_value(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _expand_path(path: str) -> Path:

@@ -150,3 +150,38 @@ def test_service_tick_runs_due_automations(tmp_path):
 
     assert result["automations"]["ran"] == 1
     assert marker.read_text(encoding="utf-8") == "service"
+
+
+def test_service_tick_tolerates_invalid_persisted_automation_mapping_fields(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    jobs = home.root / "automations" / "jobs"
+    jobs.mkdir(parents=True)
+    (jobs / "bad-metadata.yml").write_text(
+        "\n".join(
+            [
+                "id: bad-metadata",
+                "name: Bad Metadata",
+                "kind: shell",
+                'command: "true"',
+                "notify: enabled",
+                "source: stale",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["automations"]["ran"] == 1
+    assert result["automations"]["failed"] == 0
