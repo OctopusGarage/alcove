@@ -130,7 +130,10 @@ class ProjectsModule:
     def _load(self) -> dict[str, Any]:
         if not self.store_path.is_file():
             return {"projects": {}, "roots": []}
-        data = json.loads(self.store_path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(self.store_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {"projects": {}, "roots": []}
         if not isinstance(data, dict):
             return {"projects": {}, "roots": []}
         projects = data.get("projects") if isinstance(data.get("projects"), dict) else {}

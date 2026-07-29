@@ -214,6 +214,29 @@ def test_service_tick_tolerates_malformed_mount_registry_json(tmp_path):
     assert (home.root / "dashboard" / "snapshot.json").is_file()
 
 
+def test_service_tick_tolerates_malformed_project_registry_json(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    projects_path = home.paths().projects / "projects.json"
+    projects_path.parent.mkdir(parents=True, exist_ok=True)
+    projects_path.write_text('{"projects": [', encoding="utf-8")
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=True,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["health"]["issue_count"] >= 1
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
 def test_service_tick_refreshes_mounts_every_two_days(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     source = tmp_path / "mounted-docs"
