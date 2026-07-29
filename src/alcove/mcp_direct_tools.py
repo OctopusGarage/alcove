@@ -9,10 +9,10 @@ from alcove.linking import LinkSourceRequest
 from alcove.mcp_command_hints import command_hints_tool as command_hints_tool
 from alcove.mcp_context import McpInvocationContext, agent_payload
 from alcove.mcp_pin_requests import pin_add_request, pin_update_request
+from alcove.mcp_planner_requests import routine_add_request, task_add_request
 from alcove.mcp_project_requests import project_add_request
 from alcove.mcp_prompt_requests import prompt_request
 from alcove.search import SearchRequest
-from alcove.tasks import AddRoutineRequest, AddTaskRequest
 
 
 @dataclass(frozen=True)
@@ -392,10 +392,10 @@ def task_add_tool(
 ) -> dict[str, Any]:
     """Create a personal task."""
     return _app(workspace, home).global_home.task_add_payload(
-        AddTaskRequest(
+        task_add_request(
             title=title,
             notes=notes,
-            tags=tags or [],
+            tags=tags,
             priority=priority,
             due=due,
         )
@@ -496,14 +496,14 @@ def routine_add_tool(
 ) -> dict[str, Any]:
     """Create a recurring task template."""
     return _app(workspace, home).global_home.routine_add_payload(
-        AddRoutineRequest(
+        routine_add_request(
             title=title,
             notes=notes,
-            tags=tags or [],
+            tags=tags,
             priority=priority,
             every_days=every_days,
             next_due=next_due,
-            schedule=schedule or {},
+            schedule=schedule,
         )
     )
 
