@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from alcove.application import AlcoveApplication
-from alcove.linking import LinkSourceRequest
 from alcove.mcp_command_hints import command_hints_tool as command_hints_tool
 from alcove.mcp_context import McpInvocationContext, agent_payload
 from alcove.mcp_knowledge_requests import note_source_request, revise_knowledge_request
+from alcove.mcp_link_requests import link_source_request
 from alcove.mcp_pin_requests import pin_add_request, pin_update_request
 from alcove.mcp_planner_requests import routine_add_request, task_add_request
 from alcove.mcp_project_requests import project_add_request
@@ -569,7 +569,7 @@ def link_source_tool(
 ) -> dict[str, Any]:
     """Create a Source from an indexed external item."""
     return _app(workspace, home).external.link_source_payload(
-        LinkSourceRequest(
+        link_source_request(
             item_path=item_path,
             topic=topic,
             summary=summary,
