@@ -4,15 +4,15 @@ from dataclasses import dataclass
 from typing import Any
 
 from alcove.application import AlcoveApplication
-from alcove.knowledge import NoteSourceRequest, ReviseKnowledgeRequest
-from alcove.linking import LinkSourceRequest
 from alcove.mcp_command_hints import command_hints_tool as command_hints_tool
 from alcove.mcp_context import McpInvocationContext, agent_payload
+from alcove.mcp_knowledge_requests import note_source_request, revise_knowledge_request
+from alcove.mcp_link_requests import link_source_request
 from alcove.mcp_pin_requests import pin_add_request, pin_update_request
 from alcove.mcp_planner_requests import routine_add_request, task_add_request
 from alcove.mcp_project_requests import project_add_request
 from alcove.mcp_prompt_requests import prompt_request
-from alcove.search import SearchRequest
+from alcove.mcp_search_requests import search_request
 
 
 @dataclass(frozen=True)
@@ -77,7 +77,7 @@ def search_tool(
     """Search Alcove knowledge, pins, ideas, and tasks."""
     return agent_payload(
         _app(workspace, home).search.search_payload(
-            SearchRequest(
+            search_request(
                 query=query,
                 type_filter=type_filter,
                 tag=tag,
@@ -117,7 +117,7 @@ def note_source_tool(
 ) -> dict[str, Any]:
     """Record a source note in Alcove knowledge."""
     return _managed_app(workspace).knowledge.note_source_payload(
-        NoteSourceRequest(
+        note_source_request(
             platform=platform,
             title=title,
             topic=topic,
@@ -148,7 +148,7 @@ def revise_knowledge_tool(
 ) -> dict[str, Any]:
     """Revise an existing OKF knowledge document."""
     return _managed_app(workspace).knowledge.knowledge_revise_payload(
-        ReviseKnowledgeRequest(
+        revise_knowledge_request(
             path=path,
             summary=summary,
             answer=answer,
@@ -569,7 +569,7 @@ def link_source_tool(
 ) -> dict[str, Any]:
     """Create a Source from an indexed external item."""
     return _app(workspace, home).external.link_source_payload(
-        LinkSourceRequest(
+        link_source_request(
             item_path=item_path,
             topic=topic,
             summary=summary,

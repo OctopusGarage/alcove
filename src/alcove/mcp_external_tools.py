@@ -8,8 +8,8 @@ from alcove.connectors.chrome_bookmarks import (
     ChromeBookmarksLocalImportRequest,
 )
 from alcove.connectors.github_stars import GitHubStarsImportRequest, GitHubStarsUrlImportRequest
-from alcove.linking import LinkSourceRequest
 from alcove.mcp_context import McpInvocationContext, agent_payload
+from alcove.mcp_link_requests import link_source_request
 from alcove.mcp_registrar import McpToolRegistrar
 from alcove.mounts import AddMountRequest, MountIndexPolicy
 
@@ -40,7 +40,7 @@ def register_mcp_external_tools(
     ) -> dict[str, Any]:
         """Promote indexed external evidence into a governed OKF Source."""
         return context.scoped_app(workspace, home).external.link_source_payload(
-            LinkSourceRequest(
+            link_source_request(
                 item_path=item_path,
                 topic=topic,
                 summary=summary,

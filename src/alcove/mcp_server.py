@@ -7,15 +7,14 @@ from alcove.knowledge import (
     AddConceptRequest,
     AddEntityRequest,
     AddQuestionRequest,
-    NoteSourceRequest,
-    ReviseKnowledgeRequest,
 )
 from alcove.mcp_context import agent_payload as _agent_payload
 from alcove.mcp_external_tools import register_mcp_external_tools
 from alcove.mcp_global_tools import register_mcp_global_tools
+from alcove.mcp_knowledge_requests import note_source_request, revise_knowledge_request
 from alcove.mcp_planner_tools import register_mcp_planner_tools
 from alcove.mcp_registrar import McpToolRegistrar
-from alcove.search import SearchRequest
+from alcove.mcp_search_requests import search_request
 
 
 from alcove.mcp_direct_tools import (
@@ -149,7 +148,7 @@ def create_mcp_server(
         """
         return _agent_payload(
             context.scoped_app(workspace, home).search.search_payload(
-                SearchRequest(
+                search_request(
                     query=query,
                     type_filter=type_filter,
                     tag=tag,
@@ -184,7 +183,7 @@ def create_mcp_server(
     ) -> dict[str, Any]:
         """Record a source note through the governed OKF write path."""
         return context.managed_app(workspace).knowledge.note_source_payload(
-            NoteSourceRequest(
+            note_source_request(
                 platform=platform,
                 title=title,
                 topic=topic,
@@ -342,7 +341,7 @@ def create_mcp_server(
     ) -> dict[str, Any]:
         """Revise an existing OKF document through the governed OKF write path."""
         return context.managed_app(workspace).knowledge.knowledge_revise_payload(
-            ReviseKnowledgeRequest(
+            revise_knowledge_request(
                 path=path,
                 summary=summary,
                 answer=answer,
