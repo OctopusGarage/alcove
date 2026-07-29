@@ -12,7 +12,7 @@ from alcove.mcp_pin_requests import pin_add_request, pin_update_request
 from alcove.mcp_planner_requests import routine_add_request, task_add_request
 from alcove.mcp_project_requests import project_add_request
 from alcove.mcp_prompt_requests import prompt_request
-from alcove.search import SearchRequest
+from alcove.mcp_search_requests import search_request
 
 
 @dataclass(frozen=True)
@@ -77,7 +77,7 @@ def search_tool(
     """Search Alcove knowledge, pins, ideas, and tasks."""
     return agent_payload(
         _app(workspace, home).search.search_payload(
-            SearchRequest(
+            search_request(
                 query=query,
                 type_filter=type_filter,
                 tag=tag,
