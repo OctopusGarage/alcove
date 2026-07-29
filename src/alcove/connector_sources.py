@@ -201,7 +201,10 @@ class ConnectorSourceRegistry:
         path = self._source_path(connector, source_id)
         if not path.is_file():
             raise FileNotFoundError(f"Connector source not registered: {connector}/{source_id}")
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as exc:
+            raise ValueError(f"Connector source is invalid: {path}") from exc
         if not isinstance(data, dict):
             raise ValueError(f"Connector source is invalid: {path}")
         return data
@@ -210,7 +213,10 @@ class ConnectorSourceRegistry:
         pattern = f"{connector}/sources/*.yml" if connector else "*/sources/*.yml"
         sources: list[dict[str, Any]] = []
         for path in sorted(self.root.glob(pattern), key=lambda item: item.as_posix()):
-            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except yaml.YAMLError:
+                continue
             if isinstance(data, dict):
                 sources.append(data)
         return sources

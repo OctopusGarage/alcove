@@ -486,14 +486,25 @@ class PublisherModule:
             return []
         definitions = []
         for path in sorted(self.definitions_root.glob("*.yml")):
-            definitions.append(self._definition_from_dict(yaml.safe_load(path.read_text()) or {}))
+            try:
+                payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except yaml.YAMLError:
+                continue
+            if isinstance(payload, dict):
+                definitions.append(self._definition_from_dict(payload))
         return definitions
 
     def _load_definition(self, publisher_id: str) -> PublisherDefinition:
         path = self.definitions_root / f"{normalize_slug(publisher_id)}.yml"
         if not path.is_file():
             raise FileNotFoundError(f"Publisher definition not found: {publisher_id}")
-        return self._definition_from_dict(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
+        try:
+            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as exc:
+            raise ValueError(f"Publisher definition is invalid: {path}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError(f"Publisher definition is invalid: {path}")
+        return self._definition_from_dict(payload)
 
     def _write_definition(self, definition: PublisherDefinition) -> Path:
         self.definitions_root.mkdir(parents=True, exist_ok=True)

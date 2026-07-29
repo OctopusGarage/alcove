@@ -405,7 +405,10 @@ class MountsModule:
     def _load_mounts(self) -> dict[str, list[dict]]:
         if not self.store_path.is_file():
             return {"mounts": []}
-        data = json.loads(self.store_path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(self.store_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {"mounts": []}
         if not isinstance(data, dict):
             return {"mounts": []}
         mounts = data.get("mounts")

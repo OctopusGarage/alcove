@@ -29,6 +29,26 @@ def test_shell_automation_runs_and_records_state(tmp_path):
     assert list((home.root / "automations/runs").glob("*write-marker.json"))
 
 
+def test_repeated_automation_runs_preserve_distinct_run_records(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    output = tmp_path / "output.txt"
+    module = AutomationsModule(home)
+    module.add_shell(
+        name="fast job",
+        command=f"printf run >> {output}",
+        timeout_seconds=5,
+    )
+    monkeypatch.setattr("alcove.automations.now_iso", lambda: "2026-07-29T01:02:03+00:00")
+
+    first = module.run("fast-job")
+    second = module.run("fast-job")
+
+    assert first["status"] == "success"
+    assert second["status"] == "success"
+    assert output.read_text(encoding="utf-8") == "runrun"
+    assert len(list((home.root / "automations/runs").glob("*fast-job.json"))) == 2
+
+
 def test_run_due_skips_agent_jobs_unless_allowed(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     jobs = home.root / "automations/jobs"
@@ -150,3 +170,38 @@ def test_service_tick_runs_due_automations(tmp_path):
 
     assert result["automations"]["ran"] == 1
     assert marker.read_text(encoding="utf-8") == "service"
+
+
+def test_service_tick_tolerates_invalid_persisted_automation_mapping_fields(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    jobs = home.root / "automations" / "jobs"
+    jobs.mkdir(parents=True)
+    (jobs / "bad-metadata.yml").write_text(
+        "\n".join(
+            [
+                "id: bad-metadata",
+                "name: Bad Metadata",
+                "kind: shell",
+                'command: "true"',
+                "notify: enabled",
+                "source: stale",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["automations"]["ran"] == 1
+    assert result["automations"]["failed"] == 0

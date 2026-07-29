@@ -144,6 +144,99 @@ sources:
     assert (home.root / "dashboard" / "snapshot.json").is_file()
 
 
+def test_service_tick_tolerates_malformed_connector_source_yaml(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    source_path = home.root / "connectors" / "github-stars" / "sources" / "broken.yml"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text("source: [", encoding="utf-8")
+
+    result = ServiceModule(home).tick(
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["connectors"]["status"] == "refreshed"
+    assert result["health"]["issue_count"] >= 1
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
+def test_service_tick_tolerates_malformed_publisher_definition_yaml(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    definition_path = home.root / "publishers" / "definitions" / "broken.yml"
+    definition_path.parent.mkdir(parents=True, exist_ok=True)
+    definition_path.write_text("targets: [", encoding="utf-8")
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["publishers"]["status"] == "checked"
+    assert result["health"]["issue_count"] >= 1
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
+def test_service_tick_tolerates_malformed_mount_registry_json(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    mounts_path = home.paths().mounts / "mounts.json"
+    mounts_path.parent.mkdir(parents=True, exist_ok=True)
+    mounts_path.write_text('{"mounts": [', encoding="utf-8")
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        run_publishers=False,
+        fix_health=True,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["mounts"]["status"] == "skipped"
+    assert result["mounts"]["reason"] == "no_mounts"
+    assert result["health"]["issue_count"] >= 1
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
+def test_service_tick_tolerates_malformed_project_registry_json(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    projects_path = home.paths().projects / "projects.json"
+    projects_path.parent.mkdir(parents=True, exist_ok=True)
+    projects_path.write_text('{"projects": [', encoding="utf-8")
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=True,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["health"]["issue_count"] >= 1
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
 def test_service_tick_refreshes_mounts_every_two_days(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     source = tmp_path / "mounted-docs"
