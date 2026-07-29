@@ -1,4 +1,23 @@
-from alcove.mcp_planner_requests import routine_add_request, task_add_request
+from alcove.mcp_planner_requests import idea_add_request, routine_add_request, task_add_request
+
+
+def test_mcp_idea_add_request_preserves_idea_fields() -> None:
+    request = idea_add_request(
+        title="Capture planner idea",
+        notes="Keep the MCP-facing idea payload local.",
+        tags=["ideas", "mcp"],
+    )
+
+    assert request.title == "Capture planner idea"
+    assert request.notes == "Keep the MCP-facing idea payload local."
+    assert request.tags == ["ideas", "mcp"]
+
+
+def test_mcp_idea_add_request_defaults_optional_fields() -> None:
+    request = idea_add_request(title="Draft idea")
+
+    assert request.notes == ""
+    assert request.tags == []
 
 
 def test_mcp_task_add_request_preserves_task_fields() -> None:

@@ -10,8 +10,8 @@ from alcove.connectors.chrome_bookmarks import (
 from alcove.connectors.github_stars import GitHubStarsImportRequest, GitHubStarsUrlImportRequest
 from alcove.mcp_context import McpInvocationContext, agent_payload
 from alcove.mcp_link_requests import link_source_request
+from alcove.mcp_mount_requests import mount_add_request, mount_index_policy_request
 from alcove.mcp_registrar import McpToolRegistrar
-from alcove.mounts import AddMountRequest, MountIndexPolicy
 
 
 def register_mcp_external_tools(
@@ -63,17 +63,15 @@ def register_mcp_external_tools(
     ) -> dict[str, Any]:
         """Add a mounted external source."""
         return context.scoped_app(workspace, home).external.mount_add_payload(
-            AddMountRequest(
+            mount_add_request(
                 path=path,
                 name=name,
                 mount_type=mount_type,
-                tags=tags or [],
-                index_policy=MountIndexPolicy(
-                    profile=profile,
-                    include=include or [],
-                    exclude=exclude or [],
-                    max_file_size_kb=max_file_size_kb,
-                ),
+                tags=tags,
+                profile=profile,
+                include=include,
+                exclude=exclude,
+                max_file_size_kb=max_file_size_kb,
             )
         )
 
@@ -90,10 +88,10 @@ def register_mcp_external_tools(
         """Update a mounted source index policy."""
         return context.scoped_app(workspace, home).external.mount_update_policy_payload(
             mount_id,
-            MountIndexPolicy(
+            mount_index_policy_request(
                 profile=profile,
-                include=include or [],
-                exclude=exclude or [],
+                include=include,
+                exclude=exclude,
                 max_file_size_kb=max_file_size_kb,
             ),
         )
