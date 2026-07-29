@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from alcove.mcp_pin_requests import pin_add_request, pin_update_request
 from alcove.mcp_context import McpInvocationContext
 from alcove.mcp_prompt_requests import prompt_request
 from alcove.mcp_registrar import McpToolRegistrar
-from alcove.pins import AddPinRequest, UpdatePinRequest
 from alcove.projects import AddProjectRequest
 
 
@@ -32,7 +32,7 @@ def register_mcp_global_tools(
     ) -> dict[str, Any]:
         """Create a pinned personal note through the governed global write path."""
         return context.scoped_app(workspace, home).global_home.pin_add_payload(
-            AddPinRequest(
+            pin_add_request(
                 title=title,
                 description=description,
                 summary=summary,
@@ -101,7 +101,7 @@ def register_mcp_global_tools(
     ) -> dict[str, Any]:
         """Update a pinned personal note through the governed global write path."""
         return context.scoped_app(workspace, home).global_home.pin_update_payload(
-            UpdatePinRequest(
+            pin_update_request(
                 pin_id=pin_id,
                 title=title,
                 description=description,
