@@ -579,3 +579,43 @@ def test_cli_service_install_status_and_tick(tmp_path, monkeypatch, capsys):
     assert tick_code == 0
     assert '"status": "ok"' in tick_output.out
     assert '"radars": {\n    "status": "skipped"' in tick_output.out
+
+
+def test_cli_service_uninstall_removes_selected_launch_agent(tmp_path, monkeypatch, capsys):
+    user_home = tmp_path / "user-home"
+    alcove_home = user_home / ".alcove"
+    monkeypatch.setenv("HOME", str(user_home))
+
+    install_code = main(
+        [
+            "service",
+            "install",
+            "--home",
+            str(alcove_home),
+            "--dashboard",
+            "--json",
+        ]
+    )
+    capsys.readouterr()
+    dashboard_plist = user_home / "Library/LaunchAgents/com.octopusgarage.alcove.dashboard.plist"
+    assert install_code == 0
+    assert dashboard_plist.is_file()
+
+    uninstall_code = main(
+        [
+            "service",
+            "uninstall",
+            "--home",
+            str(alcove_home),
+            "--dashboard",
+            "--json",
+        ]
+    )
+    uninstall_output = capsys.readouterr()
+
+    assert uninstall_code == 0
+    assert not dashboard_plist.exists()
+    assert '"status": "uninstalled"' in uninstall_output.out
+    assert '"action": "removed"' in uninstall_output.out
+    assert str(user_home) not in uninstall_output.out
+    assert "~/Library/LaunchAgents/com.octopusgarage.alcove.dashboard.plist" in uninstall_output.out
