@@ -1,4 +1,97 @@
-from alcove.mcp_knowledge_requests import note_source_request, revise_knowledge_request
+from alcove.mcp_knowledge_requests import (
+    add_concept_request,
+    add_entity_request,
+    add_question_request,
+    note_source_request,
+    revise_knowledge_request,
+)
+
+
+def test_mcp_add_concept_request_preserves_okf_fields() -> None:
+    request = add_concept_request(
+        topic="agent-engineering/agent-harness",
+        title="MCP Concept",
+        summary="Concept summary.",
+        tags=["mcp", "concept"],
+    )
+
+    assert request.topic == "agent-engineering/agent-harness"
+    assert request.title == "MCP Concept"
+    assert request.summary == "Concept summary."
+    assert request.tags == ["mcp", "concept"]
+
+
+def test_mcp_add_concept_request_defaults_to_empty_adapter_values() -> None:
+    request = add_concept_request(
+        topic="agent-engineering/agent-harness",
+        title="Defaulted Concept",
+    )
+
+    assert request.summary == ""
+    assert request.tags == []
+
+
+def test_mcp_add_question_request_preserves_okf_fields() -> None:
+    request = add_question_request(
+        topic="agent-engineering/agent-harness",
+        question="How should MCP adapters shape OKF requests?",
+        answer="Through request helpers.",
+        tags=["mcp", "question"],
+        source_refs=["sources/web/agent-engineering/example.md"],
+    )
+
+    assert request.topic == "agent-engineering/agent-harness"
+    assert request.question == "How should MCP adapters shape OKF requests?"
+    assert request.answer == "Through request helpers."
+    assert request.tags == ["mcp", "question"]
+    assert request.source_refs == ["sources/web/agent-engineering/example.md"]
+
+
+def test_mcp_add_question_request_defaults_to_empty_adapter_values() -> None:
+    request = add_question_request(
+        topic="agent-engineering/agent-harness",
+        question="What defaults are used?",
+    )
+
+    assert request.answer == ""
+    assert request.tags == []
+    assert request.source_refs == []
+
+
+def test_mcp_add_entity_request_preserves_okf_fields() -> None:
+    request = add_entity_request(
+        topic="agent-engineering/agent-harness",
+        name="MCP Adapter",
+        kind="system",
+        summary="Routes tool calls.",
+        use_cases="Governed writes.",
+        open_questions="None.",
+        tags=["mcp", "entity"],
+        source_refs=["sources/web/agent-engineering/entity.md"],
+    )
+
+    assert request.topic == "agent-engineering/agent-harness"
+    assert request.name == "MCP Adapter"
+    assert request.kind == "system"
+    assert request.summary == "Routes tool calls."
+    assert request.use_cases == "Governed writes."
+    assert request.open_questions == "None."
+    assert request.tags == ["mcp", "entity"]
+    assert request.source_refs == ["sources/web/agent-engineering/entity.md"]
+
+
+def test_mcp_add_entity_request_defaults_to_empty_adapter_values() -> None:
+    request = add_entity_request(
+        topic="agent-engineering/agent-harness",
+        name="Defaulted Entity",
+    )
+
+    assert request.kind == "object"
+    assert request.summary == ""
+    assert request.use_cases == ""
+    assert request.open_questions == ""
+    assert request.tags == []
+    assert request.source_refs == []
 
 
 def test_mcp_note_source_request_preserves_okf_fields() -> None:

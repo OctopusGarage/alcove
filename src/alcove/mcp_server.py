@@ -3,15 +3,16 @@ from __future__ import annotations
 from typing import Any
 
 from alcove.inbox_models import InboxNoteRequest
-from alcove.knowledge import (
-    AddConceptRequest,
-    AddEntityRequest,
-    AddQuestionRequest,
-)
 from alcove.mcp_context import agent_payload as _agent_payload
 from alcove.mcp_external_tools import register_mcp_external_tools
 from alcove.mcp_global_tools import register_mcp_global_tools
-from alcove.mcp_knowledge_requests import note_source_request, revise_knowledge_request
+from alcove.mcp_knowledge_requests import (
+    add_concept_request,
+    add_entity_request,
+    add_question_request,
+    note_source_request,
+    revise_knowledge_request,
+)
 from alcove.mcp_planner_tools import register_mcp_planner_tools
 from alcove.mcp_registrar import McpToolRegistrar
 from alcove.mcp_search_requests import search_request
@@ -324,7 +325,7 @@ def create_mcp_server(
     ) -> dict[str, Any]:
         """Add a standalone OKF Knowledge Concept through the governed OKF write path."""
         return context.managed_app(workspace).knowledge.knowledge_add_concept_payload(
-            AddConceptRequest(topic=topic, title=title, summary=summary, tags=tags or [])
+            add_concept_request(topic=topic, title=title, summary=summary, tags=tags)
         )
 
     @tool
@@ -364,12 +365,12 @@ def create_mcp_server(
     ) -> dict[str, Any]:
         """Add an OKF Question through the governed OKF write path."""
         return context.managed_app(workspace).knowledge.knowledge_add_question_payload(
-            AddQuestionRequest(
+            add_question_request(
                 topic=topic,
                 question=question,
                 answer=answer,
-                tags=tags or [],
-                source_refs=source_refs or [],
+                tags=tags,
+                source_refs=source_refs,
             )
         )
 
@@ -387,15 +388,15 @@ def create_mcp_server(
     ) -> dict[str, Any]:
         """Add an OKF Entity through the governed OKF write path."""
         return context.managed_app(workspace).knowledge.knowledge_add_entity_payload(
-            AddEntityRequest(
+            add_entity_request(
                 topic=topic,
                 name=name,
                 kind=kind,
                 summary=summary,
                 use_cases=use_cases,
                 open_questions=open_questions,
-                tags=tags or [],
-                source_refs=source_refs or [],
+                tags=tags,
+                source_refs=source_refs,
             )
         )
 

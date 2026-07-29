@@ -1,6 +1,65 @@
 from __future__ import annotations
 
-from alcove.knowledge import NoteSourceRequest, ReviseKnowledgeRequest
+from alcove.knowledge import (
+    AddConceptRequest,
+    AddEntityRequest,
+    AddQuestionRequest,
+    NoteSourceRequest,
+    ReviseKnowledgeRequest,
+)
+
+
+def add_concept_request(
+    *,
+    topic: str,
+    title: str,
+    summary: str = "",
+    tags: list[str] | None = None,
+) -> AddConceptRequest:
+    """Build the OKF concept request shared by MCP adapter surfaces."""
+    return AddConceptRequest(topic=topic, title=title, summary=summary, tags=tags or [])
+
+
+def add_question_request(
+    *,
+    topic: str,
+    question: str,
+    answer: str = "",
+    tags: list[str] | None = None,
+    source_refs: list[str] | None = None,
+) -> AddQuestionRequest:
+    """Build the OKF question request shared by MCP adapter surfaces."""
+    return AddQuestionRequest(
+        topic=topic,
+        question=question,
+        answer=answer,
+        tags=tags or [],
+        source_refs=source_refs or [],
+    )
+
+
+def add_entity_request(
+    *,
+    topic: str,
+    name: str,
+    kind: str = "object",
+    summary: str = "",
+    use_cases: str = "",
+    open_questions: str = "",
+    tags: list[str] | None = None,
+    source_refs: list[str] | None = None,
+) -> AddEntityRequest:
+    """Build the OKF entity request shared by MCP adapter surfaces."""
+    return AddEntityRequest(
+        topic=topic,
+        name=name,
+        kind=kind,
+        summary=summary,
+        use_cases=use_cases,
+        open_questions=open_questions,
+        tags=tags or [],
+        source_refs=source_refs or [],
+    )
 
 
 def note_source_request(
