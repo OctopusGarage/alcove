@@ -173,6 +173,9 @@ files = [
     "src/alcove/search_sources.py",
     "src/alcove/search_text.py",
     "src/alcove/service.py",
+    "src/alcove/service_launchd.py",
+    "src/alcove/service_mount_refresh.py",
+    "src/alcove/service_task_health.py",
     "src/alcove/workspace.py",
     "src/alcove/watchers.py",
 ]

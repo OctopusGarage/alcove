@@ -1,14 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import datetime
 import json
-import os
 from pathlib import Path
-import plistlib
-import shutil
-import subprocess
-import sys
 from typing import Any
 
 from alcove.application import AlcoveApplication
@@ -16,7 +10,6 @@ from alcove.automations import AutomationsModule
 from alcove.blog_monitor import BlogMonitorModule
 from alcove.dashboard import DashboardModule
 from alcove.home import AlcoveHome
-from alcove.mounts import MountsModule
 from alcove.notification_delivery import combined_notification_status
 from alcove.notifications import send_feishu_message, send_telegram_message
 from alcove.paths import compact_user_path
@@ -24,28 +17,24 @@ from alcove.publisher_dirty import mark_publisher_source_dirty
 from alcove.publishers import PublisherModule
 from alcove.radars import RadarModule
 from alcove.runtime import AlcoveRuntime
+from alcove.service_launchd import ServiceLaunchd
+from alcove.service_mount_refresh import DEFAULT_MOUNT_REFRESH_DAYS, ServiceMountRefresh, tick_now
+from alcove.service_task_health import (
+    TASK_HEALTH_NOTIFICATION_VERSION,
+    build_task_health_summary,
+    task_health_notification_text,
+    task_health_notification_was_sent_today,
+)
 from alcove.tasks import TasksModule
 from alcove.usage import UsageRecorder
 from alcove.watchers import WatcherModule
 
 
-SERVICE_DOMAIN = "com.octopusgarage.alcove"
-DEFAULT_MOUNT_REFRESH_DAYS = 2
-TASK_HEALTH_NOTIFICATION_VERSION = 2
-
-
-@dataclass(frozen=True)
-class ServiceTarget:
-    name: str
-    label: str
-    plist_path: Path
-
-
 class ServiceModule:
     def __init__(self, home: AlcoveHome) -> None:
         self.home = home
-        self.launch_agents = Path.home() / "Library" / "LaunchAgents"
-        self.logs = self.home.paths().logs / "service"
+        self.launchd = ServiceLaunchd(home)
+        self.mount_refresh = ServiceMountRefresh(home)
 
     def install(
         self,
@@ -57,71 +46,28 @@ class ServiceModule:
         interval_minutes: int = 30,
         load: bool = False,
     ) -> dict[str, Any]:
-        targets = self._selected_targets(dashboard=dashboard, scheduler=scheduler)
-        files = []
-        for target in targets:
-            payload = (
-                self._dashboard_plist(target, host=host, port=port)
-                if target.name == "dashboard"
-                else self._scheduler_plist(target, interval_minutes=interval_minutes)
-            )
-            files.append(self._write_plist(target.plist_path, payload))
-            if load:
-                self._launchctl("bootstrap", target)
-                self._launchctl("kickstart", target)
-        return self._payload("installed", targets, files)
+        return self.launchd.install(
+            dashboard=dashboard,
+            scheduler=scheduler,
+            host=host,
+            port=port,
+            interval_minutes=interval_minutes,
+            load=load,
+        )
 
     def uninstall(
         self, *, dashboard: bool, scheduler: bool, unload: bool = False
     ) -> dict[str, Any]:
-        targets = self._selected_targets(dashboard=dashboard, scheduler=scheduler)
-        files = []
-        for target in targets:
-            if unload:
-                self._launchctl("bootout", target, allow_failure=True)
-            action = "removed" if target.plist_path.exists() else "not_found"
-            if target.plist_path.exists():
-                target.plist_path.unlink()
-            files.append(
-                {
-                    "name": target.name,
-                    "path": compact_user_path(target.plist_path),
-                    "action": action,
-                }
-            )
-        return self._payload("uninstalled", targets, files)
+        return self.launchd.uninstall(dashboard=dashboard, scheduler=scheduler, unload=unload)
 
     def status(self, *, dashboard: bool, scheduler: bool) -> dict[str, Any]:
-        targets = self._selected_targets(dashboard=dashboard, scheduler=scheduler)
-        files = []
-        for target in targets:
-            files.append(
-                {
-                    "name": target.name,
-                    "label": target.label,
-                    "path": compact_user_path(target.plist_path),
-                    "installed": target.plist_path.is_file(),
-                    "loaded": self._is_loaded(target),
-                }
-            )
-        return self._payload("status", targets, files)
+        return self.launchd.status(dashboard=dashboard, scheduler=scheduler)
 
     def start(self, *, dashboard: bool, scheduler: bool) -> dict[str, Any]:
-        targets = self._selected_targets(dashboard=dashboard, scheduler=scheduler)
-        actions = []
-        for target in targets:
-            self._launchctl("bootstrap", target, allow_failure=True)
-            self._launchctl("kickstart", target)
-            actions.append({"name": target.name, "action": "started"})
-        return self._payload("started", targets, actions)
+        return self.launchd.start(dashboard=dashboard, scheduler=scheduler)
 
     def stop(self, *, dashboard: bool, scheduler: bool) -> dict[str, Any]:
-        targets = self._selected_targets(dashboard=dashboard, scheduler=scheduler)
-        actions = []
-        for target in targets:
-            self._launchctl("bootout", target, allow_failure=True)
-            actions.append({"name": target.name, "action": "stopped"})
-        return self._payload("stopped", targets, actions)
+        return self.launchd.stop(dashboard=dashboard, scheduler=scheduler)
 
     def tick(
         self,
@@ -139,7 +85,7 @@ class ServiceModule:
         notify_task_health: bool = False,
         today: str = "",
     ) -> dict[str, Any]:
-        tick_time = _tick_now(today)
+        tick_time = tick_now(today)
         runtime = AlcoveRuntime.from_modules(home=self.home)
         app = AlcoveApplication(runtime)
         usage = UsageRecorder(self.home)
@@ -179,7 +125,7 @@ class ServiceModule:
             else {"status": "skipped", "ran": 0, "skipped": 0, "updated": 0, "errors": 0}
         )
         mounts_payload = (
-            self._refresh_mounts_if_due(interval_days=mount_refresh_days, today=today)
+            self.mount_refresh.run(interval_days=mount_refresh_days, today=today)
             if refresh_mounts
             else {"status": "skipped", "reason": "disabled", "checked": 0, "refreshed": 0}
         )
@@ -229,105 +175,13 @@ class ServiceModule:
             "usage": usage_payload,
             "prune": prune_payload,
         }
-        task_health = self._task_health_summary(payload)
+        task_health = build_task_health_summary(payload)
         payload["task_health"] = task_health
         if notify_task_health:
             payload["task_health_notification"] = self._notify_task_health_once_per_day(
                 task_health, tick_time=tick_time
             )
         return payload
-
-    def _task_health_summary(self, payload: dict[str, Any]) -> dict[str, Any]:
-        checks = [
-            self._module_health(
-                module="connectors",
-                payload=_dict_value(payload.get("connectors")),
-                metrics=("refreshed", "skipped", "errors"),
-                error_key="errors",
-            ),
-            self._module_health(
-                module="watchers",
-                payload=_dict_value(payload.get("watchers")),
-                metrics=("checked", "changed", "errors"),
-                error_key="errors",
-            ),
-            self._module_health(
-                module="blogs",
-                payload=_dict_value(payload.get("blogs")),
-                metrics=("checked", "new", "errors"),
-                error_key="errors",
-            ),
-            self._module_health(
-                module="radars",
-                payload=_dict_value(payload.get("radars")),
-                metrics=("ran", "skipped", "errors"),
-                error_key="errors",
-            ),
-            self._module_health(
-                module="automations",
-                payload=_dict_value(payload.get("automations")),
-                metrics=("ran", "skipped", "failed"),
-                error_key="failed",
-            ),
-            self._module_health(
-                module="publishers",
-                payload=_dict_value(payload.get("publishers")),
-                metrics=("ran", "updated", "errors"),
-                error_key="errors",
-            ),
-            self._module_health(
-                module="mounts",
-                payload=_dict_value(payload.get("mounts")),
-                metrics=("checked", "refreshed", "skipped"),
-                error_key="errors",
-            ),
-            self._health_module_summary(_dict_value(payload.get("health"))),
-        ]
-        failed = [check for check in checks if check["status"] == "failed"]
-        skipped = [check for check in checks if check["status"] == "skipped"]
-        return {
-            "status": "failed" if failed else "success",
-            "checked": len(checks),
-            "failed": len(failed),
-            "skipped": len(skipped),
-            "checks": checks,
-        }
-
-    def _module_health(
-        self,
-        *,
-        module: str,
-        payload: dict[str, Any],
-        metrics: tuple[str, ...],
-        error_key: str,
-    ) -> dict[str, Any]:
-        status = str(payload.get("status") or "unknown")
-        error_count = _int_value(payload.get(error_key))
-        task_status = (
-            "skipped" if status == "skipped" else "failed" if error_count > 0 else "success"
-        )
-        summary = " ".join(f"{key}={_int_value(payload.get(key))}" for key in metrics)
-        record: dict[str, Any] = {
-            "module": module,
-            "status": task_status,
-            "summary": summary,
-        }
-        if task_status == "failed":
-            record["error"] = f"{module} reported {error_key}={error_count}"
-        return record
-
-    def _health_module_summary(self, payload: dict[str, Any]) -> dict[str, Any]:
-        issue_count = _int_value(payload.get("issue_count"))
-        action_count = _int_value(payload.get("action_count"))
-        status = "failed" if issue_count > 0 else "success"
-        record: dict[str, Any] = {
-            "module": "health",
-            "status": status,
-            "summary": f"issues={issue_count} actions={action_count}",
-        }
-        if status == "failed":
-            record["error"] = f"health reported issue_count={issue_count}"
-        return record
 
     def _notify_task_health_once_per_day(
         self, task_health: dict[str, Any], *, tick_time: datetime
@@ -336,10 +190,10 @@ class ServiceModule:
         state = self._load_state()
         notifications = state.get("task_health_notifications")
         notification_state = notifications if isinstance(notifications, dict) else {}
-        if _task_health_notification_was_sent_today(notification_state.get(day)):
+        if task_health_notification_was_sent_today(notification_state.get(day)):
             return {"status": "skipped", "reason": "already_sent", "day": day}
         title = f"Alcove task health: {day}"
-        text = self._task_health_notification_text(task_health, day=day)
+        text = task_health_notification_text(task_health, day=day)
         results = {
             "telegram": send_telegram_message(home=self.home, text=text),
             "feishu": send_feishu_message(home=self.home, sink={}, title=title, text=text),
@@ -353,71 +207,6 @@ class ServiceModule:
             state["task_health_notifications"] = notification_state
             self._save_state(state)
         return {"status": status, "day": day, "sinks": results}
-
-    def _task_health_notification_text(self, task_health: dict[str, Any], *, day: str) -> str:
-        status_label = _task_health_status_label(str(task_health.get("status") or "unknown"))
-        lines = [
-            f"Alcove 任务健康 · {day}",
-            "",
-            f"整体状态：{status_label}",
-            f"已检查模块：{_int_value(task_health.get('checked'))} 个；失败：{_int_value(task_health.get('failed'))} 个；跳过：{_int_value(task_health.get('skipped'))} 个。",
-            "",
-            "模块结果：",
-        ]
-        for check in task_health.get("checks", []):
-            if not isinstance(check, dict):
-                continue
-            lines.append(_task_health_check_line(check))
-        return "\n".join(lines)
-
-    def _refresh_mounts_if_due(self, *, interval_days: int, today: str) -> dict[str, Any]:
-        mount_module = MountsModule(home=self.home)
-        mounts = mount_module.list()
-        if not mounts:
-            return {"status": "skipped", "reason": "no_mounts", "checked": 0, "refreshed": 0}
-
-        interval = max(int(interval_days or DEFAULT_MOUNT_REFRESH_DAYS), 1)
-        state = self._load_state()
-        stored_mount_state = state.get("mounts")
-        mount_state = stored_mount_state if isinstance(stored_mount_state, dict) else {}
-        last_refreshed_at = str(mount_state.get("last_refreshed_at") or "")
-        now = _tick_now(today)
-        if not _is_due(last_refreshed_at, now=now, interval_days=interval):
-            return {
-                "status": "skipped",
-                "reason": "not_due",
-                "checked": len(mounts),
-                "refreshed": 0,
-                "last_refreshed_at": last_refreshed_at,
-                "next_due_at": _next_due_at(last_refreshed_at, interval),
-                "interval_days": interval,
-            }
-
-        report = mount_module.scan()
-        timestamp = now.isoformat(timespec="seconds")
-        payload = {
-            "status": "checked",
-            "checked": len(mounts),
-            "refreshed": len(mounts),
-            "last_refreshed_at": timestamp,
-            "next_due_at": _next_due_at(timestamp, interval),
-            "interval_days": interval,
-            "scanned": _int_value(report.get("scanned")),
-            "skipped": _int_value(report.get("skipped")),
-            "reused": _int_value(report.get("reused")),
-            "skip_reasons": report.get("skip_reasons", {}),
-        }
-        state["mounts"] = {
-            "last_refreshed_at": timestamp,
-            "refresh_interval_days": interval,
-            "last_report": {
-                "scanned": payload["scanned"],
-                "skipped": payload["skipped"],
-                "reused": payload["reused"],
-            },
-        }
-        self._save_state(state)
-        return payload
 
     def _state_path(self) -> Path:
         return self.home.paths().stats / "service-state.json"
@@ -437,320 +226,9 @@ class ServiceModule:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    def _selected_targets(self, *, dashboard: bool, scheduler: bool) -> list[ServiceTarget]:
-        if not dashboard and not scheduler:
-            dashboard = True
-            scheduler = True
-        targets = []
-        if dashboard:
-            targets.append(self._target("dashboard"))
-        if scheduler:
-            targets.append(self._target("scheduler"))
-        return targets
-
-    def _target(self, name: str) -> ServiceTarget:
-        label = f"{SERVICE_DOMAIN}.{name}"
-        return ServiceTarget(
-            name=name, label=label, plist_path=self.launch_agents / f"{label}.plist"
-        )
-
-    def _dashboard_plist(self, target: ServiceTarget, *, host: str, port: int) -> dict[str, Any]:
-        return self._plist(
-            target,
-            command=[
-                "alcove",
-                "serve",
-                "--dashboard",
-                "--home",
-                compact_user_path(self.home.root),
-                "--host",
-                host,
-                "--port",
-                str(port),
-            ],
-            run_at_load=True,
-            keep_alive=True,
-        )
-
-    def _scheduler_plist(self, target: ServiceTarget, *, interval_minutes: int) -> dict[str, Any]:
-        return self._plist(
-            target,
-            command=[
-                "alcove",
-                "service",
-                "tick",
-                "--home",
-                compact_user_path(self.home.root),
-                "--json",
-            ],
-            run_at_load=True,
-            keep_alive=False,
-            start_interval=max(interval_minutes, 1) * 60,
-        )
-
-    def _plist(
-        self,
-        target: ServiceTarget,
-        *,
-        command: list[str],
-        run_at_load: bool,
-        keep_alive: bool,
-        start_interval: int | None = None,
-    ) -> dict[str, Any]:
-        self.logs.mkdir(parents=True, exist_ok=True)
-        shell_command = " ".join(_shell_quote(part) for part in command)
-        payload: dict[str, Any] = {
-            "Label": target.label,
-            "ProgramArguments": ["/bin/zsh", "-lc", f"exec {shell_command}"],
-            "RunAtLoad": run_at_load,
-            "KeepAlive": keep_alive,
-            "StandardOutPath": str(self.logs / f"{target.name}.out.log"),
-            "StandardErrorPath": str(self.logs / f"{target.name}.err.log"),
-            "EnvironmentVariables": {
-                "PATH": self._launchd_path(),
-            },
-        }
-        if start_interval is not None:
-            payload["StartInterval"] = start_interval
-        return payload
-
-    def _launchd_path(self) -> str:
-        paths = [
-            str(Path.home() / ".local" / "bin"),
-            str(Path.home() / ".cargo" / "bin"),
-            *_current_executable_dirs("alcove", "codex", "claude", "node"),
-            *_nvm_bin_dirs(),
-            *_path_entries(os.environ.get("PATH", "")),
-            "/opt/homebrew/bin",
-            "/usr/local/bin",
-            "/usr/bin",
-            "/bin",
-            "/usr/sbin",
-            "/sbin",
-        ]
-        return ":".join(_dedupe_paths(paths))
-
-    def _write_plist(self, path: Path, payload: dict[str, Any]) -> dict[str, Any]:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        before = path.read_bytes() if path.is_file() else b""
-        content = plistlib.dumps(payload, sort_keys=False)
-        action = "created" if not before else "unchanged" if before == content else "updated"
-        if before != content:
-            path.write_bytes(content)
-        return {"path": compact_user_path(path), "action": action, "label": payload["Label"]}
-
-    def _launchctl(
-        self, action: str, target: ServiceTarget, *, allow_failure: bool = False
-    ) -> subprocess.CompletedProcess[str]:
-        if sys.platform != "darwin":
-            raise RuntimeError("launchd service management is only available on macOS")
-        domain = f"gui/{os.getuid()}"
-        if action == "bootstrap":
-            cmd = ["/bin/launchctl", "bootstrap", domain, str(target.plist_path)]
-        elif action == "bootout":
-            cmd = ["/bin/launchctl", "bootout", domain, str(target.plist_path)]
-        elif action == "kickstart":
-            cmd = ["/bin/launchctl", "kickstart", "-k", f"{domain}/{target.label}"]
-        else:
-            raise ValueError(f"Unknown launchctl action: {action}")
-        result = subprocess.run(cmd, text=True, capture_output=True, check=False)  # noqa: S603
-        if result.returncode != 0 and not allow_failure:
-            raise RuntimeError(result.stderr.strip() or f"launchctl {action} failed")
-        return result
-
-    def _is_loaded(self, target: ServiceTarget) -> bool:
-        if sys.platform != "darwin":
-            return False
-        domain = f"gui/{os.getuid()}/{target.label}"
-        result = subprocess.run(  # noqa: S603
-            ["/bin/launchctl", "print", domain],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        return result.returncode == 0
-
-    def _payload(
-        self, status: str, targets: list[ServiceTarget], records: list[dict[str, Any]]
-    ) -> dict[str, Any]:
-        return {
-            "status": status,
-            "home": compact_user_path(self.home.root),
-            "targets": [target.name for target in targets],
-            "records": records,
-        }
-
-
-def _shell_quote(value: str) -> str:
-    if not value:
-        return "''"
-    safe = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_+-=.,/:@%")
-    if all(char in safe for char in value):
-        return value
-    return "'" + value.replace("'", "'\"'\"'") + "'"
-
-
-def _current_executable_dirs(*commands: str) -> list[str]:
-    paths: list[str] = []
-    for command in commands:
-        executable = shutil.which(command)
-        if executable:
-            paths.append(str(Path(executable).resolve().parent))
-    return paths
-
-
-def _nvm_bin_dirs() -> list[str]:
-    root = Path.home() / ".nvm" / "versions" / "node"
-    if not root.is_dir():
-        return []
-    return [str(path) for path in sorted(root.glob("*/bin"), reverse=True) if path.is_dir()]
-
-
-def _path_entries(value: str) -> list[str]:
-    return [entry for entry in value.split(":") if entry]
-
-
-def _dedupe_paths(paths: list[str]) -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for path in paths:
-        expanded = str(Path(path).expanduser())
-        if expanded in seen:
-            continue
-        seen.add(expanded)
-        result.append(expanded)
-    return result
-
-
-def _tick_now(today: str) -> datetime:
-    value = str(today or "").strip()
-    if not value:
-        return datetime.now(UTC)
-    if len(value) == 10:
-        return datetime.combine(date.fromisoformat(value), datetime.min.time(), tzinfo=UTC)
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-
-
-def _parse_timestamp(value: str) -> datetime | None:
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-
-
-def _is_due(last_refreshed_at: str, *, now: datetime, interval_days: int) -> bool:
-    last = _parse_timestamp(last_refreshed_at)
-    if last is None:
-        return True
-    return now >= last + timedelta(days=interval_days)
-
-
-def _next_due_at(last_refreshed_at: str, interval_days: int) -> str:
-    last = _parse_timestamp(last_refreshed_at)
-    if last is None:
-        return ""
-    return (last + timedelta(days=interval_days)).isoformat(timespec="seconds")
-
-
-def _task_health_status_label(status: str) -> str:
-    labels = {
-        "success": "健康",
-        "failed": "需要处理",
-        "skipped": "已跳过",
-    }
-    return labels.get(status, status or "未知")
-
-
-def _task_health_notification_was_sent_today(value: Any) -> bool:
-    if not isinstance(value, dict):
-        return False
-    return (
-        value.get("status") == "sent"
-        and _int_value(value.get("version")) == TASK_HEALTH_NOTIFICATION_VERSION
-    )
-
-
-def _task_health_check_line(check: dict[str, Any]) -> str:
-    module_key = str(check.get("module") or "module")
-    module = _task_health_module_label(module_key)
-    status = str(check.get("status") or "unknown")
-    status_label = {
-        "success": "正常",
-        "failed": "异常",
-        "skipped": "跳过",
-    }.get(status, status or "未知")
-    if status == "skipped":
-        return f"- {module}：{status_label}"
-
-    if module_key == "radars":
-        return f"- {module}：{status_label} · {_radar_task_health_summary(status, str(check.get('summary') or ''))}"
-
-    detail = _task_health_summary_text(str(check.get("summary") or ""))
-    return f"- {module}：{status_label}{f' · {detail}' if detail else ''}"
-
-
-def _task_health_module_label(module: str) -> str:
-    labels = {
-        "connectors": "连接器",
-        "watchers": "监听器",
-        "blogs": "博客监控",
-        "radars": "雷达",
-        "automations": "自动化",
-        "publishers": "发布器",
-        "mounts": "挂载索引",
-        "health": "健康检查",
-    }
-    return labels.get(module, module)
-
-
-def _task_health_summary_text(summary: str) -> str:
-    labels = {
-        "refreshed": "已刷新",
-        "skipped": "跳过",
-        "errors": "错误",
-        "checked": "已检查",
-        "changed": "变更",
-        "new": "新增",
-        "ran": "运行",
-        "failed": "失败",
-        "updated": "更新",
-        "issues": "问题",
-        "actions": "修复动作",
-    }
-    values = _task_health_summary_values(summary)
-    return "；".join(
-        f"{labels.get(key, key)} {_int_value(value)} 个" for key, value in values.items()
-    )
-
-
-def _radar_task_health_summary(status: str, summary: str) -> str:
-    values = _task_health_summary_values(summary)
-    errors = _int_value(values.get("errors"))
-    ran = _int_value(values.get("ran"))
-    last_run = "上次运行异常" if status == "failed" or errors > 0 else "上次运行成功"
-    return f"{last_run}；本轮运行 {ran} 个；错误 {errors} 个"
-
-
-def _task_health_summary_values(summary: str) -> dict[str, str]:
-    values = {}
-    for item in summary.split():
-        key, separator, value = item.partition("=")
-        if separator != "=":
-            continue
-        values[key] = value
-    return values
-
 
 def _int_value(value: Any) -> int:
     try:
         return int(value)
     except (TypeError, ValueError):
         return 0
-
-
-def _dict_value(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
