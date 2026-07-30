@@ -142,6 +142,55 @@ def test_cli_radar_run_and_status_use_generic_definition(tmp_path, capsys):
     assert '"last_run"' in status_output.out
 
 
+def test_cli_radar_explain_reads_existing_run_artifacts(tmp_path, capsys):
+    home_path = tmp_path / ".alcove"
+    fixture = tmp_path / "items.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "title": "Spain defeat France in World Cup",
+                    "url": "https://example.test/spain-france",
+                    "summary": "World Cup match report.",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    home = AlcoveHome.init(home_path)
+    RadarModule(home).upsert_definition(
+        RadarDefinition(
+            id="custom-radar",
+            name="Custom Radar",
+            sources=[RadarSource(id="fixture", adapter="fixture", params={"path": str(fixture)})],
+            profile={"interest_tags": ["World Cup"], "min_score_threshold": 0.5},
+            report={"formats": ["md"]},
+        )
+    )
+    run_code = main(["radar", "run", "custom-radar", "--home", str(home_path), "--json"])
+    capsys.readouterr()
+
+    explain_code = main(
+        [
+            "radar",
+            "explain",
+            "custom-radar",
+            "--home",
+            str(home_path),
+            "--query",
+            "Spain defeat France",
+            "--json",
+        ]
+    )
+    explain_output = capsys.readouterr()
+    payload = json.loads(explain_output.out)
+
+    assert run_code == 0
+    assert explain_code == 0
+    assert payload["stage"] == "included"
+    assert payload["matches"][0]["title"] == "Spain defeat France in World Cup"
+
+
 def test_cli_radar_run_can_analyze_cached_results_and_notify(tmp_path, capsys, monkeypatch):
     home_path = tmp_path / ".alcove"
     fixture = tmp_path / "items.json"

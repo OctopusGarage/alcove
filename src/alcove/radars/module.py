@@ -228,6 +228,11 @@ class RadarModule:
         rows = [self._status_row(definition) for definition in definitions]
         return {"count": len(rows), "radars": rows}
 
+    def explain(self, radar_id: str, *, query: str, run_day: str = "") -> dict[str, Any]:
+        from alcove.radars.explain import explain_radar_item
+
+        return explain_radar_item(self, self.get(radar_id), query=query, run_day=run_day)
+
     def check_stale(self, *, current_time: datetime | None = None) -> dict[str, Any]:
         current_time = current_time or datetime.now(UTC)
         ran = 0
