@@ -142,6 +142,7 @@ files = [
     "src/alcove/planner_schedule.py",
     "src/alcove/profile_installer.py",
     "src/alcove/profile_packs.py",
+    "src/alcove/profile_skill_templates.py",
     "src/alcove/projects.py",
     "src/alcove/prompt_audit.py",
     "src/alcove/prompt_composer.py",
@@ -176,6 +177,8 @@ files = [
     "src/alcove/service_launchd.py",
     "src/alcove/service_mount_refresh.py",
     "src/alcove/service_task_health.py",
+    "src/alcove/service_task_health_notifications.py",
+    "src/alcove/service_tick_finalizer.py",
     "src/alcove/workspace.py",
     "src/alcove/watchers.py",
 ]

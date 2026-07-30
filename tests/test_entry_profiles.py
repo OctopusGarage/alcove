@@ -109,6 +109,30 @@ def test_profile_source_templates_match_default_generated_artifacts(tmp_path):
         assert artifact.source_path.read_text(encoding="utf-8") == artifact.content
 
 
+def test_profile_skill_templates_preserve_explicit_home_command_rendering():
+    home_part = " --home /tmp/alcove-home"
+    hub = ProfileInstallationPack(profile="hub", skill_name="alcove-hub").skill_content(
+        default_kb="research_notes", home_part=home_part
+    )
+    workspace = ProfileInstallationPack(
+        profile="workspace", skill_name="alcove-workspace"
+    ).skill_content(default_kb="research_notes", home_part=home_part)
+    kb = ProfileInstallationPack(profile="managed-kb", skill_name="alcove-kb").skill_content(
+        default_kb="research_notes", home_part=home_part
+    )
+
+    assert '`alcove search --home /tmp/alcove-home "query" --json`' in hub
+    assert "`alcove prompt --home /tmp/alcove-home save --proposal-id <id> --json`" in hub
+    assert "alcove workspace --home /tmp/alcove-home run <workspace-id>" in hub
+    assert "Use `alcove blog check`, not `alcove service tick`" in hub
+    assert "Use `alcove radar list --json` first" in hub
+    assert "alcove workspace --home /tmp/alcove-home okf init <workspace-id>" in workspace
+    assert 'alcove prompt --home /tmp/alcove-home compose "scenario" --json' in workspace
+    assert "`alcove knowledge --home /tmp/alcove-home revise ...`" in kb
+    assert "`alcove validate --home /tmp/alcove-home --json`" in kb
+    assert "`alcove knowledge ...`" in kb
+
+
 def test_cli_hub_init_creates_project_local_entry_files(tmp_path, capsys):
     home = tmp_path / "alcove-home"
     hub = tmp_path / "AlcoveHub"

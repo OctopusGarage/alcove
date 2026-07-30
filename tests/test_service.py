@@ -12,6 +12,8 @@ from alcove.radars import RadarDefinition, RadarModule, RadarSchedule, RadarSour
 from alcove.service import ServiceModule
 from alcove.service_mount_refresh import ServiceMountRefresh
 from alcove.service_task_health import build_task_health_summary, task_health_notification_text
+from alcove.service_task_health_notifications import ServiceTaskHealthNotifier
+from alcove.service_tick_finalizer import ServiceTickFinalizer
 from alcove.tasks import AddRoutineRequest, AddTaskRequest, TasksModule
 
 
@@ -108,6 +110,53 @@ def test_service_tick_materializes_routines_and_writes_stats(tmp_path):
     assert result["radars"]["ran"] == 1
     assert (home.paths().stats / "summary.json").is_file()
     assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
+def test_service_tick_finalizer_records_metrics_and_builds_dashboard(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    payload = {
+        "status": "ok",
+        "home": "~/.alcove",
+        "tasks": {"materialized": 2, "items": ["task-1", "task-2"]},
+        "task_notifications": {"sent": 1},
+        "connectors": {"refreshed": 3},
+        "watchers": {"changed": 4},
+        "blogs": {"new": 5},
+        "radars": {"ran": 6},
+        "automations": {"ran": 7, "failed": 8},
+        "publishers": {"ran": 9, "updated": 10},
+        "mounts": {"refreshed": 11},
+        "okf": {"status": "built"},
+        "health": {"status": "ok", "issue_count": 0, "action_count": 0},
+    }
+
+    result = ServiceTickFinalizer(home).finalize(payload, retention_days=90)
+
+    assert result is payload
+    assert result["usage"]["total_events"] == 0
+    assert result["prune"] == {"usage_removed": 0, "activity_removed": 0}
+    assert (home.paths().stats / "summary.json").is_file()
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+    events = [
+        json.loads(line)
+        for line in (home.paths().logs / "usage.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    service_event = next(event for event in events if event["action"] == "service.tick")
+    assert service_event["visible"] is False
+    assert service_event["privacy"] == {"query_stored": False, "content_stored": False}
+    assert service_event["metrics"] == {
+        "routine_tasks": 2,
+        "task_notifications": 1,
+        "connector_refreshed": 3,
+        "watcher_changed": 4,
+        "blog_new": 5,
+        "radar_ran": 6,
+        "automation_ran": 7,
+        "automation_failed": 8,
+        "publisher_ran": 9,
+        "publisher_updated": 10,
+        "mounts_refreshed": 11,
+    }
 
 
 def test_service_tick_tolerates_invalid_persisted_radar_ttl_hours(tmp_path):
@@ -414,8 +463,10 @@ def test_service_tick_builds_and_notifies_task_health_when_enabled(tmp_path, mon
         feishu.append(f"{title}\n{text}")
         return {"status": "sent"}
 
-    monkeypatch.setattr("alcove.service.send_telegram_message", fake_telegram)
-    monkeypatch.setattr("alcove.service.send_feishu_message", fake_feishu)
+    monkeypatch.setattr(
+        "alcove.service_task_health_notifications.send_telegram_message", fake_telegram
+    )
+    monkeypatch.setattr("alcove.service_task_health_notifications.send_feishu_message", fake_feishu)
 
     result = ServiceModule(home).tick(
         refresh_connectors=False,
@@ -517,17 +568,19 @@ def test_task_health_notification_resends_when_prior_send_used_legacy_format(
         telegram.append(text)
         return {"status": "sent"}
 
-    monkeypatch.setattr("alcove.service.send_telegram_message", fake_telegram)
     monkeypatch.setattr(
-        "alcove.service.send_feishu_message",
+        "alcove.service_task_health_notifications.send_telegram_message", fake_telegram
+    )
+    monkeypatch.setattr(
+        "alcove.service_task_health_notifications.send_feishu_message",
         lambda **_kwargs: {"status": "skipped"},
     )
 
-    first = ServiceModule(home)._notify_task_health_once_per_day(
+    first = ServiceTaskHealthNotifier(home).notify_once_per_day(
         {"status": "success", "checked": 8, "failed": 0, "skipped": 0, "checks": []},
         tick_time=datetime.fromisoformat("2026-07-29T12:00:00+00:00"),
     )
-    second = ServiceModule(home)._notify_task_health_once_per_day(
+    second = ServiceTaskHealthNotifier(home).notify_once_per_day(
         {"status": "success", "checked": 8, "failed": 0, "skipped": 0, "checks": []},
         tick_time=datetime.fromisoformat("2026-07-29T12:05:00+00:00"),
     )
@@ -553,7 +606,9 @@ def test_cli_service_tick_can_skip_task_health_notification(tmp_path, monkeypatc
         telegram.append(text)
         return {"status": "sent"}
 
-    monkeypatch.setattr("alcove.service.send_telegram_message", fake_telegram)
+    monkeypatch.setattr(
+        "alcove.service_task_health_notifications.send_telegram_message", fake_telegram
+    )
 
     code = main(
         [
