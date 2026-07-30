@@ -123,7 +123,7 @@ def note_source_tool(
             topic=topic,
             resource=resource,
             summary=summary,
-            tags=tags or [],
+            tags=tags,
             published_date=published_date,
             create_concept=create_concept,
         )
@@ -153,8 +153,8 @@ def revise_knowledge_tool(
             summary=summary,
             answer=answer,
             append=append,
-            tags=tags or [],
-            source_refs=source_refs or [],
+            tags=tags,
+            source_refs=source_refs,
             reason=reason,
             status=status,
         )
@@ -183,10 +183,10 @@ def pin_add_tool(
             summary=summary,
             content=content,
             kind=kind,
-            tags=tags or [],
+            tags=tags,
             priority=priority,
-            source_refs=source_refs or [],
-            resources=resources or [],
+            source_refs=source_refs,
+            resources=resources,
             content_format=content_format,
         )
     )
