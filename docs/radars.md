@@ -61,11 +61,32 @@ alcove radar run <radar-id> --json
 alcove radar run <radar-id> --ai --notify --json
 alcove radar run <radar-id> --skip-fetch --force --ai --notify --json
 alcove radar status <radar-id> --json
+alcove radar explain <radar-id> --query "story title or URL" --json
 ```
 
 `radar run` fetches enabled sources, deduplicates by URL/title, scores with the
 definition profile, writes cache, writes Markdown/HTML reports, writes a latest
 OKF index, and appends a run event.
+
+`radar explain` is a read-only diagnostic for support/debugging. It reads the
+existing `raw.json`, `scored.json`, and `run.json` artifacts for the latest run
+or a selected `--date YYYY-MM-DD`; it never fetches sources or invokes AI. Use
+it when an expected story is missing from a report:
+
+```sh
+alcove radar explain sports-news \
+  --query "Spain defeat France" \
+  --date 2026-07-29 \
+  --json
+```
+
+The response reports the likely pipeline stage, matched raw/scored rows,
+`source_id`, score, `score_reason`, `included`, final report presence, source
+failure context, and compact artifact paths. Stages are diagnostic evidence:
+absence from cache can mean the source failed, the upstream feed did not contain
+the story, or the query did not match the cached title/URL/summary exactly. If
+the selected date has no `run.json`, the stage is `no_run` and the missing
+artifact paths are included.
 
 `alcove service tick` runs only active definitions with `schedule.enabled: true`.
 Definitions may set a local daily trigger:

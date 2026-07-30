@@ -292,6 +292,14 @@ def build_parser() -> argparse.ArgumentParser:
     radar_status.add_argument("radar_id", nargs="?", default="")
     radar_status.add_argument("--home", default=argparse.SUPPRESS)
     radar_status.add_argument("--json", action="store_true")
+    radar_explain = radar_sub.add_parser(
+        "explain", help="Explain why a radar item appeared or was excluded"
+    )
+    radar_explain.add_argument("radar_id")
+    radar_explain.add_argument("--home", default=argparse.SUPPRESS)
+    radar_explain.add_argument("--query", required=True)
+    radar_explain.add_argument("--date", default="")
+    radar_explain.add_argument("--json", action="store_true")
     radar_preset = radar_sub.add_parser("preset", help="Work with packaged radar presets")
     radar_preset.add_argument("--home", default=argparse.SUPPRESS)
     radar_preset_sub = radar_preset.add_subparsers(dest="radar_preset_command", required=True)

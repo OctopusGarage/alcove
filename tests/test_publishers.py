@@ -150,6 +150,71 @@ def test_alcove_memory_write_triggers_due_publisher_before_ttl(tmp_path):
     assert after_clean["publishers"][0]["reason"] == "not_due"
 
 
+@pytest.mark.parametrize(
+    ("source", "write"),
+    [
+        (
+            "pins",
+            lambda app, tmp_path: app.global_home.pin_add_payload(
+                AddPinRequest(title="Dirty Pin", content="Refresh pins.")
+            ),
+        ),
+        (
+            "prompts",
+            lambda app, tmp_path: app.global_home.prompt_save_payload(
+                AddPromptRequest(
+                    title="Dirty Prompt",
+                    content="Refresh prompt library.",
+                ),
+                force=True,
+            ),
+        ),
+        (
+            "projects",
+            lambda app, tmp_path: app.global_home.project_add_payload(
+                AddProjectRequest(
+                    alias="dirty-project",
+                    path=str(tmp_path / "project"),
+                    note="Refresh project registry.",
+                )
+            ),
+        ),
+        (
+            "tasks",
+            lambda app, tmp_path: app.global_home.task_add_payload(
+                AddTaskRequest(title="Dirty Task", notes="Refresh planner digest.")
+            ),
+        ),
+    ],
+)
+def test_governed_memory_writes_mark_expected_publisher_sources_dirty(
+    tmp_path,
+    source,
+    write,
+):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    (tmp_path / "project").mkdir()
+    target = FakeAppleNotesTarget()
+    module = PublisherModule(home, target_factory=lambda _definition: target)
+    module.init_apple_notes(root_folder="iCloud/Alcove")
+    first_run = module.run_due(timestamp="2026-07-12T08:00:00+00:00")
+    target.replacements.clear()
+    app = AlcoveApplication(AlcoveRuntime.resolve(home=home.root))
+
+    not_due = module.run_due(timestamp="2026-07-12T09:00:00+00:00")
+    write(app, tmp_path)
+    dirty_run = module.run_due(timestamp="2026-07-12T09:01:00+00:00")
+    after_clean = module.run_due(timestamp="2026-07-12T09:02:00+00:00")
+
+    assert first_run["ran"] == 1
+    assert not_due["ran"] == 0
+    assert dirty_run["ran"] == 1
+    assert dirty_run["publishers"][0]["due_reason"] == "dirty"
+    assert dirty_run["publishers"][0]["dirty_sources"] == [source]
+    assert after_clean["ran"] == 0
+    assert after_clean["publishers"][0]["reason"] == "not_due"
+
+
 def test_publisher_due_check_handles_legacy_naive_last_synced_at(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     module = PublisherModule(home)

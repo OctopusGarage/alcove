@@ -38,6 +38,7 @@ alcove home init --home "$home" --json > "$fixtures/home-init.json"
 run uv run python - "$home" "$fixtures" <<'PY'
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from dataclasses import replace
 import json
 from pathlib import Path
@@ -49,6 +50,12 @@ from alcove.radars import RadarModule, RadarSource
 home = AlcoveHome.init(Path(sys.argv[1]))
 fixtures = Path(sys.argv[2])
 module = RadarModule(home)
+fixture_now = datetime.now(UTC).replace(hour=8, minute=0, second=0, microsecond=0)
+
+
+def published_at(days_ago: int, hour: int) -> str:
+    value = fixture_now - timedelta(days=days_ago)
+    return value.replace(hour=hour).isoformat(timespec="seconds")
 
 samples: dict[str, dict[str, list[dict[str, object]]]] = {
     "tech-news": {
@@ -58,14 +65,14 @@ samples: dict[str, dict[str, list[dict[str, object]]]] = {
                 "url": "https://example.test/tech/coding-agent",
                 "summary": "A practical release for agentic developer tooling and local workflows.",
                 "tags": ["AI", "MCP", "developer tools"],
-                "published_at": "2026-07-12T08:00:00+00:00",
+                "published_at": published_at(1, 8),
             },
             {
                 "title": "Open source coding agent adds MCP orchestration - duplicate discussion",
                 "url": "https://example.test/tech/coding-agent-discussion",
                 "summary": "A duplicate angle that should not crowd the final top list.",
                 "tags": ["AI", "MCP"],
-                "published_at": "2026-07-12T08:30:00+00:00",
+                "published_at": published_at(1, 9),
             },
         ],
         "techcrunch": [
@@ -74,7 +81,7 @@ samples: dict[str, dict[str, list[dict[str, object]]]] = {
                 "url": "https://example.test/tech/vector-db",
                 "summary": "The launch targets AI retrieval workloads and operational observability.",
                 "tags": ["database", "AI", "infrastructure"],
-                "published_at": "2026-07-11T10:00:00+00:00",
+                "published_at": published_at(2, 10),
             }
         ],
         "wired": [
@@ -83,7 +90,7 @@ samples: dict[str, dict[str, list[dict[str, object]]]] = {
                 "url": "https://example.test/tech/security-ai-review",
                 "summary": "New tooling emphasizes audit trails and constrained write paths.",
                 "tags": ["security", "AI"],
-                "published_at": "2026-07-10T10:00:00+00:00",
+                "published_at": published_at(3, 10),
             }
         ],
     },
@@ -94,7 +101,7 @@ samples: dict[str, dict[str, list[dict[str, object]]]] = {
                 "url": "https://example.test/world/trade-energy",
                 "summary": "Negotiators are trying to reduce supply risk before winter demand rises.",
                 "tags": ["trade", "energy", "EU"],
-                "published_at": "2026-07-12T07:00:00+00:00",
+                "published_at": published_at(1, 7),
             }
         ],
         "al-jazeera": [
@@ -103,7 +110,7 @@ samples: dict[str, dict[str, list[dict[str, object]]]] = {
                 "url": "https://example.test/world/climate-funding",
                 "summary": "Developing economies are asking for clearer commitments and faster disbursement.",
                 "tags": ["climate", "politics"],
-                "published_at": "2026-07-11T09:00:00+00:00",
+                "published_at": published_at(2, 9),
             }
         ],
         "cnn-world": [
@@ -112,7 +119,7 @@ samples: dict[str, dict[str, list[dict[str, object]]]] = {
                 "url": "https://example.test/world/security-pact",
                 "summary": "Officials framed the pact as defensive while rivals warned of escalation.",
                 "tags": ["security", "politics"],
-                "published_at": "2026-07-10T09:00:00+00:00",
+                "published_at": published_at(3, 9),
             }
         ],
     },
@@ -123,7 +130,7 @@ samples: dict[str, dict[str, list[dict[str, object]]]] = {
                 "url": "https://example.test/stocks/nvda-earnings",
                 "summary": "Stronger AI accelerator guidance is feeding through chip and cloud names.",
                 "tags": ["NVDA", "earnings", "semiconductors", "AI"],
-                "published_at": "2026-07-12T06:00:00+00:00",
+                "published_at": published_at(1, 6),
             }
         ],
         "wsj-markets": [
@@ -132,7 +139,7 @@ samples: dict[str, dict[str, list[dict[str, object]]]] = {
                 "url": "https://example.test/stocks/fed-yields",
                 "summary": "Macro desks are watching inflation prints, Treasury supply, and equity duration risk.",
                 "tags": ["rates", "inflation", "bond yields", "macro"],
-                "published_at": "2026-07-11T06:00:00+00:00",
+                "published_at": published_at(2, 6),
             }
         ],
         "investing-stocks": [
@@ -141,7 +148,7 @@ samples: dict[str, dict[str, list[dict[str, object]]]] = {
                 "url": "https://example.test/stocks/aapl-services",
                 "summary": "Investors are weighing margin resilience against slower device replacement cycles.",
                 "tags": ["AAPL", "guidance", "stocks"],
-                "published_at": "2026-07-10T06:00:00+00:00",
+                "published_at": published_at(3, 6),
             }
         ],
     },
@@ -152,7 +159,7 @@ samples: dict[str, dict[str, list[dict[str, object]]]] = {
                 "url": "https://example.test/sports/nba-rotations",
                 "summary": "Injuries and defensive matchups are driving lineup changes.",
                 "tags": ["NBA", "playoffs", "injuries"],
-                "published_at": "2026-07-12T05:00:00+00:00",
+                "published_at": published_at(1, 5),
             }
         ],
         "formula-one": [
@@ -161,7 +168,7 @@ samples: dict[str, dict[str, list[dict[str, object]]]] = {
                 "url": "https://example.test/sports/f1-qualifying",
                 "summary": "A narrow qualifying margin raises the importance of tire strategy.",
                 "tags": ["F1", "Formula 1", "record"],
-                "published_at": "2026-07-11T05:00:00+00:00",
+                "published_at": published_at(2, 5),
             }
         ],
         "bbc-sport": [
@@ -170,7 +177,7 @@ samples: dict[str, dict[str, list[dict[str, object]]]] = {
                 "url": "https://example.test/sports/tennis-injury",
                 "summary": "The medical update changes the tactical outlook for the semifinal.",
                 "tags": ["tennis", "injuries", "championship"],
-                "published_at": "2026-07-10T05:00:00+00:00",
+                "published_at": published_at(3, 5),
             }
         ],
     },

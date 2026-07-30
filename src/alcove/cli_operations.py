@@ -171,6 +171,8 @@ def handle_radar_command(
         )
     elif args.radar_command == "status":
         payload = radar_module.status(args.radar_id)
+    elif args.radar_command == "explain":
+        payload = radar_module.explain(args.radar_id, query=args.query, run_day=args.date)
     elif args.radar_command == "preset":
         if args.radar_preset_command != "list":
             return argument_error(

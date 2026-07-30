@@ -152,6 +152,7 @@ files = [
     "src/alcove/prompt_text.py",
     "src/alcove/prompts.py",
     "src/alcove/radars/__init__.py",
+    "src/alcove/radars/explain.py",
     "src/alcove/radars/models.py",
     "src/alcove/radars/module.py",
     "src/alcove/radars/pipeline.py",
