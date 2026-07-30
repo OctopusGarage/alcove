@@ -177,6 +177,7 @@ files = [
     "src/alcove/service_mount_refresh.py",
     "src/alcove/service_task_health.py",
     "src/alcove/service_task_health_notifications.py",
+    "src/alcove/service_tick_finalizer.py",
     "src/alcove/workspace.py",
     "src/alcove/watchers.py",
 ]
