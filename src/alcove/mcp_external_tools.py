@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from alcove.connectors.apple_notes import AppleNotesImportRequest, AppleNotesLocalImportRequest
-from alcove.connectors.chrome_bookmarks import (
-    ChromeBookmarksImportRequest,
-    ChromeBookmarksLocalImportRequest,
+from alcove.mcp_connector_requests import (
+    apple_notes_index_request,
+    apple_notes_local_import_request,
+    chrome_bookmarks_index_request,
+    chrome_bookmarks_local_import_request,
+    github_stars_index_request,
+    github_stars_url_import_request,
 )
-from alcove.connectors.github_stars import GitHubStarsImportRequest, GitHubStarsUrlImportRequest
 from alcove.mcp_context import McpInvocationContext, agent_payload
 from alcove.mcp_link_requests import link_source_request
 from alcove.mcp_mount_requests import mount_add_request, mount_index_policy_request
@@ -153,7 +155,7 @@ def register_mcp_external_tools(
     ) -> dict[str, Any]:
         """Index a deterministic Apple Notes export directory."""
         return context.scoped_app(workspace, home).external.apple_notes_index_payload(
-            AppleNotesImportRequest(export_dir=export_dir, tags=tags or [])
+            apple_notes_index_request(export_dir=export_dir, tags=tags)
         )
 
     @tool
@@ -166,10 +168,10 @@ def register_mcp_external_tools(
     ) -> dict[str, Any]:
         """Export local Notes.app notes into Alcove, then index them."""
         return context.scoped_app(workspace, home).external.apple_notes_import_local_payload(
-            AppleNotesLocalImportRequest(
+            apple_notes_local_import_request(
                 export_dir=export_dir,
                 source_id=source_id,
-                tags=tags or [],
+                tags=tags,
             )
         )
 
@@ -182,7 +184,7 @@ def register_mcp_external_tools(
     ) -> dict[str, Any]:
         """Index a GitHub Stars JSON export."""
         return context.scoped_app(workspace, home).external.github_stars_index_payload(
-            GitHubStarsImportRequest(export_file=export_file, tags=tags or [])
+            github_stars_index_request(export_file=export_file, tags=tags)
         )
 
     @tool
@@ -197,10 +199,10 @@ def register_mcp_external_tools(
     ) -> dict[str, Any]:
         """Fetch starred repositories from a GitHub stars page or username, then index them."""
         return context.scoped_app(workspace, home).external.github_stars_import_url_payload(
-            GitHubStarsUrlImportRequest(
+            github_stars_url_import_request(
                 source=source,
                 export_file=export_file,
-                tags=tags or [],
+                tags=tags,
                 limit=limit,
                 max_pages=max_pages,
             )
@@ -215,7 +217,7 @@ def register_mcp_external_tools(
     ) -> dict[str, Any]:
         """Index a Chrome Bookmarks JSON file or Netscape bookmarks HTML export."""
         return context.scoped_app(workspace, home).external.chrome_bookmarks_index_payload(
-            ChromeBookmarksImportRequest(export_file=export_file, tags=tags or [])
+            chrome_bookmarks_index_request(export_file=export_file, tags=tags)
         )
 
     @tool
@@ -229,11 +231,11 @@ def register_mcp_external_tools(
     ) -> dict[str, Any]:
         """Index the local Chrome profile Bookmarks file and register it for refresh."""
         return context.scoped_app(workspace, home).external.chrome_bookmarks_import_local_payload(
-            ChromeBookmarksLocalImportRequest(
+            chrome_bookmarks_local_import_request(
                 source_file=source_file,
                 profile=profile,
                 source_id=source_id,
-                tags=tags or [],
+                tags=tags,
             )
         )
 

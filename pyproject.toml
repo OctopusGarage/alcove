@@ -119,6 +119,7 @@ files = [
     "src/alcove/home.py",
     "src/alcove/markdown.py",
     "src/alcove/mcp_command_hints.py",
+    "src/alcove/mcp_connector_requests.py",
     "src/alcove/mcp_context.py",
     "src/alcove/mcp_direct_tools.py",
     "src/alcove/mcp_external_tools.py",
