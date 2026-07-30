@@ -84,7 +84,9 @@ The response reports the likely pipeline stage, matched raw/scored rows,
 `source_id`, score, `score_reason`, `included`, final report presence, source
 failure context, and compact artifact paths. Stages are diagnostic evidence:
 absence from cache can mean the source failed, the upstream feed did not contain
-the story, or the query did not match the cached title/URL/summary exactly.
+the story, or the query did not match the cached title/URL/summary exactly. If
+the selected date has no `run.json`, the stage is `no_run` and the missing
+artifact paths are included.
 
 `alcove service tick` runs only active definitions with `schedule.enabled: true`.
 Definitions may set a local daily trigger:

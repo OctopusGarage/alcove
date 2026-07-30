@@ -52,6 +52,16 @@ def test_radar_explain_reports_source_failure_when_absent_from_failed_run(tmp_pa
     assert payload["source_failures"][0]["error"] == "feed unavailable"
 
 
+def test_radar_explain_reports_no_run_for_selected_date_without_run_artifacts(tmp_path) -> None:
+    module = _module_with_definition(tmp_path)
+
+    payload = module.explain("support-radar", query="Spain defeat France", run_day=RUN_DAY)
+
+    assert payload["stage"] == "no_run"
+    assert payload["matches"] == []
+    assert any(path.endswith("run.json") for path in payload["missing_artifacts"])
+
+
 def test_radar_explain_reports_stale_scored_match(tmp_path) -> None:
     module = _module_with_definition(tmp_path)
     item = _item(

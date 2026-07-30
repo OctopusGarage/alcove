@@ -37,6 +37,15 @@ def explain_radar_item(
     raw_path = cache_dir / "raw.json"
     scored_path = cache_dir / "scored.json"
     run_path = module.runs_root / definition.id / selected_day / "run.json"
+    if not run_path.is_file():
+        return _missing_run_payload(
+            definition,
+            needle,
+            run_day=selected_day,
+            raw_path=raw_path,
+            scored_path=scored_path,
+            run_path=run_path,
+        )
     run_payload = _json_mapping(run_path)
     raw_rows = _json_rows(raw_path)
     scored_rows = _json_rows(scored_path)
@@ -90,6 +99,33 @@ def explain_radar_item(
     }
     if missing_artifacts:
         payload["missing_artifacts"] = missing_artifacts
+    return payload
+
+
+def _missing_run_payload(
+    definition: RadarDefinition,
+    query: str,
+    *,
+    run_day: str,
+    raw_path: Path,
+    scored_path: Path,
+    run_path: Path,
+) -> dict[str, Any]:
+    payload = _empty_payload(
+        definition,
+        query,
+        run_day=run_day,
+        stage="no_run",
+        reason="No radar run artifacts were found for this date.",
+    )
+    payload["artifacts"] = {
+        "raw": compact_user_path(raw_path),
+        "scored": compact_user_path(scored_path),
+        "run": compact_user_path(run_path),
+    }
+    payload["missing_artifacts"] = [
+        compact_user_path(path) for path in (raw_path, scored_path, run_path) if not path.is_file()
+    ]
     return payload
 
 
