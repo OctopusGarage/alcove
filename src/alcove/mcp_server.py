@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from alcove.inbox_models import InboxNoteRequest
 from alcove.mcp_context import agent_payload as _agent_payload
 from alcove.mcp_external_tools import register_mcp_external_tools
 from alcove.mcp_global_tools import register_mcp_global_tools
+from alcove.mcp_inbox_requests import inbox_note_request
 from alcove.mcp_knowledge_requests import (
     add_concept_request,
     add_entity_request,
@@ -285,12 +285,12 @@ def create_mcp_server(
     ) -> dict[str, Any]:
         """Archive an inbox item and write an OKF note through the governed OKF write path."""
         return context.managed_app(workspace).inbox.inbox_note_payload(
-            InboxNoteRequest(
+            inbox_note_request(
                 name=name,
                 topic=topic,
                 summary=summary,
-                tags=tags or [],
-                selected_takeaways=selected_takeaways or [],
+                tags=tags,
+                selected_takeaways=selected_takeaways,
                 why=why,
                 connection=connection,
                 action=action,

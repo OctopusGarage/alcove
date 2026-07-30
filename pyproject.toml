@@ -124,6 +124,7 @@ files = [
     "src/alcove/mcp_direct_tools.py",
     "src/alcove/mcp_external_tools.py",
     "src/alcove/mcp_global_tools.py",
+    "src/alcove/mcp_inbox_requests.py",
     "src/alcove/mcp_knowledge_requests.py",
     "src/alcove/mcp_link_requests.py",
     "src/alcove/mcp_mount_requests.py",
