@@ -12,6 +12,7 @@ from alcove.radars import RadarDefinition, RadarModule, RadarSchedule, RadarSour
 from alcove.service import ServiceModule
 from alcove.service_mount_refresh import ServiceMountRefresh
 from alcove.service_task_health import build_task_health_summary, task_health_notification_text
+from alcove.service_task_health_notifications import ServiceTaskHealthNotifier
 from alcove.tasks import AddRoutineRequest, AddTaskRequest, TasksModule
 
 
@@ -414,8 +415,10 @@ def test_service_tick_builds_and_notifies_task_health_when_enabled(tmp_path, mon
         feishu.append(f"{title}\n{text}")
         return {"status": "sent"}
 
-    monkeypatch.setattr("alcove.service.send_telegram_message", fake_telegram)
-    monkeypatch.setattr("alcove.service.send_feishu_message", fake_feishu)
+    monkeypatch.setattr(
+        "alcove.service_task_health_notifications.send_telegram_message", fake_telegram
+    )
+    monkeypatch.setattr("alcove.service_task_health_notifications.send_feishu_message", fake_feishu)
 
     result = ServiceModule(home).tick(
         refresh_connectors=False,
@@ -517,17 +520,19 @@ def test_task_health_notification_resends_when_prior_send_used_legacy_format(
         telegram.append(text)
         return {"status": "sent"}
 
-    monkeypatch.setattr("alcove.service.send_telegram_message", fake_telegram)
     monkeypatch.setattr(
-        "alcove.service.send_feishu_message",
+        "alcove.service_task_health_notifications.send_telegram_message", fake_telegram
+    )
+    monkeypatch.setattr(
+        "alcove.service_task_health_notifications.send_feishu_message",
         lambda **_kwargs: {"status": "skipped"},
     )
 
-    first = ServiceModule(home)._notify_task_health_once_per_day(
+    first = ServiceTaskHealthNotifier(home).notify_once_per_day(
         {"status": "success", "checked": 8, "failed": 0, "skipped": 0, "checks": []},
         tick_time=datetime.fromisoformat("2026-07-29T12:00:00+00:00"),
     )
-    second = ServiceModule(home)._notify_task_health_once_per_day(
+    second = ServiceTaskHealthNotifier(home).notify_once_per_day(
         {"status": "success", "checked": 8, "failed": 0, "skipped": 0, "checks": []},
         tick_time=datetime.fromisoformat("2026-07-29T12:05:00+00:00"),
     )
@@ -553,7 +558,9 @@ def test_cli_service_tick_can_skip_task_health_notification(tmp_path, monkeypatc
         telegram.append(text)
         return {"status": "sent"}
 
-    monkeypatch.setattr("alcove.service.send_telegram_message", fake_telegram)
+    monkeypatch.setattr(
+        "alcove.service_task_health_notifications.send_telegram_message", fake_telegram
+    )
 
     code = main(
         [
