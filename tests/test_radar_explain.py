@@ -3,12 +3,41 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
 from alcove.home import AlcoveHome
 from alcove.radars import RadarDefinition, RadarModule, RadarSource
 from alcove.radars.models import RadarItem
 
 
 RUN_DAY = "2026-07-29"
+
+
+def test_radar_explain_requires_query(tmp_path) -> None:
+    module = _module_with_definition(tmp_path)
+
+    with pytest.raises(ValueError, match="radar explain requires --query"):
+        module.explain("support-radar", query="  ", run_day=RUN_DAY)
+
+
+def test_radar_explain_reports_no_run_when_latest_artifacts_are_absent(tmp_path) -> None:
+    module = _module_with_definition(tmp_path)
+
+    payload = module.explain("support-radar", query="Spain defeat France")
+
+    assert payload["stage"] == "no_run"
+    assert payload["date"] == ""
+    assert payload["artifacts"] == {}
+
+
+def test_radar_explain_reports_no_run_when_run_root_has_no_run_files(tmp_path) -> None:
+    module = _module_with_definition(tmp_path)
+    (module.runs_root / "support-radar" / RUN_DAY).mkdir(parents=True)
+
+    payload = module.explain("support-radar", query="Spain defeat France")
+
+    assert payload["stage"] == "no_run"
+    assert payload["date"] == ""
 
 
 def test_radar_explain_reports_not_fetched_from_existing_artifacts(tmp_path) -> None:
@@ -62,6 +91,49 @@ def test_radar_explain_reports_no_run_for_selected_date_without_run_artifacts(tm
     assert any(path.endswith("run.json") for path in payload["missing_artifacts"])
 
 
+def test_radar_explain_reports_missing_cache_artifacts_for_existing_run(tmp_path) -> None:
+    module = _module_with_definition(tmp_path)
+    run_dir = module.runs_root / "support-radar" / RUN_DAY
+    run_dir.mkdir(parents=True)
+    (run_dir / "run.json").write_text(
+        json.dumps({"sources": [{"id": "sports-feed", "status": "fetched"}]}),
+        encoding="utf-8",
+    )
+
+    payload = module.explain("support-radar", query="Spain defeat France", run_day=RUN_DAY)
+
+    assert payload["stage"] == "not_fetched"
+    assert any(path.endswith("raw.json") for path in payload["missing_artifacts"])
+    assert any(path.endswith("scored.json") for path in payload["missing_artifacts"])
+
+
+def test_radar_explain_tolerates_malformed_artifacts(tmp_path) -> None:
+    module = _module_with_definition(tmp_path)
+    cache_dir = module.cache_root / "support-radar" / RUN_DAY
+    run_dir = module.runs_root / "support-radar" / RUN_DAY
+    cache_dir.mkdir(parents=True)
+    run_dir.mkdir(parents=True)
+    (cache_dir / "raw.json").write_text("{not-json", encoding="utf-8")
+    (cache_dir / "scored.json").write_text(json.dumps({"not": "a-list"}), encoding="utf-8")
+    (run_dir / "run.json").write_text("{not-json", encoding="utf-8")
+
+    payload = module.explain("support-radar", query="Spain defeat France", run_day=RUN_DAY)
+
+    assert payload["stage"] == "not_fetched"
+    assert payload["sources"] == []
+
+
+def test_radar_explain_reports_fetched_but_deduped_raw_only_match(tmp_path) -> None:
+    module = _module_with_definition(tmp_path)
+    item = _item(title="Spain defeat France in World Cup")
+    _write_artifacts(module, raw=[item], scored=[])
+
+    payload = module.explain("support-radar", query="Spain defeat France", run_day=RUN_DAY)
+
+    assert payload["stage"] == "fetched_but_deduped"
+    assert payload["raw_matches"][0]["title"] == "Spain defeat France in World Cup"
+
+
 def test_radar_explain_reports_stale_scored_match(tmp_path) -> None:
     module = _module_with_definition(tmp_path)
     item = _item(
@@ -109,6 +181,18 @@ def test_radar_explain_reports_below_threshold_scored_match(tmp_path) -> None:
 
     assert payload["stage"] == "below_threshold"
     assert payload["matches"][0]["score"] == 0.35
+
+
+def test_radar_explain_coerces_invalid_score_to_zero(tmp_path) -> None:
+    module = _module_with_definition(tmp_path)
+    item = _item(title="Spain defeat France analysis", score_reason="baseline source signal")
+    item["score"] = "not-a-number"
+    _write_artifacts(module, raw=[item], scored=[item])
+
+    payload = module.explain("support-radar", query="Spain defeat France", run_day=RUN_DAY)
+
+    assert payload["stage"] == "below_threshold"
+    assert payload["matches"][0]["score"] == 0.0
 
 
 def test_radar_explain_reports_included_report_match(tmp_path) -> None:
