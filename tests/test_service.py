@@ -10,6 +10,7 @@ from alcove.cli import main
 from alcove.mounts import AddMountRequest, MountsModule
 from alcove.radars import RadarDefinition, RadarModule, RadarSchedule, RadarSource
 from alcove.service import ServiceModule
+from alcove.service_mount_refresh import ServiceMountRefresh
 from alcove.service_task_health import build_task_health_summary, task_health_notification_text
 from alcove.tasks import AddRoutineRequest, AddTaskRequest, TasksModule
 
@@ -291,6 +292,29 @@ def test_service_tick_refreshes_mounts_every_two_days(tmp_path):
     assert third["mounts"]["scanned"] == 1
     items = MountsModule(home=home).scan(mount.id)["items"]
     assert items[0]["text"] == "# Mounted Docs\n\nUpdated indexed content."
+
+
+def test_service_mount_refresh_tolerates_malformed_state_json(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    source = tmp_path / "mounted-docs"
+    source.mkdir()
+    (source / "README.md").write_text(
+        "# Mounted Docs\n\nInitial indexed content.", encoding="utf-8"
+    )
+    MountsModule(home=home).add(
+        AddMountRequest(path=str(source), name="Mounted Docs", mount_type="local-folder")
+    )
+    state_path = home.paths().stats / "service-state.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text('{"mounts": [', encoding="utf-8")
+
+    result = ServiceMountRefresh(home).run(interval_days=2, today="2026-07-10")
+
+    assert result["status"] == "checked"
+    assert result["checked"] == 1
+    assert result["refreshed"] == 1
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["mounts"]["last_refreshed_at"] == "2026-07-10T00:00:00+00:00"
 
 
 def test_service_tick_sends_configured_task_digest(tmp_path, monkeypatch):
