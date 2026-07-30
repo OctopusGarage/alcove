@@ -56,7 +56,7 @@ def test_service_launchd_path_includes_nvm_codex_bin(tmp_path, monkeypatch):
             return str(nvm_bin / "codex")
         return original_which(command)
 
-    monkeypatch.setattr("alcove.service.shutil.which", fake_which)
+    monkeypatch.setattr("alcove.service_launchd.shutil.which", fake_which)
     home = AlcoveHome.init(user_home / ".alcove")
 
     ServiceModule(home).install(dashboard=False, scheduler=True)
