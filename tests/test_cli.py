@@ -1,4 +1,5 @@
 import json
+import runpy
 from types import SimpleNamespace
 
 from alcove import cli_serve
@@ -38,6 +39,19 @@ def test_cli_version_prints_package_version(capsys):
 
     assert code == 0
     assert "alcove 0.1.0" in captured.out
+
+
+def test_python_module_entrypoint_dispatches_cli_entrypoint(monkeypatch):
+    calls = []
+
+    def fake_entrypoint() -> None:
+        calls.append("called")
+
+    monkeypatch.setattr("alcove.cli.entrypoint", fake_entrypoint)
+
+    runpy.run_module("alcove", run_name="__main__")
+
+    assert calls == ["called"]
 
 
 def test_cli_init_creates_workspace(tmp_path, capsys):
