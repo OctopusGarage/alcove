@@ -24,6 +24,12 @@ from alcove.publisher_dirty import mark_publisher_source_dirty
 from alcove.publishers import PublisherModule
 from alcove.radars import RadarModule
 from alcove.runtime import AlcoveRuntime
+from alcove.service_task_health import (
+    TASK_HEALTH_NOTIFICATION_VERSION,
+    build_task_health_summary,
+    task_health_notification_text,
+    task_health_notification_was_sent_today,
+)
 from alcove.tasks import TasksModule
 from alcove.usage import UsageRecorder
 from alcove.watchers import WatcherModule
@@ -31,7 +37,6 @@ from alcove.watchers import WatcherModule
 
 SERVICE_DOMAIN = "com.octopusgarage.alcove"
 DEFAULT_MOUNT_REFRESH_DAYS = 2
-TASK_HEALTH_NOTIFICATION_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -229,105 +234,13 @@ class ServiceModule:
             "usage": usage_payload,
             "prune": prune_payload,
         }
-        task_health = self._task_health_summary(payload)
+        task_health = build_task_health_summary(payload)
         payload["task_health"] = task_health
         if notify_task_health:
             payload["task_health_notification"] = self._notify_task_health_once_per_day(
                 task_health, tick_time=tick_time
             )
         return payload
-
-    def _task_health_summary(self, payload: dict[str, Any]) -> dict[str, Any]:
-        checks = [
-            self._module_health(
-                module="connectors",
-                payload=_dict_value(payload.get("connectors")),
-                metrics=("refreshed", "skipped", "errors"),
-                error_key="errors",
-            ),
-            self._module_health(
-                module="watchers",
-                payload=_dict_value(payload.get("watchers")),
-                metrics=("checked", "changed", "errors"),
-                error_key="errors",
-            ),
-            self._module_health(
-                module="blogs",
-                payload=_dict_value(payload.get("blogs")),
-                metrics=("checked", "new", "errors"),
-                error_key="errors",
-            ),
-            self._module_health(
-                module="radars",
-                payload=_dict_value(payload.get("radars")),
-                metrics=("ran", "skipped", "errors"),
-                error_key="errors",
-            ),
-            self._module_health(
-                module="automations",
-                payload=_dict_value(payload.get("automations")),
-                metrics=("ran", "skipped", "failed"),
-                error_key="failed",
-            ),
-            self._module_health(
-                module="publishers",
-                payload=_dict_value(payload.get("publishers")),
-                metrics=("ran", "updated", "errors"),
-                error_key="errors",
-            ),
-            self._module_health(
-                module="mounts",
-                payload=_dict_value(payload.get("mounts")),
-                metrics=("checked", "refreshed", "skipped"),
-                error_key="errors",
-            ),
-            self._health_module_summary(_dict_value(payload.get("health"))),
-        ]
-        failed = [check for check in checks if check["status"] == "failed"]
-        skipped = [check for check in checks if check["status"] == "skipped"]
-        return {
-            "status": "failed" if failed else "success",
-            "checked": len(checks),
-            "failed": len(failed),
-            "skipped": len(skipped),
-            "checks": checks,
-        }
-
-    def _module_health(
-        self,
-        *,
-        module: str,
-        payload: dict[str, Any],
-        metrics: tuple[str, ...],
-        error_key: str,
-    ) -> dict[str, Any]:
-        status = str(payload.get("status") or "unknown")
-        error_count = _int_value(payload.get(error_key))
-        task_status = (
-            "skipped" if status == "skipped" else "failed" if error_count > 0 else "success"
-        )
-        summary = " ".join(f"{key}={_int_value(payload.get(key))}" for key in metrics)
-        record: dict[str, Any] = {
-            "module": module,
-            "status": task_status,
-            "summary": summary,
-        }
-        if task_status == "failed":
-            record["error"] = f"{module} reported {error_key}={error_count}"
-        return record
-
-    def _health_module_summary(self, payload: dict[str, Any]) -> dict[str, Any]:
-        issue_count = _int_value(payload.get("issue_count"))
-        action_count = _int_value(payload.get("action_count"))
-        status = "failed" if issue_count > 0 else "success"
-        record: dict[str, Any] = {
-            "module": "health",
-            "status": status,
-            "summary": f"issues={issue_count} actions={action_count}",
-        }
-        if status == "failed":
-            record["error"] = f"health reported issue_count={issue_count}"
-        return record
 
     def _notify_task_health_once_per_day(
         self, task_health: dict[str, Any], *, tick_time: datetime
@@ -336,10 +249,10 @@ class ServiceModule:
         state = self._load_state()
         notifications = state.get("task_health_notifications")
         notification_state = notifications if isinstance(notifications, dict) else {}
-        if _task_health_notification_was_sent_today(notification_state.get(day)):
+        if task_health_notification_was_sent_today(notification_state.get(day)):
             return {"status": "skipped", "reason": "already_sent", "day": day}
         title = f"Alcove task health: {day}"
-        text = self._task_health_notification_text(task_health, day=day)
+        text = task_health_notification_text(task_health, day=day)
         results = {
             "telegram": send_telegram_message(home=self.home, text=text),
             "feishu": send_feishu_message(home=self.home, sink={}, title=title, text=text),
@@ -353,22 +266,6 @@ class ServiceModule:
             state["task_health_notifications"] = notification_state
             self._save_state(state)
         return {"status": status, "day": day, "sinks": results}
-
-    def _task_health_notification_text(self, task_health: dict[str, Any], *, day: str) -> str:
-        status_label = _task_health_status_label(str(task_health.get("status") or "unknown"))
-        lines = [
-            f"Alcove 任务健康 · {day}",
-            "",
-            f"整体状态：{status_label}",
-            f"已检查模块：{_int_value(task_health.get('checked'))} 个；失败：{_int_value(task_health.get('failed'))} 个；跳过：{_int_value(task_health.get('skipped'))} 个。",
-            "",
-            "模块结果：",
-        ]
-        for check in task_health.get("checks", []):
-            if not isinstance(check, dict):
-                continue
-            lines.append(_task_health_check_line(check))
-        return "\n".join(lines)
 
     def _refresh_mounts_if_due(self, *, interval_days: int, today: str) -> dict[str, Any]:
         mount_module = MountsModule(home=self.home)
@@ -656,101 +553,8 @@ def _next_due_at(last_refreshed_at: str, interval_days: int) -> str:
     return (last + timedelta(days=interval_days)).isoformat(timespec="seconds")
 
 
-def _task_health_status_label(status: str) -> str:
-    labels = {
-        "success": "健康",
-        "failed": "需要处理",
-        "skipped": "已跳过",
-    }
-    return labels.get(status, status or "未知")
-
-
-def _task_health_notification_was_sent_today(value: Any) -> bool:
-    if not isinstance(value, dict):
-        return False
-    return (
-        value.get("status") == "sent"
-        and _int_value(value.get("version")) == TASK_HEALTH_NOTIFICATION_VERSION
-    )
-
-
-def _task_health_check_line(check: dict[str, Any]) -> str:
-    module_key = str(check.get("module") or "module")
-    module = _task_health_module_label(module_key)
-    status = str(check.get("status") or "unknown")
-    status_label = {
-        "success": "正常",
-        "failed": "异常",
-        "skipped": "跳过",
-    }.get(status, status or "未知")
-    if status == "skipped":
-        return f"- {module}：{status_label}"
-
-    if module_key == "radars":
-        return f"- {module}：{status_label} · {_radar_task_health_summary(status, str(check.get('summary') or ''))}"
-
-    detail = _task_health_summary_text(str(check.get("summary") or ""))
-    return f"- {module}：{status_label}{f' · {detail}' if detail else ''}"
-
-
-def _task_health_module_label(module: str) -> str:
-    labels = {
-        "connectors": "连接器",
-        "watchers": "监听器",
-        "blogs": "博客监控",
-        "radars": "雷达",
-        "automations": "自动化",
-        "publishers": "发布器",
-        "mounts": "挂载索引",
-        "health": "健康检查",
-    }
-    return labels.get(module, module)
-
-
-def _task_health_summary_text(summary: str) -> str:
-    labels = {
-        "refreshed": "已刷新",
-        "skipped": "跳过",
-        "errors": "错误",
-        "checked": "已检查",
-        "changed": "变更",
-        "new": "新增",
-        "ran": "运行",
-        "failed": "失败",
-        "updated": "更新",
-        "issues": "问题",
-        "actions": "修复动作",
-    }
-    values = _task_health_summary_values(summary)
-    return "；".join(
-        f"{labels.get(key, key)} {_int_value(value)} 个" for key, value in values.items()
-    )
-
-
-def _radar_task_health_summary(status: str, summary: str) -> str:
-    values = _task_health_summary_values(summary)
-    errors = _int_value(values.get("errors"))
-    ran = _int_value(values.get("ran"))
-    last_run = "上次运行异常" if status == "failed" or errors > 0 else "上次运行成功"
-    return f"{last_run}；本轮运行 {ran} 个；错误 {errors} 个"
-
-
-def _task_health_summary_values(summary: str) -> dict[str, str]:
-    values = {}
-    for item in summary.split():
-        key, separator, value = item.partition("=")
-        if separator != "=":
-            continue
-        values[key] = value
-    return values
-
-
 def _int_value(value: Any) -> int:
     try:
         return int(value)
     except (TypeError, ValueError):
         return 0
-
-
-def _dict_value(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}

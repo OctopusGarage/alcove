@@ -10,6 +10,7 @@ from alcove.cli import main
 from alcove.mounts import AddMountRequest, MountsModule
 from alcove.radars import RadarDefinition, RadarModule, RadarSchedule, RadarSource
 from alcove.service import ServiceModule
+from alcove.service_task_health import build_task_health_summary, task_health_notification_text
 from alcove.tasks import AddRoutineRequest, AddTaskRequest, TasksModule
 
 
@@ -421,10 +422,39 @@ def test_service_tick_builds_and_notifies_task_health_when_enabled(tmp_path, mon
     assert "Alcove task health: 2026-07-12" in feishu[0]
 
 
-def test_task_health_notification_reports_radar_last_run_health_without_skip_noise(tmp_path):
-    home = AlcoveHome.init(tmp_path / ".alcove")
+def test_task_health_summary_classifies_failed_and_skipped_modules():
+    summary = build_task_health_summary(
+        {
+            "connectors": {"status": "skipped", "refreshed": 0, "skipped": 0, "errors": 0},
+            "watchers": {"status": "checked", "checked": 1, "changed": 0, "errors": 2},
+            "blogs": {"status": "checked", "checked": 1, "new": 0, "errors": 0},
+            "radars": {"status": "checked", "ran": 1, "skipped": 0, "errors": 0},
+            "automations": {"status": "checked", "ran": 0, "skipped": 0, "failed": 0},
+            "publishers": {"status": "checked", "ran": 1, "updated": 0, "errors": 0},
+            "mounts": {"status": "checked", "checked": 1, "refreshed": 0, "skipped": 1},
+            "health": {"status": "ok", "issue_count": 0, "action_count": 2},
+        }
+    )
 
-    text = ServiceModule(home)._task_health_notification_text(
+    assert summary["status"] == "failed"
+    assert summary["checked"] == 8
+    assert summary["failed"] == 1
+    assert summary["skipped"] == 1
+    assert summary["checks"][0] == {
+        "module": "connectors",
+        "status": "skipped",
+        "summary": "refreshed=0 skipped=0 errors=0",
+    }
+    assert summary["checks"][1] == {
+        "module": "watchers",
+        "status": "failed",
+        "summary": "checked=1 changed=0 errors=2",
+        "error": "watchers reported errors=2",
+    }
+
+
+def test_task_health_notification_reports_radar_last_run_health_without_skip_noise():
+    text = task_health_notification_text(
         {
             "status": "success",
             "checked": 8,
