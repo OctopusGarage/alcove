@@ -38,10 +38,10 @@ def register_mcp_global_tools(
                 summary=summary,
                 content=content,
                 kind=kind,
-                tags=tags or [],
+                tags=tags,
                 priority=priority,
-                source_refs=source_refs or [],
-                resources=resources or [],
+                source_refs=source_refs,
+                resources=resources,
                 content_format=content_format,
             )
         )

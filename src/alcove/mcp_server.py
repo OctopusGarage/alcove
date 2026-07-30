@@ -190,7 +190,7 @@ def create_mcp_server(
                 topic=topic,
                 resource=resource,
                 summary=summary,
-                tags=tags or [],
+                tags=tags,
                 published_date=published_date,
                 create_concept=create_concept,
             )
@@ -347,8 +347,8 @@ def create_mcp_server(
                 summary=summary,
                 answer=answer,
                 append=append,
-                tags=tags or [],
-                source_refs=source_refs or [],
+                tags=tags,
+                source_refs=source_refs,
                 reason=reason,
                 status=status,
             )
