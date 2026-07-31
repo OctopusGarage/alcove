@@ -49,6 +49,26 @@ def handle_automation_command(
             timeout_seconds=args.timeout_seconds,
             notify=args.notify,
         )
+    elif args.automation_command == "add-alcove":
+        payload = automations.add_alcove(
+            name=args.name,
+            args=args.args,
+            cwd=args.cwd,
+            ttl_hours=args.ttl_hours,
+            timeout_seconds=args.timeout_seconds,
+            notify=args.notify,
+        )
+    elif args.automation_command == "add-agent":
+        payload = automations.add_agent(
+            name=args.name,
+            prompt=args.prompt,
+            provider=args.provider,
+            cwd=args.cwd,
+            allow_service=args.allow_service,
+            ttl_hours=args.ttl_hours,
+            timeout_seconds=args.timeout_seconds,
+            notify=args.notify,
+        )
     else:
         return argument_error(parser, "the following arguments are required: automation_command")
     return _print_json(payload)

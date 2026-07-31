@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 import json
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -113,6 +114,63 @@ class AutomationsModule:
             kind="git-sync",
             repo_path=compact_user_path(repo),
             commit_message=commit_message.strip() or "chore: sync local data",
+            ttl_hours=max(ttl_hours, 1),
+            timeout_seconds=max(timeout_seconds, 1),
+            notify={"enabled": notify, "on": "failure"},
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        self._write_job(job)
+        return {"status": "added", "job": job.as_dict()}
+
+    def add_alcove(
+        self,
+        *,
+        name: str,
+        args: str | list[str],
+        cwd: str = "",
+        ttl_hours: int = DEFAULT_TTL_HOURS,
+        timeout_seconds: int = 600,
+        notify: bool = False,
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        job_args = shlex.split(args) if isinstance(args, str) else [str(arg) for arg in args]
+        job = AutomationJob(
+            id=self._unique_id(name),
+            name=name.strip(),
+            kind="alcove",
+            args=job_args,
+            cwd=compact_user_path(Path(cwd).expanduser()) if cwd else "",
+            ttl_hours=max(ttl_hours, 1),
+            timeout_seconds=max(timeout_seconds, 1),
+            notify={"enabled": notify, "on": "failure"},
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        self._write_job(job)
+        return {"status": "added", "job": job.as_dict()}
+
+    def add_agent(
+        self,
+        *,
+        name: str,
+        prompt: str,
+        provider: str = "claude",
+        cwd: str = "",
+        allow_service: bool = False,
+        ttl_hours: int = DEFAULT_TTL_HOURS,
+        timeout_seconds: int = 600,
+        notify: bool = False,
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        job = AutomationJob(
+            id=self._unique_id(name),
+            name=name.strip(),
+            kind="agent",
+            provider=(provider or "claude").strip().lower(),
+            prompt=prompt.strip(),
+            cwd=compact_user_path(Path(cwd).expanduser()) if cwd else "",
+            allow_service=allow_service,
             ttl_hours=max(ttl_hours, 1),
             timeout_seconds=max(timeout_seconds, 1),
             notify={"enabled": notify, "on": "failure"},
