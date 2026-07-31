@@ -259,7 +259,14 @@ def test_mcp_command_hints_exposes_cli_only_workflows(tmp_path):
     payload = command_hints_tool(home=str(home.root))
 
     workflow_ids = {workflow["id"] for workflow in payload["workflows"]}
-    assert {"workspace_okf", "blog_monitor", "radars", "dashboard", "publishers"} <= workflow_ids
+    assert {
+        "workspace_okf",
+        "blog_monitor",
+        "automations",
+        "radars",
+        "dashboard",
+        "publishers",
+    } <= workflow_ids
     assert payload["status"] == "ok"
     assert payload["home"].endswith("/home")
     assert all(workflow["surface"] == "cli" for workflow in payload["workflows"])
@@ -270,6 +277,18 @@ def test_mcp_command_hints_exposes_cli_only_workflows(tmp_path):
         workflow for workflow in payload["workflows"] if workflow["id"] == "workspace_okf"
     )
     assert any("workspace okf init" in command for command in workspace_okf["commands"])
+    automations = next(
+        workflow for workflow in payload["workflows"] if workflow["id"] == "automations"
+    )
+    automation_commands = " ".join(automations["commands"])
+    assert "alcove automation list" in automation_commands
+    assert "alcove automation run " in automation_commands
+    assert "alcove automation run-due" in automation_commands
+    assert "alcove automation add-shell" in automation_commands
+    assert "alcove automation add-git-sync" in automation_commands
+    assert "alcove automation add-alcove" in automation_commands
+    assert "alcove automation add-agent" in automation_commands
+    assert any("--allow-agent" in note for note in automations["notes"])
 
 
 def test_mcp_command_hints_can_filter_by_workflow(tmp_path):
