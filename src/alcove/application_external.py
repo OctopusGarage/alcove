@@ -4,6 +4,7 @@ from dataclasses import asdict
 from typing import Any
 
 from alcove.application_base import _Capability
+from alcove.connector_refresh import refresh_connector_sources
 from alcove.connector_sources import ConnectorSourceRegistry
 from alcove.connectors.apple_notes import (
     AppleNotesConnector,
@@ -43,55 +44,30 @@ class _ExternalCapabilities(_Capability):
         stale_only: bool = True,
         source_id: str = "",
     ) -> dict[str, Any]:
-        reports = []
-        if connector in {"", "apple-notes"}:
-            reports.append(
-                AppleNotesConnector(
-                    self.runtime.workspace,
-                    home=self.runtime.home,
-                ).refresh_sources(stale_only=stale_only, source_id=source_id)
-            )
-        if connector in {"", "github-stars"}:
-            reports.append(
-                GitHubStarsConnector(
-                    self.runtime.workspace,
-                    home=self.runtime.home,
-                ).refresh_sources(stale_only=stale_only, source_id=source_id)
-            )
-        if connector in {"", "chrome-bookmarks"}:
-            reports.append(
-                ChromeBookmarksConnector(
-                    self.runtime.workspace,
-                    home=self.runtime.home,
-                ).refresh_sources(stale_only=stale_only, source_id=source_id)
-            )
-        refreshed = sum(int(report.get("refreshed") or 0) for report in reports)
-        skipped = sum(int(report.get("skipped") or 0) for report in reports)
-        reused = sum(int(report.get("reused") or 0) for report in reports)
-        errors = sum(int(report.get("errors") or 0) for report in reports)
-        sources = [
-            source
-            for report in reports
-            for source in report.get("sources", [])
-            if isinstance(source, dict)
-        ]
+        refresh = refresh_connector_sources(
+            workspace=self.runtime.workspace,
+            home=self.runtime.home,
+            connector=connector,
+            stale_only=stale_only,
+            source_id=source_id,
+        )
         payload = {
             "status": "refreshed",
-            "refreshed": refreshed,
-            "skipped": skipped,
-            "reused": reused,
-            "errors": errors,
-            "sources": sources,
+            "refreshed": refresh["refreshed"],
+            "skipped": refresh["skipped"],
+            "reused": refresh["reused"],
+            "errors": refresh["errors"],
+            "sources": refresh["sources"],
         }
         self._record_action(
             area="connector",
             action="connector.refresh",
             summary="Refreshed connector sources",
             metrics={
-                "refreshed": refreshed,
-                "skipped": skipped,
-                "reused": reused,
-                "errors": errors,
+                "refreshed": refresh["refreshed"],
+                "skipped": refresh["skipped"],
+                "reused": refresh["reused"],
+                "errors": refresh["errors"],
             },
             metadata={"connector": connector or "all", "source_id": source_id},
         )

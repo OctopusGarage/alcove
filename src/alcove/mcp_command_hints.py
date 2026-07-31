@@ -61,6 +61,25 @@ def command_hints_tool(
             ],
         },
         {
+            "id": "automations",
+            "title": "Automations",
+            "surface": "cli",
+            "intent": "List, create, and run local scheduled automation jobs.",
+            "commands": [
+                f"alcove automation list --home {home_hint} --json",
+                f"alcove automation run --home {home_hint} <job-id> --json",
+                f"alcove automation run-due --home {home_hint} --json",
+                f'alcove automation add-shell --home {home_hint} "backup cache" --cmd "rsync -a ~/source/ ~/backup/" --json',
+                f"alcove automation add-git-sync --home {home_hint} notes ~/notes --json",
+                f'alcove automation add-alcove --home {home_hint} "daily dashboard" --args "dashboard refresh --json" --json',
+                f'alcove automation add-agent --home {home_hint} "weekly inbox review" --prompt "Review latest inbox items." --provider codex --json',
+            ],
+            "notes": [
+                "Use run-due for scheduled service work; it respects each job's ttl_hours and latest run state.",
+                "Agent jobs stay guarded unless the job allows service execution or the run passes --allow-agent.",
+            ],
+        },
+        {
             "id": "radars",
             "title": "Radar reports",
             "surface": "cli",

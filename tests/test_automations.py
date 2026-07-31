@@ -151,6 +151,72 @@ def test_cli_automation_add_list_run(tmp_path, capsys):
     assert marker.read_text(encoding="utf-8") == "ok"
 
 
+def test_cli_automation_add_alcove_stores_args(tmp_path, capsys):
+    home = tmp_path / ".alcove"
+
+    add_code = main(
+        [
+            "automation",
+            "add-alcove",
+            "--home",
+            str(home),
+            "refresh dashboard",
+            "--args",
+            "dashboard refresh --json",
+            "--cwd",
+            str(tmp_path),
+            "--ttl-hours",
+            "6",
+            "--timeout-seconds",
+            "45",
+            "--json",
+        ]
+    )
+    add_output = capsys.readouterr()
+
+    assert add_code == 0
+    payload = json.loads(add_output.out)
+    assert payload["job"]["kind"] == "alcove"
+    assert payload["job"]["args"] == ["dashboard", "refresh", "--json"]
+    assert payload["job"]["cwd"] == str(tmp_path)
+    assert payload["job"]["ttl_hours"] == 6
+    assert payload["job"]["timeout_seconds"] == 45
+
+
+def test_cli_automation_add_agent_stores_guarded_job(tmp_path, capsys):
+    home = tmp_path / ".alcove"
+
+    add_code = main(
+        [
+            "automation",
+            "add-agent",
+            "--home",
+            str(home),
+            "daily review",
+            "--prompt",
+            "Summarize today's inbox",
+            "--provider",
+            "codex",
+            "--allow-service",
+            "--ttl-hours",
+            "12",
+            "--timeout-seconds",
+            "90",
+            "--json",
+        ]
+    )
+    add_output = capsys.readouterr()
+
+    assert add_code == 0
+    payload = json.loads(add_output.out)
+    assert payload["job"]["kind"] == "agent"
+    assert payload["job"]["prompt"] == "Summarize today's inbox"
+    assert payload["job"]["provider"] == "codex"
+    assert payload["job"]["allow_service"] is True
+    assert payload["job"]["ttl_hours"] == 12
+    assert payload["job"]["timeout_seconds"] == 90
+
+
 def test_service_tick_runs_due_automations(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     marker = tmp_path / "service-marker.txt"
