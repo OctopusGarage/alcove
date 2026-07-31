@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from alcove.connectors.apple_notes import AppleNotesConnector
-from alcove.connectors.chrome_bookmarks import ChromeBookmarksConnector
-from alcove.connectors.github_stars import GitHubStarsConnector
+from alcove.connector_refresh import refresh_connector_sources
 from alcove.dashboard import DashboardModule
 from alcove.home import AlcoveHome
 from alcove.markdown import MarkdownDoc, MarkdownRepository
@@ -136,25 +134,19 @@ class HealthRepairModule:
         ]
 
     def _refresh_connectors(self, *, stale_only: bool) -> dict[str, str]:
-        reports = [
-            AppleNotesConnector(self.workspace, home=self.home).refresh_sources(
-                stale_only=stale_only
-            ),
-            GitHubStarsConnector(self.workspace, home=self.home).refresh_sources(
-                stale_only=stale_only
-            ),
-            ChromeBookmarksConnector(self.workspace, home=self.home).refresh_sources(
-                stale_only=stale_only
-            ),
-        ]
+        refresh = refresh_connector_sources(
+            workspace=self.workspace,
+            home=self.home,
+            stale_only=stale_only,
+        )
         return {
             "module": "connectors",
             "action": "refreshed_stale" if stale_only else "refreshed_all",
             "path": compact_user_path(self.home.paths().connectors) if self.home else "",
-            "refreshed": str(sum(int(report.get("refreshed") or 0) for report in reports)),
-            "skipped": str(sum(int(report.get("skipped") or 0) for report in reports)),
-            "reused": str(sum(int(report.get("reused") or 0) for report in reports)),
-            "errors": str(sum(int(report.get("errors") or 0) for report in reports)),
+            "refreshed": str(refresh["refreshed"]),
+            "skipped": str(refresh["skipped"]),
+            "reused": str(refresh["reused"]),
+            "errors": str(refresh["errors"]),
         }
 
     def _repair_workspace_okf_schemas(self, workspace: Workspace) -> list[dict[str, str]]:
