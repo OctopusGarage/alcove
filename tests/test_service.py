@@ -218,6 +218,30 @@ def test_service_tick_tolerates_malformed_connector_source_yaml(tmp_path):
     assert (home.root / "dashboard" / "snapshot.json").is_file()
 
 
+def test_service_tick_tolerates_malformed_watcher_source_yaml(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    source_path = home.root / "watchers" / "sources" / "broken.yml"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text("url: [", encoding="utf-8")
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=True,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["watchers"]["status"] == "checked"
+    assert result["watchers"]["errors"] == 1
+    assert result["health"]["issue_count"] >= 1
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
 def test_service_tick_tolerates_malformed_publisher_definition_yaml(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     definition_path = home.root / "publishers" / "definitions" / "broken.yml"

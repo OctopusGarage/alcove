@@ -97,10 +97,15 @@ class WatcherModule:
         now: str | None = None,
     ) -> dict[str, Any]:
         timestamp = now or now_iso()
-        checked = []
+        sources, load_errors = self._load_source_records()
+        checked = [
+            {"id": error["id"], "status": "error", "error": error["error"]}
+            for error in load_errors
+            if not source_id or error["id"] == source_id
+        ]
         changed = 0
-        errors = 0
-        for source in self._load_sources():
+        errors = len(checked)
+        for source in sources:
             if source.status != "active":
                 continue
             if source_id and source.id != source_id:
@@ -198,14 +203,22 @@ class WatcherModule:
         return {"text": raw.decode("utf-8", errors="replace")}
 
     def _load_sources(self) -> list[WatcherSource]:
+        return self._load_source_records()[0]
+
+    def _load_source_records(self) -> tuple[list[WatcherSource], list[dict[str, str]]]:
         if not self.sources_root.is_dir():
-            return []
+            return [], []
         sources = []
+        errors = []
         for path in sorted(self.sources_root.glob("*.yml")):
-            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            try:
+                payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except (OSError, yaml.YAMLError) as exc:
+                errors.append({"id": path.stem, "error": str(exc)})
+                continue
             if isinstance(payload, dict):
                 sources.append(self._source(payload))
-        return sources
+        return sources, errors
 
     def _write_source(self, source: WatcherSource) -> None:
         self.sources_root.mkdir(parents=True, exist_ok=True)
