@@ -10,8 +10,14 @@ from alcove.projects import AddProjectRequest, ProjectRecord, ProjectsModule
 
 
 class _GlobalHomeCapabilities(_GlobalPromptCapabilities, _GlobalPlannerCapabilities):
+    def _pins_module(self) -> PinsModule:
+        return PinsModule(self.runtime.workspace, home=self.runtime.home)
+
+    def _projects_module(self) -> ProjectsModule:
+        return ProjectsModule(self.runtime.workspace, home=self.runtime.home)
+
     def pin_add_payload(self, request: AddPinRequest) -> dict[str, Any]:
-        result = PinsModule(self.runtime.workspace, home=self.runtime.home).add(request)
+        result = self._pins_module().add(request)
         self._record_action(
             area="pin",
             action="pin.add",
@@ -33,12 +39,12 @@ class _GlobalHomeCapabilities(_GlobalPromptCapabilities, _GlobalPlannerCapabilit
         )
 
     def pin_list_payload(self, tag: str | None = None, status: str = "active") -> dict[str, Any]:
-        module = PinsModule(self.runtime.workspace, home=self.runtime.home)
+        module = self._pins_module()
         pins = [_pin_dict(pin) for pin in module.list(tag, status)]
         return self.runtime.scope_payload({"count": len(pins), "pins": pins})
 
     def pin_get_payload(self, pin_id: str) -> dict[str, Any]:
-        pin = PinsModule(self.runtime.workspace, home=self.runtime.home).get(pin_id)
+        pin = self._pins_module().get(pin_id)
         return self.runtime.scope_payload({"pin": _pin_dict(pin)})
 
     def pin_search_payload(
@@ -48,7 +54,7 @@ class _GlobalHomeCapabilities(_GlobalPromptCapabilities, _GlobalPlannerCapabilit
         tag: str = "",
         status: str = "active",
     ) -> dict[str, Any]:
-        module = PinsModule(self.runtime.workspace, home=self.runtime.home)
+        module = self._pins_module()
         matches = module.search(
             query=query,
             kind=kind,
@@ -59,7 +65,7 @@ class _GlobalHomeCapabilities(_GlobalPromptCapabilities, _GlobalPlannerCapabilit
         return self.runtime.scope_payload({"count": len(pins), "pins": pins})
 
     def pin_update_payload(self, request: UpdatePinRequest) -> dict[str, Any]:
-        result = PinsModule(self.runtime.workspace, home=self.runtime.home).update(request)
+        result = self._pins_module().update(request)
         self._record_action(
             area="pin",
             action="pin.update",
@@ -82,20 +88,18 @@ class _GlobalHomeCapabilities(_GlobalPromptCapabilities, _GlobalPlannerCapabilit
         )
 
     def pin_rebuild_index_payload(self) -> dict[str, Any]:
-        module = PinsModule(self.runtime.workspace, home=self.runtime.home)
+        module = self._pins_module()
         path = module.rebuild_index()
         return self.runtime.scope_payload(
             {"status": "rebuilt", "index_path": str(path), "count": len(module.list(status=""))}
         )
 
     def pin_render_html_payload(self, output_path: str = "") -> dict[str, Any]:
-        path = PinsModule(self.runtime.workspace, home=self.runtime.home).render_html(
-            output_path or None
-        )
+        path = self._pins_module().render_html(output_path or None)
         return self.runtime.scope_payload({"status": "rendered", "path": str(path)})
 
     def pin_archive_payload(self, pin_id: str, confirm: bool = False) -> dict[str, Any]:
-        payload = PinsModule(self.runtime.workspace, home=self.runtime.home).archive(
+        payload = self._pins_module().archive(
             pin_id,
             confirm=confirm,
         )
@@ -117,7 +121,7 @@ class _GlobalHomeCapabilities(_GlobalPromptCapabilities, _GlobalPlannerCapabilit
         )
 
     def project_add_payload(self, request: AddProjectRequest) -> dict[str, Any]:
-        project = ProjectsModule(self.runtime.workspace, home=self.runtime.home).add(request)
+        project = self._projects_module().add(request)
         self._record_action(
             area="project",
             action="project.add",
@@ -135,27 +139,19 @@ class _GlobalHomeCapabilities(_GlobalPromptCapabilities, _GlobalPlannerCapabilit
         )
 
     def project_get_payload(self, alias: str) -> dict[str, Any]:
-        project = ProjectsModule(self.runtime.workspace, home=self.runtime.home).get(alias)
+        project = self._projects_module().get(alias)
         return self.runtime.scope_payload({"project": _project_dict(project)})
 
     def project_list_payload(self) -> dict[str, Any]:
-        projects = [
-            _project_dict(project)
-            for project in ProjectsModule(self.runtime.workspace, home=self.runtime.home).list()
-        ]
+        projects = [_project_dict(project) for project in self._projects_module().list()]
         return self.runtime.scope_payload({"count": len(projects), "projects": projects})
 
     def project_find_payload(self, keyword: str) -> dict[str, Any]:
-        projects = [
-            _project_dict(project)
-            for project in ProjectsModule(self.runtime.workspace, home=self.runtime.home).find(
-                keyword
-            )
-        ]
+        projects = [_project_dict(project) for project in self._projects_module().find(keyword)]
         return self.runtime.scope_payload({"count": len(projects), "projects": projects})
 
     def project_remove_payload(self, alias: str) -> dict[str, Any]:
-        payload = ProjectsModule(self.runtime.workspace, home=self.runtime.home).remove(alias)
+        payload = self._projects_module().remove(alias)
         self._record_action(
             area="project",
             action="project.remove",
@@ -173,9 +169,7 @@ class _GlobalHomeCapabilities(_GlobalPromptCapabilities, _GlobalPlannerCapabilit
         )
 
     def project_roots_set_payload(self, roots: list[str]) -> dict[str, Any]:
-        payload = ProjectsModule(self.runtime.workspace, home=self.runtime.home).configure_roots(
-            roots
-        )
+        payload = self._projects_module().configure_roots(roots)
         return self.runtime.scope_payload(
             self._governed_write(
                 payload,
