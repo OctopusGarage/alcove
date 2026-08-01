@@ -474,7 +474,11 @@ def test_dashboard_snapshot_includes_usage_summary_without_noisy_activity(tmp_pa
     module._record_event(  # noqa: SLF001
         "dashboard.search",
         "Dashboard search used",
-        {"query_length": 11, "result_count": 0},
+        {
+            "query_length": 11,
+            "query_preview": "private dashboard search...",
+            "result_count": 0,
+        },
         visible=False,
     )
     module._record_event(  # noqa: SLF001
@@ -499,6 +503,9 @@ def test_dashboard_snapshot_includes_usage_summary_without_noisy_activity(tmp_pa
     assert any(row["action"] == "dashboard.result_open" for row in snapshot["usage"]["recent"])
     assert "private dashboard query with sensitive suffix" not in json.dumps(
         snapshot["usage"], ensure_ascii=False
+    )
+    assert "private dashboard search" not in (home.paths().logs / "activity.jsonl").read_text(
+        encoding="utf-8"
     )
     search_rows = [row for row in snapshot["usage"]["recent"] if row["action"] == "search.run"]
     assert any(row.get("metrics", {}).get("result_count") == 2 for row in search_rows)

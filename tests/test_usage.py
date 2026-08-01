@@ -29,13 +29,13 @@ def test_usage_recorder_writes_privacy_safe_search_events(tmp_path):
     summary = recorder.summary()
 
     assert first["privacy"]["query_stored"] is False
-    assert first["privacy"]["query_preview_stored"] is True
+    assert first["privacy"]["query_preview_stored"] is False
     assert first["metrics"]["query_length"] == len("private search text with secret tail")
     assert first["metrics"]["result_count"] == 0
     assert first["metrics"]["query_hash"]
     assert first["metrics"]["query_hash"] == second["metrics"]["query_hash"]
-    assert first["metrics"]["query_preview"] == "private search text with secret..."
-    assert first["summary"] == "Search: private search text with secret..."
+    assert "query_preview" not in first["metrics"]
+    assert first["summary"] == "Search used"
     assert "private search text with secret tail" not in json.dumps(events, ensure_ascii=False)
     assert events[0]["surface"] == "dashboard"
     assert events[0]["area"] == "search"
@@ -48,7 +48,7 @@ def test_usage_recorder_writes_privacy_safe_search_events(tmp_path):
     assert summary["search"]["types"] == {"GitHub Star": 2}
 
 
-def test_usage_recorder_keeps_short_query_previews_readable(tmp_path):
+def test_usage_recorder_never_stores_short_query_previews(tmp_path):
     home = AlcoveHome.init(tmp_path / "home")
     recorder = UsageRecorder(home)
 
@@ -58,8 +58,8 @@ def test_usage_recorder_keeps_short_query_previews_readable(tmp_path):
         result_count=1,
     )
 
-    assert event["metrics"]["query_preview"] == "Cleanup obso..."
-    assert event["summary"] == "Search: Cleanup obso..."
+    assert "query_preview" not in event["metrics"]
+    assert event["summary"] == "Search used"
     assert "Cleanup obsolete" not in json.dumps(event, ensure_ascii=False)
 
 
@@ -82,8 +82,8 @@ def test_usage_summary_keeps_recent_events_without_noisy_payloads(tmp_path):
     assert summary["total_events"] == 2
     assert summary["dashboard"]["routes"] == {"/pins": 1}
     assert summary["search"]["surfaces"] == {"mcp": 1}
-    assert summary["recent"][0]["summary"] == "Search: secret query text with private s..."
-    assert summary["recent"][0]["metrics"]["query_preview"] == "secret query text with private s..."
+    assert summary["recent"][0]["summary"] == "Search used"
+    assert "query_preview" not in summary["recent"][0]["metrics"]
     assert "secret query text with private suffix" not in json.dumps(summary, ensure_ascii=False)
 
 
