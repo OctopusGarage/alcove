@@ -108,6 +108,60 @@ MCP_TOOLSET_ALIASES: Final[dict[str, str]] = {
     "all": "full",
 }
 
+_LITE_GLOBAL_MEMORY_TOOLS: Final[tuple[str, ...]] = (
+    "alcove_pin_add",
+    "alcove_pin_list",
+    "alcove_pin_get",
+    "alcove_pin_search",
+    "alcove_pin_update",
+    "alcove_prompt_save",
+    "alcove_prompt_propose",
+    "alcove_prompt_proposal",
+    "alcove_prompt_search",
+    "alcove_prompt_recommend",
+    "alcove_prompt_compose",
+    "alcove_prompt_audit",
+    "alcove_prompt_get",
+)
+
+_LITE_PLANNER_TOOLS: Final[tuple[str, ...]] = (
+    "alcove_task_add",
+    "alcove_task_list",
+    "alcove_task_edit",
+    "alcove_task_complete",
+    "alcove_task_cancel",
+    "alcove_idea_add",
+    "alcove_idea_list",
+    "alcove_idea_edit",
+    "alcove_idea_archive",
+    "alcove_idea_promote",
+)
+
+_LITE_INBOX_TOOLS: Final[tuple[str, ...]] = ("alcove_inbox_manual_add",)
+_LITE_HEALTH_TOOLS: Final[tuple[str, ...]] = ("alcove_health",)
+
+_KB_GLOBAL_MEMORY_TOOLS: Final[tuple[str, ...]] = (
+    "alcove_pin_add",
+    "alcove_pin_search",
+    "alcove_pin_get",
+)
+
+_KB_PLANNER_TOOLS: Final[tuple[str, ...]] = (
+    "alcove_task_add",
+    "alcove_task_list",
+    "alcove_task_edit",
+    "alcove_idea_add",
+    "alcove_idea_list",
+    "alcove_idea_edit",
+    "alcove_idea_archive",
+)
+
+_KB_HEALTH_TOOLS: Final[tuple[str, ...]] = (
+    "alcove_doctor",
+    "alcove_validate",
+    "alcove_health",
+)
+
 
 def mcp_tool_inventory() -> dict[str, list[str]]:
     return {module: list(tools) for module, tools in MCP_TOOL_INVENTORY.items()}
@@ -115,6 +169,21 @@ def mcp_tool_inventory() -> dict[str, list[str]]:
 
 def all_mcp_tools() -> set[str]:
     return {tool for tools in MCP_TOOL_INVENTORY.values() for tool in tools}
+
+
+def _inventory_tools(*groups: str) -> set[str]:
+    tools: set[str] = set()
+    for group in groups:
+        tools.update(MCP_TOOL_INVENTORY[group])
+    return tools
+
+
+def _selected_tools(group: str, selected: tuple[str, ...]) -> set[str]:
+    available = set(MCP_TOOL_INVENTORY[group])
+    missing = sorted(set(selected) - available)
+    if missing:
+        raise ValueError(f"Unknown MCP tools for {group}: {', '.join(missing)}")
+    return set(selected)
 
 
 def resolve_mcp_toolset(toolset: str | None) -> tuple[str, set[str]]:
@@ -152,70 +221,19 @@ def resolve_mcp_toolset(toolset: str | None) -> tuple[str, set[str]]:
 
 
 def _lite_tools() -> set[str]:
-    return {
-        "alcove_command_hints",
-        "alcove_search",
-        "alcove_pin_add",
-        "alcove_pin_list",
-        "alcove_pin_get",
-        "alcove_pin_search",
-        "alcove_pin_update",
-        "alcove_prompt_save",
-        "alcove_prompt_propose",
-        "alcove_prompt_proposal",
-        "alcove_prompt_search",
-        "alcove_prompt_recommend",
-        "alcove_prompt_compose",
-        "alcove_prompt_audit",
-        "alcove_prompt_get",
-        "alcove_task_add",
-        "alcove_task_list",
-        "alcove_task_edit",
-        "alcove_task_complete",
-        "alcove_task_cancel",
-        "alcove_idea_add",
-        "alcove_idea_list",
-        "alcove_idea_edit",
-        "alcove_idea_archive",
-        "alcove_idea_promote",
-        "alcove_inbox_manual_add",
-        "alcove_health",
-    }
+    return (
+        _inventory_tools("guidance", "search")
+        | _selected_tools("global_memory", _LITE_GLOBAL_MEMORY_TOOLS)
+        | _selected_tools("planner", _LITE_PLANNER_TOOLS)
+        | _selected_tools("inbox", _LITE_INBOX_TOOLS)
+        | _selected_tools("health_export", _LITE_HEALTH_TOOLS)
+    )
 
 
 def _kb_tools() -> set[str]:
-    return {
-        "alcove_command_hints",
-        "alcove_search",
-        "alcove_inbox_peek",
-        "alcove_inbox_read",
-        "alcove_inbox_manual_add",
-        "alcove_inbox_archive",
-        "alcove_inbox_note",
-        "alcove_inbox_todo",
-        "alcove_inbox_delete",
-        "alcove_note_source",
-        "alcove_get_topic",
-        "alcove_knowledge_add_note",
-        "alcove_knowledge_revise",
-        "alcove_knowledge_add_question",
-        "alcove_knowledge_add_entity",
-        "alcove_knowledge_promote",
-        "alcove_knowledge_refresh",
-        "alcove_knowledge_delete",
-        "alcove_knowledge_topics",
-        "alcove_link_source",
-        "alcove_pin_add",
-        "alcove_pin_search",
-        "alcove_pin_get",
-        "alcove_task_add",
-        "alcove_task_list",
-        "alcove_task_edit",
-        "alcove_idea_add",
-        "alcove_idea_list",
-        "alcove_idea_edit",
-        "alcove_idea_archive",
-        "alcove_doctor",
-        "alcove_validate",
-        "alcove_health",
-    }
+    return (
+        _inventory_tools("guidance", "search", "inbox", "knowledge")
+        | _selected_tools("global_memory", _KB_GLOBAL_MEMORY_TOOLS)
+        | _selected_tools("planner", _KB_PLANNER_TOOLS)
+        | _selected_tools("health_export", _KB_HEALTH_TOOLS)
+    )
