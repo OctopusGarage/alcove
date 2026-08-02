@@ -135,6 +135,7 @@ files = [
     "src/alcove/mcp_project_requests.py",
     "src/alcove/mcp_planner_tools.py",
     "src/alcove/mcp_prompt_requests.py",
+    "src/alcove/mcp_prompt_tools.py",
     "src/alcove/mcp_registrar.py",
     "src/alcove/mcp_resources.py",
     "src/alcove/mcp_search_requests.py",
