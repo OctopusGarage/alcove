@@ -363,6 +363,8 @@ class ConnectorSourceRegistry:
         path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
     def _source_path(self, connector: str, source_id: str) -> Path:
+        if _invalid_source_id(source_id):
+            raise ValueError(f"Invalid connector source id: {source_id}")
         return self.root / connector / "sources" / f"{source_id}.yml"
 
 
@@ -382,6 +384,16 @@ def _positive_int(value: object, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return parsed if parsed >= 0 else default
+
+
+def _invalid_source_id(value: str) -> bool:
+    source_id = str(value)
+    return (
+        source_id in {"", ".", ".."}
+        or Path(source_id).is_absolute()
+        or "/" in source_id
+        or "\\" in source_id
+    )
 
 
 def _connector_display_name(connector: str) -> str:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from alcove.connector_sources import ConnectorSourceRegistry
 from alcove.connectors.chrome_bookmarks import (
     ChromeBookmarksConnector,
@@ -258,6 +260,22 @@ def test_chrome_bookmarks_import_local_registers_source_and_refreshes(tmp_path):
     assert refresh["refreshed"] == 1
     assert refresh["sources"][0]["diff"]["added"] == ["Alcove Repository"]
     assert refresh["sources"][0]["scanned"] == 3
+
+
+def test_chrome_bookmarks_import_local_rejects_source_id_path_traversal(tmp_path):
+    workspace = Workspace.init(tmp_path / "workspace")
+    source_file = tmp_path / "Bookmarks"
+    _write_chrome_json(source_file)
+
+    with pytest.raises(ValueError, match="Invalid connector source id"):
+        ChromeBookmarksConnector(workspace).import_local(
+            ChromeBookmarksLocalImportRequest(
+                source_file=str(source_file),
+                source_id="../../../escaped",
+            )
+        )
+
+    assert not (workspace.root / "escaped.yml").exists()
 
 
 def test_search_and_fetch_include_imported_chrome_bookmarks(tmp_path):
