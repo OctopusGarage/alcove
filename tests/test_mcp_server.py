@@ -299,6 +299,24 @@ def test_mcp_command_hints_can_filter_by_workflow(tmp_path):
     assert any("alcove radar run" in command for command in payload["workflows"][0]["commands"])
 
 
+def test_registered_mcp_command_hints_use_context_defaults(tmp_path):
+    workspace = Workspace.init(tmp_path / "workspace")
+    home = AlcoveHome.init(tmp_path / "home")
+    mcp = create_mcp_server(default_workspace=str(workspace.root), default_home=str(home.root))
+
+    result = asyncio.run(mcp.call_tool("alcove_command_hints", {}))
+
+    assert result.structured_content["home"] == str(home.root)
+    assert result.structured_content["workspace"] == str(workspace.root)
+    workflow_commands = [
+        command
+        for workflow in result.structured_content["workflows"]
+        for command in workflow["commands"]
+    ]
+    assert any(str(home.root) in command for command in workflow_commands)
+    assert any(str(workspace.root) in command for command in workflow_commands)
+
+
 def test_mcp_server_registers_v1_tools(tmp_path):
     Workspace.init(tmp_path)
     mcp = create_mcp_server(str(tmp_path))

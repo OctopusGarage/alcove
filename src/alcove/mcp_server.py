@@ -118,7 +118,13 @@ def create_mcp_server(
         workflow: str = "",
     ) -> dict[str, Any]:
         """Discover CLI commands for complex Alcove workflows kept outside MCP."""
-        return command_hints_tool(workspace=workspace, home=home, workflow=workflow)
+        effective_home = context.effective_home(home)
+        effective_workspace = context.effective_workspace(workspace, home=effective_home)
+        return command_hints_tool(
+            workspace=effective_workspace,
+            home=effective_home,
+            workflow=workflow,
+        )
 
     @tool
     def alcove_search(
