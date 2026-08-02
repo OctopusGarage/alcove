@@ -940,6 +940,14 @@ def test_cli_search_unindexed_returns_validation_issues(tmp_path, capsys):
     assert any(issue["kind"] == "dead_source_ref" for issue in json.loads(captured.out)["issues"])
 
 
+def test_cli_search_unindexed_requires_workspace(capsys):
+    code = main(["search", "--unindexed"])
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "search --unindexed requires --workspace" in captured.err
+
+
 def test_cli_pin_add_list_archive_and_search(tmp_path, capsys):
     main(["init", str(tmp_path)])
     capsys.readouterr()
@@ -1076,6 +1084,153 @@ def test_cli_dashboard_import_and_build(tmp_path, capsys):
     assert build_code == 0
     assert json.loads(build_output.out)["status"] == "built"
     assert (home / "dashboard" / "snapshot.json").is_file()
+
+
+def test_cli_dashboard_import_non_json_reports_each_import_bucket(tmp_path, capsys):
+    home = tmp_path / "home"
+    regular = tmp_path / "regular.txt"
+    todo = tmp_path / "todo.txt"
+    regular.write_text("Operations Reference\n\nRunbook Review\n", encoding="utf-8")
+    todo.write_text("Dashboard stale snapshot follow-up\n", encoding="utf-8")
+
+    code = main(
+        [
+            "dashboard",
+            "--home",
+            str(home),
+            "import-pins",
+            "--regular-file",
+            str(regular),
+            "--todo-file",
+            str(todo),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert code == 0
+    assert "regular: 1 pins" in captured.out
+    assert "todo: 1 pins" in captured.out
+    pins_index = json.loads((home / "pins" / "index.json").read_text(encoding="utf-8"))
+    indexed_text = "\n".join(pin["search_text"] for pin in pins_index["pins"])
+    assert "Operations Reference" in indexed_text
+    assert "Dashboard stale snapshot follow-up" in indexed_text
+
+
+def test_cli_prompt_force_save_requires_complete_manual_payload(tmp_path, capsys):
+    home = tmp_path / "home"
+
+    code = main(["prompt", "--home", str(home), "save", "Incomplete Prompt", "--force"])
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "prompt save with --force requires title and --content" in captured.err
+    assert list((home / "prompts").glob("*.md")) == []
+
+
+def test_cli_prompt_save_search_recommend_compose_and_archive_state(tmp_path, capsys):
+    home = tmp_path / "home"
+
+    save_code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "save",
+            "Incident Review",
+            "--content",
+            "Review an incident for impact, root cause, follow-up ownership, and tests.",
+            "--description",
+            "Reusable production incident review prompt.",
+            "--tag",
+            "ops",
+            "--tags",
+            "review,regression",
+            "--use-cases",
+            "postmortem,release review",
+            "--surfaces",
+            "codex,claude-code",
+            "--quality-score",
+            "0.91",
+            "--force",
+            "--json",
+        ]
+    )
+    save_output = capsys.readouterr()
+    search_code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "search",
+            "incident",
+            "--surface",
+            "codex",
+            "--json",
+        ]
+    )
+    search_output = capsys.readouterr()
+    recommend_code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "recommend",
+            "production incident regression review",
+            "--limit",
+            "2",
+            "--json",
+        ]
+    )
+    recommend_output = capsys.readouterr()
+    compose_code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "compose",
+            "production incident regression review",
+            "--max-chars-per-prompt",
+            "160",
+            "--json",
+        ]
+    )
+    compose_output = capsys.readouterr()
+    archive_code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "archive",
+            "incident-review",
+            "--confirm",
+            "--json",
+        ]
+    )
+    archive_output = capsys.readouterr()
+    active_search_code = main(["prompt", "--home", str(home), "search", "incident", "--json"])
+    active_search_output = capsys.readouterr()
+
+    saved = json.loads(save_output.out)
+    matches = json.loads(search_output.out)
+    recommendations = json.loads(recommend_output.out)
+    composed = json.loads(compose_output.out)
+    archived = json.loads(archive_output.out)
+
+    assert save_code == 0
+    assert saved["prompt"]["id"] == "incident-review"
+    assert saved["prompt"]["surfaces"] == ["claude-code", "codex"]
+    assert saved["prompt"]["quality"]["score"] == 0.91
+    assert search_code == 0
+    assert matches[0]["id"] == "incident-review"
+    assert matches[0]["tags"] == ["ops", "regression", "review"]
+    assert recommend_code == 0
+    assert recommendations[0]["prompt"]["id"] == "incident-review"
+    assert compose_code == 0
+    assert "Incident Review" in composed["prompt"]
+    assert archive_code == 0
+    assert archived["status"] == "archived"
+    assert active_search_code == 0
+    assert json.loads(active_search_output.out) == []
 
 
 def test_cli_project_add_get_find_list_remove(tmp_path, capsys):
