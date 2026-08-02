@@ -195,6 +195,32 @@ sources:
     assert (home.root / "dashboard" / "snapshot.json").is_file()
 
 
+def test_service_tick_tolerates_malformed_radar_definition_yaml(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    definition_path = home.root / "radars" / "definitions" / "broken.yml"
+    definition_path.parent.mkdir(parents=True, exist_ok=True)
+    definition_path.write_text("id: [", encoding="utf-8")
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        run_automations=False,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["radars"]["status"] == "checked"
+    assert result["radars"]["errors"] == 1
+    assert result["radars"]["radars"][0]["id"] == "broken"
+    assert result["radars"]["radars"][0]["status"] == "error"
+    assert "broken.yml" in result["radars"]["radars"][0]["error"]
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
 def test_service_tick_tolerates_invalid_persisted_routine_schedule(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     tasks_path = home.paths().tasks / "tasks.json"
@@ -309,6 +335,32 @@ def test_service_tick_tolerates_malformed_publisher_definition_yaml(tmp_path):
     assert result["status"] == "ok"
     assert result["publishers"]["status"] == "checked"
     assert result["health"]["issue_count"] >= 1
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
+def test_service_tick_tolerates_malformed_automation_job_yaml(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    job_path = home.root / "automations" / "jobs" / "broken.yml"
+    job_path.parent.mkdir(parents=True, exist_ok=True)
+    job_path.write_text("name: [", encoding="utf-8")
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["automations"]["status"] == "checked"
+    assert result["automations"]["failed"] == 1
+    assert result["automations"]["jobs"][0]["id"] == "broken"
+    assert result["automations"]["jobs"][0]["status"] == "failed"
+    assert "broken.yml" in result["automations"]["jobs"][0]["error"]
     assert (home.root / "dashboard" / "snapshot.json").is_file()
 
 
