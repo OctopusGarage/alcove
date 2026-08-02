@@ -493,7 +493,7 @@ function hasManualActionText(text) {
         error: str = "",
     ) -> Path:
         self.runs_root.mkdir(parents=True, exist_ok=True)
-        path = self.runs_root / f"{timestamp.replace(':', '-')}-{source.id}.json"
+        path = self._run_path(source.id, timestamp=timestamp)
         payload = {
             "schema": "alcove/blog-run/v1",
             "timestamp": timestamp,
@@ -600,18 +600,29 @@ function hasManualActionText(text) {
         return raw.decode("utf-8", errors="replace")
 
     def _load_sources(self) -> list[BlogSource]:
+        return self._load_source_records()[0]
+
+    def _load_source_records(self) -> tuple[list[BlogSource], list[dict[str, str]]]:
         if not self.sources_root.is_dir():
-            return []
+            return [], []
         sources = []
+        errors = []
         for path in sorted(self.sources_root.glob("*.yml")):
-            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except (OSError, yaml.YAMLError) as exc:
+                errors.append({"id": path.stem, "error": str(exc)})
+                continue
             if isinstance(data, dict):
-                sources.append(self._source(data))
-        return sources
+                try:
+                    sources.append(self._source(data))
+                except ValueError as exc:
+                    errors.append({"id": path.stem, "error": str(exc)})
+        return sources, errors
 
     def _write_source(self, source: BlogSource) -> None:
         self.sources_root.mkdir(parents=True, exist_ok=True)
-        path = self.sources_root / f"{source.id}.yml"
+        path = self._source_path(source.id)
         path.write_text(
             yaml.safe_dump(source.as_dict(), allow_unicode=True, sort_keys=False),
             encoding="utf-8",
@@ -624,6 +635,8 @@ function hasManualActionText(text) {
         notify = _dict_value(payload, "notify")
         schedule = _dict_value(payload, "schedule")
         source_id = str(payload.get("id") or "")
+        if _invalid_source_id(source_id):
+            raise ValueError(f"Invalid blog source id: {source_id}")
         return BlogSource(
             id=source_id,
             name=str(payload.get("name") or source_id),
@@ -672,7 +685,7 @@ function hasManualActionText(text) {
         return payload
 
     def _load_seen(self, source_id: str) -> set[str]:
-        path = self.seen_root / f"{source_id}.json"
+        path = self._seen_path(source_id)
         if not path.is_file():
             return set()
         try:
@@ -690,10 +703,25 @@ function hasManualActionText(text) {
             "updated_at": timestamp,
             "urls": sorted(urls),
         }
-        (self.seen_root / f"{source_id}.json").write_text(
+        self._seen_path(source_id).write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
+
+    def _source_path(self, source_id: str) -> Path:
+        if _invalid_source_id(source_id):
+            raise ValueError(f"Invalid blog source id: {source_id}")
+        return self.sources_root / f"{source_id}.yml"
+
+    def _seen_path(self, source_id: str) -> Path:
+        if _invalid_source_id(source_id):
+            raise ValueError(f"Invalid blog source id: {source_id}")
+        return self.seen_root / f"{source_id}.json"
+
+    def _run_path(self, source_id: str, *, timestamp: str) -> Path:
+        if _invalid_source_id(source_id):
+            raise ValueError(f"Invalid blog source id: {source_id}")
+        return self.runs_root / f"{timestamp.replace(':', '-')}-{source_id}.json"
 
     def _is_stale(self, source: BlogSource, timestamp: str) -> bool:
         if not source.checked_at:
@@ -751,6 +779,16 @@ def _int(value: object, default: int) -> int:
 def _dict_value(payload: dict[str, Any], key: str) -> dict[str, Any]:
     value = payload.get(key)
     return value if isinstance(value, dict) else {}
+
+
+def _invalid_source_id(value: str) -> bool:
+    source_id = str(value)
+    return (
+        source_id in {"", ".", ".."}
+        or Path(source_id).is_absolute()
+        or "/" in source_id
+        or "\\" in source_id
+    )
 
 
 def _list_value(payload: dict[str, Any], key: str) -> list[Any]:

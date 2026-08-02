@@ -88,6 +88,33 @@ def test_watcher_stale_check_handles_invalid_persisted_ttl_hours(tmp_path):
     assert result["sources"][0]["status"] == "skipped"
 
 
+def test_watcher_check_rejects_persisted_source_id_path_traversal(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    page = tmp_path / "blog.html"
+    page.write_text("<html><title>First</title><body>v1</body></html>", encoding="utf-8")
+    sources = home.root / "watchers" / "sources"
+    sources.mkdir(parents=True)
+    (sources / "bad.yml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "../../../escaped-watcher",
+                "title": "Bad Watcher",
+                "url": page.as_uri(),
+                "kind": "page",
+                "status": "active",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = WatcherModule(home).check(now="2026-07-12T09:00:00+00:00")
+
+    assert result["errors"] == 1
+    assert result["sources"][0]["id"] == "bad"
+    assert "Invalid watcher source id" in result["sources"][0]["error"]
+    assert not (tmp_path / "escaped-watcher.yml").exists()
+
+
 def test_cli_watch_add_list_and_check_file_url(tmp_path, capsys):
     home = tmp_path / ".alcove"
     page = tmp_path / "blog.html"

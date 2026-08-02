@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 
 import pytest
+import yaml
 
 from alcove.blog_discovery import _candidate_sitemap_urls
 import alcove.notifications as notifications
@@ -45,6 +46,34 @@ def test_blog_seed_initializes_seen_without_capture(tmp_path):
         "https://example.com/blog/two",
     ]
     assert not (home.root / "blog-monitor/events.jsonl").exists()
+
+
+def test_blog_seed_rejects_persisted_source_id_path_traversal(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    page = tmp_path / "blog.html"
+    _write_html(page, [("https://example.com/blog/one", "First useful article")])
+    sources = home.root / "blog-monitor" / "sources"
+    sources.mkdir(parents=True)
+    (sources / "bad.yml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "../../../escaped-blog",
+                "name": "Bad Blog",
+                "url": page.as_uri(),
+                "discover": {"method": "requests", "link_pattern": "/blog/"},
+                "status": "active",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = BlogMonitorModule(home).seed()
+
+    assert result["errors"] == 1
+    assert result["sources"][0]["id"] == "bad"
+    assert "Invalid blog source id" in result["sources"][0]["error"]
+    assert not (tmp_path / "escaped-blog.yml").exists()
+    assert not (tmp_path / "escaped-blog.json").exists()
 
 
 def test_blog_check_detects_new_article_and_uses_capture_policy(tmp_path, monkeypatch):

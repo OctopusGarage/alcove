@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 import hashlib
 import json
+from pathlib import Path
 import re
 from typing import Any
 from urllib.request import Request, urlopen
@@ -217,20 +218,26 @@ class WatcherModule:
                 errors.append({"id": path.stem, "error": str(exc)})
                 continue
             if isinstance(payload, dict):
-                sources.append(self._source(payload))
+                try:
+                    sources.append(self._source(payload))
+                except ValueError as exc:
+                    errors.append({"id": path.stem, "error": str(exc)})
         return sources, errors
 
     def _write_source(self, source: WatcherSource) -> None:
         self.sources_root.mkdir(parents=True, exist_ok=True)
-        path = self.sources_root / f"{source.id}.yml"
+        path = self._source_path(source.id)
         path.write_text(
             yaml.safe_dump(source.as_dict(), allow_unicode=True, sort_keys=False),
             encoding="utf-8",
         )
 
     def _source(self, payload: dict[str, Any]) -> WatcherSource:
+        source_id = str(payload.get("id") or "")
+        if _invalid_source_id(source_id):
+            raise ValueError(f"Invalid watcher source id: {source_id}")
         return WatcherSource(
-            id=str(payload.get("id") or ""),
+            id=source_id,
             title=str(payload.get("title") or ""),
             url=str(payload.get("url") or ""),
             kind=str(payload.get("kind") or "page"),
@@ -246,6 +253,11 @@ class WatcherModule:
             last_title=str(payload.get("last_title") or ""),
             last_error=str(payload.get("last_error") or ""),
         )
+
+    def _source_path(self, source_id: str) -> Path:
+        if _invalid_source_id(source_id):
+            raise ValueError(f"Invalid watcher source id: {source_id}")
+        return self.sources_root / f"{source_id}.yml"
 
     def _unique_id(self, title: str) -> str:
         base = normalize_slug(title) or "watcher"
@@ -308,3 +320,13 @@ def _positive_int(value: Any, *, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(parsed, 1)
+
+
+def _invalid_source_id(value: str) -> bool:
+    source_id = str(value)
+    return (
+        source_id in {"", ".", ".."}
+        or Path(source_id).is_absolute()
+        or "/" in source_id
+        or "\\" in source_id
+    )

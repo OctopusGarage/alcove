@@ -11,6 +11,8 @@ BLOG_ATTENTION_STATUS = "needs_attention"
 class BlogRunHost(Protocol):
     def _load_sources(self) -> list[Any]: ...
 
+    def _load_source_records(self) -> tuple[list[Any], list[dict[str, str]]]: ...
+
     def _is_stale(self, source: Any, timestamp: str) -> bool: ...
 
     def _discover(self, source: Any) -> list[Any]: ...
@@ -97,7 +99,16 @@ class BlogRunModule:
         new_count = 0
         captured_count = 0
         errors = 0
-        for source in self.host._load_sources():
+        if hasattr(self.host, "_load_source_records"):
+            sources, load_errors = self.host._load_source_records()
+        else:
+            sources, load_errors = self.host._load_sources(), []
+        for error in load_errors:
+            if source_id and error["id"] != source_id:
+                continue
+            rows.append({"id": error["id"], "status": "error", "error": error["error"]})
+            errors += 1
+        for source in sources:
             if source.status not in {"active", BLOG_ATTENTION_STATUS}:
                 continue
             if source_id and source.id != source_id:
