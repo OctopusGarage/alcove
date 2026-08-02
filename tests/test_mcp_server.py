@@ -47,6 +47,7 @@ from alcove.mcp_server import (
     task_edit_tool,
     task_list_tool,
 )
+from alcove.mcp_toolsets import all_mcp_tools
 from alcove.mounts import AddMountRequest, MountsModule
 from alcove.tasks import AddIdeaRequest, TasksModule
 from alcove.usage import UsageRecorder
@@ -383,6 +384,15 @@ def test_mcp_server_registers_v1_tools(tmp_path):
     }
 
 
+def test_mcp_full_toolset_matches_inventory(tmp_path):
+    Workspace.init(tmp_path)
+    mcp = create_mcp_server(str(tmp_path))
+
+    tools = {tool.name for tool in asyncio.run(mcp.list_tools())}
+
+    assert tools == all_mcp_tools()
+
+
 def test_mcp_server_lite_toolset_keeps_global_common_tools_small(tmp_path):
     home = AlcoveHome.init(tmp_path / "home")
     mcp = create_mcp_server(default_home=str(home.root), toolset="lite")
@@ -517,7 +527,31 @@ def test_mcp_server_default_home_routes_global_tools(tmp_path):
     compose_result = asyncio.run(
         mcp.call_tool("alcove_prompt_compose", {"scenario": "regression review"})
     )
+    proposal_read_result = asyncio.run(
+        mcp.call_tool(
+            "alcove_prompt_proposal",
+            {"proposal_id": proposal_result.structured_content["id"]},
+        )
+    )
+    search_result = asyncio.run(mcp.call_tool("alcove_prompt_search", {"query": "regression"}))
+    recommend_result = asyncio.run(
+        mcp.call_tool("alcove_prompt_recommend", {"scenario": "regression review"})
+    )
     audit_result = asyncio.run(mcp.call_tool("alcove_prompt_audit", {}))
+    get_result = asyncio.run(
+        mcp.call_tool(
+            "alcove_prompt_get",
+            {"prompt_id": prompt_result.structured_content["prompt"]["id"]},
+        )
+    )
+    tags_result = asyncio.run(mcp.call_tool("alcove_prompt_tags", {}))
+    rebuild_result = asyncio.run(mcp.call_tool("alcove_prompt_rebuild_index", {}))
+    archive_preview_result = asyncio.run(
+        mcp.call_tool(
+            "alcove_prompt_archive",
+            {"prompt_id": prompt_result.structured_content["prompt"]["id"]},
+        )
+    )
     list_result = asyncio.run(mcp.call_tool("alcove_task_list", {}))
 
     assert add_result.structured_content["home"] == str(home.root)
@@ -537,7 +571,16 @@ def test_mcp_server_default_home_routes_global_tools(tmp_path):
     assert "prompt-pack" in prompt_result.structured_content["prompt"]["outputs"]
     assert compose_result.structured_content["sources"][0]["title"] == "Default Prompt"
     assert "Review the default home workflow" in compose_result.structured_content["prompt"]
+    assert proposal_read_result.structured_content["id"] == proposal_result.structured_content["id"]
+    assert search_result.structured_content["prompts"][0]["title"] == "Default Prompt"
+    assert recommend_result.structured_content["recommendations"][0]["prompt"]["title"] == (
+        "Default Prompt"
+    )
     assert audit_result.structured_content["counts"]["prompts"] == 1
+    assert get_result.structured_content["prompt"]["title"] == "Default Prompt"
+    assert any(tag["tag"] == "review" for tag in tags_result.structured_content["tags"])
+    assert rebuild_result.structured_content["status"] == "rebuilt"
+    assert archive_preview_result.structured_content["status"] == "preview"
     assert list_result.structured_content["home"] == str(home.root)
     assert list_result.structured_content["tasks"][0]["title"] == "Default Home MCP Task"
 
@@ -550,9 +593,152 @@ def test_mcp_server_default_workspace_routes_managed_kb_tools(tmp_path):
     mcp = create_mcp_server(default_workspace=str(tmp_path))
 
     result = asyncio.run(mcp.call_tool("alcove_inbox_peek", {}))
+    health_result = asyncio.run(mcp.call_tool("alcove_health", {}))
+    doctor_result = asyncio.run(mcp.call_tool("alcove_doctor", {}))
+    validate_result = asyncio.run(mcp.call_tool("alcove_validate", {}))
+    gardener_result = asyncio.run(mcp.call_tool("alcove_gardener", {}))
 
     assert result.structured_content["workspace"] == str(tmp_path.resolve())
     assert result.structured_content["item"]["title"] == "Default Workspace"
+    assert health_result.structured_content["workspace"] == str(tmp_path.resolve())
+    assert doctor_result.structured_content["workspace"] == str(tmp_path.resolve())
+    assert "issues" in validate_result.structured_content
+    assert "issues" in gardener_result.structured_content
+
+
+def test_mcp_server_registered_managed_kb_write_tools(tmp_path):
+    Workspace.init(tmp_path)
+    mcp = create_mcp_server(default_workspace=str(tmp_path))
+
+    manual_result = asyncio.run(
+        mcp.call_tool(
+            "alcove_inbox_manual_add",
+            {
+                "title": "Registered Inbox Source",
+                "content": "Registered MCP inbox content.",
+                "source": "chat://registered",
+            },
+        )
+    )
+    archive_result = asyncio.run(
+        mcp.call_tool(
+            "alcove_inbox_archive",
+            {
+                "name": manual_result.structured_content["id"],
+                "topic": "agent-engineering/registered",
+                "summary": "Archived through registered MCP.",
+                "tags": ["registered"],
+            },
+        )
+    )
+    note_source_result = asyncio.run(
+        mcp.call_tool(
+            "alcove_note_source",
+            {
+                "platform": "web",
+                "title": "Registered MCP Source",
+                "topic": "agent-engineering/registered",
+                "resource": "https://example.test/registered",
+                "summary": "Registered source summary.",
+                "tags": ["registered"],
+                "published_date": "2026-08-02",
+            },
+        )
+    )
+    add_note_result = asyncio.run(
+        mcp.call_tool(
+            "alcove_knowledge_add_note",
+            {
+                "topic": "agent-engineering/registered",
+                "title": "Registered MCP Concept",
+                "summary": "Registered concept summary.",
+                "tags": ["registered"],
+            },
+        )
+    )
+    revise_result = asyncio.run(
+        mcp.call_tool(
+            "alcove_knowledge_revise",
+            {
+                "path": "concepts/agent-engineering/registered/registered-mcp-concept.md",
+                "summary": "Registered concept revised.",
+                "append": "Registered MCP revision note.",
+                "tags": ["revised"],
+                "source_refs": [note_source_result.structured_content["source_path"]],
+                "reason": "registered mcp test",
+            },
+        )
+    )
+    question_result = asyncio.run(
+        mcp.call_tool(
+            "alcove_knowledge_add_question",
+            {
+                "topic": "agent-engineering/registered",
+                "question": "How is the registered MCP question covered?",
+                "answer": "Through the registered tool surface.",
+                "tags": ["registered"],
+                "source_refs": [note_source_result.structured_content["source_path"]],
+            },
+        )
+    )
+    entity_result = asyncio.run(
+        mcp.call_tool(
+            "alcove_knowledge_add_entity",
+            {
+                "topic": "agent-engineering/registered",
+                "name": "Registered Entity",
+                "kind": "concept",
+                "summary": "Registered entity summary.",
+                "use_cases": "Patch coverage.",
+                "open_questions": "None.",
+                "tags": ["registered"],
+                "source_refs": [note_source_result.structured_content["source_path"]],
+            },
+        )
+    )
+    promote_result = asyncio.run(
+        mcp.call_tool(
+            "alcove_knowledge_promote",
+            {
+                "source": note_source_result.structured_content["source_path"],
+                "topic": "agent-engineering/registered",
+                "summary": "Promoted through registered MCP.",
+            },
+        )
+    )
+    refresh_result = asyncio.run(
+        mcp.call_tool(
+            "alcove_knowledge_refresh",
+            {
+                "topic": "agent-engineering/registered",
+                "summary": "Refresh through registered MCP.",
+            },
+        )
+    )
+    topic_result = asyncio.run(
+        mcp.call_tool("alcove_get_topic", {"topic": "agent-engineering/registered"})
+    )
+    topics_result = asyncio.run(mcp.call_tool("alcove_knowledge_topics", {}))
+    delete_preview_result = asyncio.run(
+        mcp.call_tool(
+            "alcove_knowledge_delete",
+            {"path": "concepts/agent-engineering/registered/registered-mcp-concept.md"},
+        )
+    )
+
+    assert archive_result.structured_content["archive"].endswith("[manual] registered-inbox-source")
+    assert archive_result.structured_content["source"].endswith("registered-inbox-source.md")
+    assert note_source_result.structured_content["status"] == "noted"
+    assert add_note_result.structured_content["status"] == "noted"
+    assert revise_result.structured_content["status"] == "revised"
+    assert question_result.structured_content["status"] == "added"
+    assert entity_result.structured_content["status"] == "added"
+    assert promote_result.structured_content["status"] == "promoted"
+    assert refresh_result.structured_content["status"] == "refreshed"
+    assert topic_result.structured_content["domain"] == "agent-engineering"
+    assert topic_result.structured_content["topic"] == "registered"
+    assert "topics" in topics_result.structured_content
+    assert delete_preview_result.structured_content["status"] == "preview"
 
 
 def test_mcp_server_exposes_inbox_manual_add_and_read(tmp_path):
