@@ -437,3 +437,49 @@ def test_revise_concept_updates_summary_tags_sources_and_appends_discussion_note
     assert "## 修订记录" in doc.body
     assert "补充：可以通过 MCP 从其他项目把讨论结果写入 Managed KB。" in doc.body
     assert "- [Knowledge Concept] [MCP Knowledge Entry]" in index.body
+
+
+def test_revise_rejects_absolute_path_outside_knowledge_root(tmp_path):
+    workspace = Workspace.init(tmp_path / "workspace")
+    outside = tmp_path / "outside.md"
+    MarkdownRepository().write_doc(
+        outside,
+        MarkdownDoc(
+            frontmatter={"type": "Source", "title": "Outside Source", "status": "active"},
+            body="# Outside Source\n\nOriginal body.",
+        ),
+    )
+
+    try:
+        KnowledgeModule(workspace).revise(
+            ReviseKnowledgeRequest(path=str(outside), summary="Changed outside summary.")
+        )
+    except ValueError as exc:
+        assert "outside knowledge root" in str(exc)
+    else:
+        raise AssertionError("Expected outside knowledge path to be rejected")
+
+    assert "Changed outside summary." not in outside.read_text(encoding="utf-8")
+
+
+def test_delete_confirm_rejects_absolute_path_outside_knowledge_root_before_write(tmp_path):
+    workspace = Workspace.init(tmp_path / "workspace")
+    outside = tmp_path / "outside.md"
+    MarkdownRepository().write_doc(
+        outside,
+        MarkdownDoc(
+            frontmatter={"type": "Source", "title": "Outside Source", "status": "active"},
+            body="# Outside Source\n\nOriginal body.",
+        ),
+    )
+
+    try:
+        KnowledgeModule(workspace).delete(str(outside), confirm=True, reason="obsolete")
+    except ValueError as exc:
+        assert "outside knowledge root" in str(exc)
+    else:
+        raise AssertionError("Expected outside knowledge path to be rejected")
+
+    text = outside.read_text(encoding="utf-8")
+    assert "status: active" in text
+    assert "status: deleted" not in text

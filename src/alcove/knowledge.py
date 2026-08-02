@@ -487,9 +487,14 @@ class KnowledgeModule:
 
     def _knowledge_doc_path(self, value: str) -> Path:
         path = Path(value).expanduser()
-        if path.is_absolute():
-            return path
-        return self.knowledge_root / path
+        candidate = path if path.is_absolute() else self.knowledge_root / path
+        root = self.knowledge_root.resolve()
+        resolved = candidate.resolve(strict=False)
+        try:
+            resolved.relative_to(root)
+        except ValueError as exc:
+            raise ValueError(f"Knowledge document path is outside knowledge root: {value}") from exc
+        return resolved
 
     def _source_summary(self, body: str) -> str:
         lines = [
