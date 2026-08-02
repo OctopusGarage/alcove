@@ -30,14 +30,11 @@ class UsageRecorder:
         duration_ms: int | None = None,
     ) -> dict[str, Any]:
         normalized_query = query.strip()
-        query_preview = self._query_preview(normalized_query)
         metrics: dict[str, Any] = {
             "query_length": len(normalized_query),
             "query_hash": self._query_hash(normalized_query),
             "result_count": max(result_count, 0),
         }
-        if query_preview:
-            metrics["query_preview"] = query_preview
         if duration_ms is not None:
             metrics["duration_ms"] = max(duration_ms, 0)
         metadata = {"filters": self._clean_filters(filters or {})}
@@ -45,13 +42,13 @@ class UsageRecorder:
             surface=surface,
             area="search",
             action="search.run",
-            summary=f"Search: {query_preview}" if query_preview else "Search used",
+            summary="Search used",
             outcome="empty" if result_count == 0 else "success",
             metrics=metrics,
             metadata=metadata,
             privacy={
                 "query_stored": False,
-                "query_preview_stored": bool(query_preview),
+                "query_preview_stored": False,
                 "content_stored": False,
             },
         )
@@ -282,18 +279,6 @@ class UsageRecorder:
             salt_path.write_text(uuid4().hex, encoding="utf-8")
         salt = salt_path.read_text(encoding="utf-8").strip()
         return hashlib.sha256(f"{salt}:{query.casefold()}".encode("utf-8")).hexdigest()
-
-    @staticmethod
-    def _query_preview(query: str, max_chars: int = 32) -> str:
-        normalized = " ".join(query.split())
-        if not normalized:
-            return ""
-        if len(normalized) <= 4:
-            return normalized
-        if len(normalized) <= max_chars:
-            preview_chars = min(16, max(4, len(normalized) - 4))
-            return f"{normalized[:preview_chars].rstrip()}..."
-        return f"{normalized[:max_chars].rstrip()}..."
 
     @staticmethod
     def _clean_filters(filters: dict[str, Any]) -> dict[str, str]:

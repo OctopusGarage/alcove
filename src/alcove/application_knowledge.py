@@ -22,43 +22,27 @@ class _ManagedKnowledgeCapabilities(_Capability):
     def note_source_payload(self, request: NoteSourceRequest) -> dict[str, Any]:
         workspace = self.runtime.require_workspace()
         result = KnowledgeModule(workspace).note_source(request)
-        self._record_action(
-            area="knowledge",
+        return self._knowledge_write_payload(
+            {
+                "status": "noted",
+                "source_path": str(result.source_path),
+                "concept_path": str(result.concept_path) if result.concept_path else "",
+            },
             action="knowledge.note_source",
             summary=f"Noted source: {request.title}",
             metadata={"title": request.title, "topic": request.topic, "platform": request.platform},
-        )
-        return self.runtime.scope_payload(
-            self._governed_write(
-                {
-                    "status": "noted",
-                    "source_path": str(result.source_path),
-                    "concept_path": str(result.concept_path) if result.concept_path else "",
-                },
-                area="knowledge",
-                action="knowledge.note_source",
-                target=request.title,
-                source_of_truth="managed-kb knowledge",
-            )
+            target=request.title,
         )
 
     def knowledge_add_concept_payload(self, request: AddConceptRequest) -> dict[str, Any]:
         workspace = self.runtime.require_workspace()
         result = KnowledgeModule(workspace).add_concept(request)
-        self._record_action(
-            area="knowledge",
+        return self._knowledge_write_payload(
+            {"status": "noted", "okf_concept": str(result.path)},
             action="knowledge.add_concept",
             summary=f"Added concept: {request.title}",
             metadata={"title": request.title, "topic": request.topic},
-        )
-        return self.runtime.scope_payload(
-            self._governed_write(
-                {"status": "noted", "okf_concept": str(result.path)},
-                area="knowledge",
-                action="knowledge.add_concept",
-                target=request.title,
-                source_of_truth="managed-kb knowledge",
-            )
+            target=request.title,
         )
 
     def knowledge_revise_payload(self, request: ReviseKnowledgeRequest) -> dict[str, Any]:
@@ -69,20 +53,12 @@ class _ManagedKnowledgeCapabilities(_Capability):
         title = str(
             doc.frontmatter.get("title") or doc.frontmatter.get("question") or result.path.stem
         )
-        self._record_action(
-            area="knowledge",
+        return self._knowledge_write_payload(
+            {"status": "revised", "path": str(result.path)},
             action="knowledge.revise",
             summary=f"Revised knowledge: {title}",
             metadata={"path": request.path, "title": title},
-        )
-        return self.runtime.scope_payload(
-            self._governed_write(
-                {"status": "revised", "path": str(result.path)},
-                area="knowledge",
-                action="knowledge.revise",
-                target=request.path,
-                source_of_truth="managed-kb knowledge",
-            )
+            target=request.path,
         )
 
     def knowledge_delete_payload(
@@ -95,59 +71,35 @@ class _ManagedKnowledgeCapabilities(_Capability):
         workspace = self.runtime.require_workspace()
         payload = KnowledgeModule(workspace).delete(path, confirm=confirm, reason=reason)
         title = str(payload.get("title") or path)
-        self._record_action(
-            area="knowledge",
+        return self._knowledge_write_payload(
+            payload,
             action="knowledge.delete",
             summary=f"Deleted knowledge: {title}" if confirm else f"Preview delete: {title}",
             metadata={"path": path, "title": title, "confirmed": str(confirm)},
-        )
-        return self.runtime.scope_payload(
-            self._governed_write(
-                payload,
-                area="knowledge",
-                action="knowledge.delete",
-                target=path,
-                source_of_truth="managed-kb knowledge",
-                confirmation_required=not confirm,
-            )
+            target=path,
+            confirmation_required=not confirm,
         )
 
     def knowledge_add_question_payload(self, request: AddQuestionRequest) -> dict[str, Any]:
         workspace = self.runtime.require_workspace()
         result = KnowledgeModule(workspace).add_question(request)
-        self._record_action(
-            area="knowledge",
+        return self._knowledge_write_payload(
+            {"status": "added", "okf_question": str(result.path)},
             action="knowledge.add_question",
             summary=f"Added question: {request.question}",
             metadata={"question": request.question, "topic": request.topic},
-        )
-        return self.runtime.scope_payload(
-            self._governed_write(
-                {"status": "added", "okf_question": str(result.path)},
-                area="knowledge",
-                action="knowledge.add_question",
-                target=request.question,
-                source_of_truth="managed-kb knowledge",
-            )
+            target=request.question,
         )
 
     def knowledge_add_entity_payload(self, request: AddEntityRequest) -> dict[str, Any]:
         workspace = self.runtime.require_workspace()
         result = KnowledgeModule(workspace).add_entity(request)
-        self._record_action(
-            area="knowledge",
+        return self._knowledge_write_payload(
+            {"status": "added", "okf_entity": str(result.path)},
             action="knowledge.add_entity",
             summary=f"Added entity: {request.name}",
             metadata={"name": request.name, "topic": request.topic, "kind": request.kind},
-        )
-        return self.runtime.scope_payload(
-            self._governed_write(
-                {"status": "added", "okf_entity": str(result.path)},
-                area="knowledge",
-                action="knowledge.add_entity",
-                target=request.name,
-                source_of_truth="managed-kb knowledge",
-            )
+            target=request.name,
         )
 
     def knowledge_promote_payload(
@@ -155,20 +107,12 @@ class _ManagedKnowledgeCapabilities(_Capability):
     ) -> dict[str, Any]:
         workspace = self.runtime.require_workspace()
         result = KnowledgeModule(workspace).promote_source(source, topic=topic, summary=summary)
-        self._record_action(
-            area="knowledge",
+        return self._knowledge_write_payload(
+            {"status": "promoted", "okf_concept": str(result.path)},
             action="knowledge.promote",
             summary=f"Promoted source: {source}",
             metadata={"source": source, "topic": topic},
-        )
-        return self.runtime.scope_payload(
-            self._governed_write(
-                {"status": "promoted", "okf_concept": str(result.path)},
-                area="knowledge",
-                action="knowledge.promote",
-                target=source,
-                source_of_truth="managed-kb knowledge",
-            )
+            target=source,
         )
 
     def knowledge_refresh_payload(
@@ -221,4 +165,32 @@ class _ManagedKnowledgeCapabilities(_Capability):
                 "count": len(rows),
                 "results": rows,
             }
+        )
+
+    def _knowledge_write_payload(
+        self,
+        payload: dict[str, Any],
+        *,
+        action: str,
+        summary: str,
+        metadata: dict[str, Any],
+        target: str,
+        source_of_truth: str = "managed-kb knowledge",
+        confirmation_required: bool = False,
+    ) -> dict[str, Any]:
+        self._record_action(
+            area="knowledge",
+            action=action,
+            summary=summary,
+            metadata=metadata,
+        )
+        return self.runtime.scope_payload(
+            self._governed_write(
+                payload,
+                area="knowledge",
+                action=action,
+                target=target,
+                source_of_truth=source_of_truth,
+                confirmation_required=confirmation_required,
+            )
         )

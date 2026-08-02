@@ -120,7 +120,8 @@ class DashboardModule:
         metadata: dict[str, Any] | None = None,
         visible: bool = True,
     ) -> None:
-        self._record_usage_event(action, summary, metadata or {})
+        raw_metadata = metadata or {}
+        self._record_usage_event(action, summary, raw_metadata)
         log_path = self.home.paths().logs / "activity.jsonl"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         event = {
@@ -128,12 +129,21 @@ class DashboardModule:
             "area": "dashboard",
             "action": action,
             "summary": summary,
-            "metadata": metadata or {},
+            "metadata": self._activity_metadata(action, raw_metadata),
             "visible": visible,
             "updated_at": now_iso(),
         }
         with log_path.open("a", encoding="utf-8") as file:
             file.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+    @staticmethod
+    def _activity_metadata(action: str, metadata: dict[str, Any]) -> dict[str, Any]:
+        if action != "dashboard.search":
+            return metadata
+        return {
+            "query_length": max(int(metadata.get("query_length") or 0), 0),
+            "result_count": max(int(metadata.get("result_count") or 0), 0),
+        }
 
     def _record_usage_event(
         self,
@@ -145,24 +155,21 @@ class DashboardModule:
         if action == "dashboard.search":
             result_count = int(metadata.get("result_count") or 0)
             query_length = int(metadata.get("query_length") or 0)
-            query_preview = str(metadata.get("query_preview") or "").strip()
             metrics: dict[str, Any] = {
                 "query_length": max(query_length, 0),
                 "result_count": max(result_count, 0),
             }
-            if query_preview:
-                metrics["query_preview"] = query_preview
             recorder.record_usage(
                 surface="dashboard",
                 area="search",
                 action="search.run",
-                summary=f"Search: {query_preview}" if query_preview else summary,
+                summary=summary,
                 outcome="empty" if result_count == 0 else "success",
                 metrics=metrics,
                 metadata={"filters": {}},
                 privacy={
                     "query_stored": False,
-                    "query_preview_stored": bool(query_preview),
+                    "query_preview_stored": False,
                     "content_stored": False,
                 },
             )
