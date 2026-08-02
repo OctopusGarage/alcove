@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from alcove.radars.models import RadarDefinition, RadarSource
 from alcove.radars.sources import fetch_source, registered_adapters
 
@@ -71,6 +73,28 @@ def test_rss_adapter_reads_local_rss_and_atom_feeds(tmp_path) -> None:
     assert rss_items[0].summary == "Summary Source"
     assert atom_items[0].title == "Atom News"
     assert atom_items[0].url == "https://example.test/atom"
+
+
+def test_rss_adapter_rejects_entity_expansion_xml(tmp_path) -> None:
+    feed = tmp_path / "malicious.xml"
+    feed.write_text(
+        """<?xml version="1.0"?>
+<!DOCTYPE rss [
+  <!ENTITY expand "expanded">
+]>
+<rss version="2.0"><channel>
+<item><title>&expand;</title><link>https://example.test/entity</link></item>
+</channel></rss>""",
+        encoding="utf-8",
+    )
+    definition = RadarDefinition(
+        id="news",
+        name="News",
+        sources=[RadarSource(id="feed", adapter="rss", params={"url": feed.as_uri()})],
+    )
+
+    with pytest.raises(Exception, match="EntitiesForbidden"):
+        fetch_source(definition, definition.sources[0])
 
 
 def test_generic_html_adapter_extracts_matching_links(tmp_path) -> None:

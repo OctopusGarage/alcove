@@ -4,7 +4,8 @@ from collections.abc import Sequence
 from html import unescape
 from html.parser import HTMLParser
 from urllib.request import Request, urlopen
-from xml.etree import ElementTree
+
+from defusedxml import ElementTree
 
 from alcove.radars.models import RadarDefinition, RadarItem, RadarSource
 
@@ -23,7 +24,7 @@ class RssAdapter:
         request = Request(url, headers={"User-Agent": "AlcoveRadar/0.1"})  # noqa: S310
         with urlopen(request, timeout=20) as response:  # noqa: S310
             raw = response.read(2_000_000)
-        root = ElementTree.fromstring(raw)  # noqa: S314
+        root = ElementTree.fromstring(raw)
         nodes = root.findall(".//item") or root.findall(f".//{ATOM_NS}entry")
         items: list[RadarItem] = []
         limit = source.limit if source.limit > 0 else len(nodes)
@@ -62,7 +63,7 @@ def _first_text(node: ElementTree.Element, names: Sequence[str]) -> str:
     for name in names:
         child = node.find(name)
         if child is not None and child.text:
-            return child.text.strip()
+            return str(child.text).strip()
     return ""
 
 
