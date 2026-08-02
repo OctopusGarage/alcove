@@ -81,7 +81,8 @@ class ServiceModule:
         runtime = AlcoveRuntime.from_modules(home=self.home)
         app = AlcoveApplication(runtime)
         task_module = TasksModule(home=self.home)
-        tasks = task_module.routine_materialize_due(today=today or None)
+        task_materialization = task_module.routine_materialize_due_payload(today=today or None)
+        tasks = task_materialization["items"]
         if tasks:
             mark_publisher_source_dirty(self.home, "tasks")
         task_notifications = task_module.run_due_notifications(today=today or None)
@@ -125,7 +126,12 @@ class ServiceModule:
         payload = {
             "status": "ok",
             "home": compact_user_path(self.home.root),
-            "tasks": {"materialized": len(tasks), "items": [task.id for task in tasks]},
+            "tasks": {
+                "materialized": len(tasks),
+                "items": [task.id for task in tasks],
+                "errors": task_materialization.get("errors", 0),
+                "error_items": task_materialization.get("error_items", []),
+            },
             "task_notifications": task_notifications,
             "connectors": connector_payload,
             "watchers": watchers_payload,

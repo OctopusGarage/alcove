@@ -195,6 +195,53 @@ sources:
     assert (home.root / "dashboard" / "snapshot.json").is_file()
 
 
+def test_service_tick_tolerates_invalid_persisted_routine_schedule(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    tasks_path = home.paths().tasks / "tasks.json"
+    tasks_path.parent.mkdir(parents=True, exist_ok=True)
+    tasks_path.write_text(
+        json.dumps(
+            {
+                "ideas": [],
+                "tasks": [],
+                "routines": [
+                    {
+                        "id": "bad-routine",
+                        "title": "Bad Routine",
+                        "status": "active",
+                        "priority": "medium",
+                        "next_due": "2026-07-01",
+                        "schedule": {"frequency": "weekly", "weekdays": []},
+                        "created_at": "2026-07-01T00:00:00+00:00",
+                        "updated_at": "2026-07-01T00:00:00+00:00",
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["tasks"]["materialized"] == 0
+    assert result["tasks"]["errors"] == 1
+    assert result["tasks"]["error_items"][0]["id"] == "bad-routine"
+    assert "weekly schedule requires weekdays" in result["tasks"]["error_items"][0]["error"]
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
 def test_service_tick_tolerates_malformed_connector_source_yaml(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     source_path = home.root / "connectors" / "github-stars" / "sources" / "broken.yml"
@@ -418,6 +465,31 @@ def test_service_tick_sends_configured_task_digest(tmp_path, monkeypatch):
 
     assert result["task_notifications"]["sent"] == 1
     assert "weekly planner digest" in sent[0]
+
+
+def test_service_tick_tolerates_malformed_task_notification_yaml(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    notifications_path = home.paths().tasks / "notifications.yml"
+    notifications_path.parent.mkdir(parents=True, exist_ok=True)
+    notifications_path.write_text("digests: [", encoding="utf-8")
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["task_notifications"]["status"] == "error"
+    assert result["task_notifications"]["sent"] == 0
+    assert "notifications.yml" in result["task_notifications"]["error"]
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
 
 
 def test_service_tick_sends_configured_task_digest_to_multiple_sinks(tmp_path, monkeypatch):

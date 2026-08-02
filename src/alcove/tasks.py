@@ -307,50 +307,67 @@ class TasksModule:
         return routine
 
     def routine_list(self, status: str = "active") -> list[Routine]:
-        return [
-            self._routine(item)
-            for item in self._load()["routines"]
-            if not status or item.get("status") == status
-        ]
+        routines = []
+        for item in self._load()["routines"]:
+            if status and item.get("status") != status:
+                continue
+            try:
+                routines.append(self._routine(item))
+            except ValueError:
+                continue
+        return routines
 
     def routine_materialize_due(self, today: str | date | None = None) -> list[Task]:
+        return self.routine_materialize_due_payload(today=today)["items"]
+
+    def routine_materialize_due_payload(self, today: str | date | None = None) -> dict[str, Any]:
         with self._transaction() as data:
             current = self._coerce_date(today) if today is not None else date.today()
             timestamp = now_iso()
             created: list[Task] = []
+            errors: list[dict[str, str]] = []
             for routine in data["routines"]:
                 if routine.get("status", "active") != "active":
                     continue
-                next_due = self._parse_date(str(routine.get("next_due") or ""))
-                if next_due > current:
-                    continue
-                due = next_due
-                due_text = due.isoformat()
-                if not self._routine_occurrence_exists(
-                    data, str(routine.get("id") or ""), due_text
-                ):
-                    task = self._new_task(
-                        data,
-                        title=str(routine.get("title") or ""),
-                        notes=str(routine.get("notes") or ""),
-                        tags=[str(tag) for tag in self._list(routine.get("tags"))],
-                        priority=str(routine.get("priority") or "medium"),
-                        due=due_text,
-                        timestamp=timestamp,
+                try:
+                    next_due = self._parse_date(str(routine.get("next_due") or ""))
+                    schedule = RoutineSchedulePlan.from_item(routine)
+                    if next_due > current:
+                        continue
+                    due = next_due
+                    due_text = due.isoformat()
+                    if not self._routine_occurrence_exists(
+                        data, str(routine.get("id") or ""), due_text
+                    ):
+                        task = self._new_task(
+                            data,
+                            title=str(routine.get("title") or ""),
+                            notes=str(routine.get("notes") or ""),
+                            tags=[str(tag) for tag in self._list(routine.get("tags"))],
+                            priority=str(routine.get("priority") or "medium"),
+                            due=due_text,
+                            timestamp=timestamp,
+                        )
+                        task_data = {**asdict(task), "source_routine_id": routine.get("id")}
+                        data["tasks"].append(task_data)
+                        generated = self._list(routine.get("generated_task_ids"))
+                        generated.append(task_data["id"])
+                        routine["generated_task_ids"] = generated
+                        created.append(self._task(task_data))
+                    while next_due <= current:
+                        next_due = schedule.advance_after(next_due)
+                    routine["next_due"] = next_due.isoformat()
+                    routine["last_materialized_due"] = due_text
+                    routine["updated_at"] = timestamp
+                except ValueError as exc:
+                    errors.append(
+                        {
+                            "id": str(routine.get("id") or ""),
+                            "title": str(routine.get("title") or ""),
+                            "error": str(exc),
+                        }
                     )
-                    task_data = {**asdict(task), "source_routine_id": routine.get("id")}
-                    data["tasks"].append(task_data)
-                    generated = self._list(routine.get("generated_task_ids"))
-                    generated.append(task_data["id"])
-                    routine["generated_task_ids"] = generated
-                    created.append(self._task(task_data))
-                schedule = RoutineSchedulePlan.from_item(routine)
-                while next_due <= current:
-                    next_due = schedule.advance_after(next_due)
-                routine["next_due"] = next_due.isoformat()
-                routine["last_materialized_due"] = due_text
-                routine["updated_at"] = timestamp
-        return created
+        return {"items": created, "errors": len(errors), "error_items": errors}
 
     def routine_edit(
         self,
@@ -475,7 +492,17 @@ class TasksModule:
         reference_now = now or datetime.now().astimezone()
         current = self._coerce_date(today) if today is not None else reference_now.date()
         current_time = None if today is not None else reference_now.time()
-        config = self._load_notification_config()
+        try:
+            config = self._load_notification_config()
+        except ValueError as exc:
+            return {
+                "status": "error",
+                "sent": 0,
+                "skipped": 0,
+                "digests": [],
+                "skipped_items": [],
+                "error": str(exc),
+            }
         digests = config.get("digests") if isinstance(config.get("digests"), dict) else {}
         state = self._load_notification_state()
         sent: list[dict[str, Any]] = []
@@ -629,7 +656,12 @@ class TasksModule:
     def _load_notification_config(self) -> dict[str, Any]:
         if not self.notification_config_path.is_file():
             return {}
-        payload = yaml.safe_load(self.notification_config_path.read_text(encoding="utf-8"))
+        try:
+            payload = yaml.safe_load(self.notification_config_path.read_text(encoding="utf-8"))
+        except yaml.YAMLError as exc:
+            raise ValueError(
+                f"Invalid task notification config: {self.notification_config_path}"
+            ) from exc
         return payload if isinstance(payload, dict) else {}
 
     def _load_notification_state(self) -> dict[str, str]:
