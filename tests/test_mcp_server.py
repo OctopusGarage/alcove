@@ -47,6 +47,7 @@ from alcove.mcp_server import (
     task_edit_tool,
     task_list_tool,
 )
+from alcove.mcp_toolsets import all_mcp_tools
 from alcove.mounts import AddMountRequest, MountsModule
 from alcove.tasks import AddIdeaRequest, TasksModule
 from alcove.usage import UsageRecorder
@@ -381,6 +382,15 @@ def test_mcp_server_registers_v1_tools(tmp_path):
         "alcove_export_kb",
         "alcove_export_all",
     }
+
+
+def test_mcp_full_toolset_matches_inventory(tmp_path):
+    Workspace.init(tmp_path)
+    mcp = create_mcp_server(str(tmp_path))
+
+    tools = {tool.name for tool in asyncio.run(mcp.list_tools())}
+
+    assert tools == all_mcp_tools()
 
 
 def test_mcp_server_lite_toolset_keeps_global_common_tools_small(tmp_path):
