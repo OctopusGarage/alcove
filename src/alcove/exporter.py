@@ -36,6 +36,7 @@ class ExportModule:
 
     def export_global(self, output_dir: Path | str) -> dict[str, object]:
         output = Path(output_dir).expanduser().resolve()
+        self._validate_output(output, self.home.root, GLOBAL_EXPORT_ENTRIES)
         output.mkdir(parents=True, exist_ok=True)
         copied = self._copy_entries(self.home.root, output, GLOBAL_EXPORT_ENTRIES)
         entry_details = self._entry_details(output, copied)
@@ -76,6 +77,7 @@ class ExportModule:
     ) -> dict[str, object]:
         workspace = Workspace.discover(workspace_root)
         output = Path(output_dir).expanduser().resolve()
+        self._validate_output(output, workspace.root, KB_EXPORT_ENTRIES)
         output.mkdir(parents=True, exist_ok=True)
         copied = self._copy_entries(workspace.root, output, KB_EXPORT_ENTRIES)
         entry_details = self._entry_details(output, copied)
@@ -169,6 +171,22 @@ class ExportModule:
                 shutil.copy2(source, dest)
             copied.append(name)
         return copied
+
+    def _validate_output(
+        self,
+        output: Path,
+        source_root: Path,
+        entries: tuple[str, ...],
+    ) -> None:
+        for name in entries:
+            source = (source_root / name).resolve(strict=False)
+            if not source.is_dir():
+                continue
+            try:
+                output.relative_to(source)
+            except ValueError:
+                continue
+            raise ValueError(f"Export output directory is inside exported source: {source.name}")
 
     def _entry_details(self, output: Path, entries: list[str]) -> list[dict[str, Any]]:
         return [

@@ -181,16 +181,26 @@ class AutomationsModule:
         return {"status": "added", "job": job.as_dict()}
 
     def list_jobs(self, *, status: str = "active") -> dict[str, Any]:
-        jobs = [job.as_dict() for job in self._load_jobs() if (not status or job.status == status)]
-        return {"count": len(jobs), "jobs": jobs}
+        loaded, errors = self._load_job_records()
+        jobs = [job.as_dict() for job in loaded if (not status or job.status == status)]
+        return {"count": len(jobs), "jobs": jobs, "errors": len(errors), "error_items": errors}
 
     def run_due(self, *, now: str | None = None, allow_agent: bool = False) -> dict[str, Any]:
         timestamp = now or now_iso()
-        results = []
+        results: list[dict[str, Any]] = []
         ran = 0
         skipped = 0
-        failed = 0
-        for job in self._enabled_jobs():
+        loaded, load_errors = self._load_job_records()
+        failed = len(load_errors)
+        results.extend(
+            {
+                "id": item["id"],
+                "status": "failed",
+                "error": item["error"],
+            }
+            for item in load_errors
+        )
+        for job in self._enabled_jobs(loaded):
             if not self._is_due(job, timestamp):
                 skipped += 1
                 results.append({"id": job.id, "status": "skipped", "reason": "not_due"})
@@ -364,9 +374,10 @@ class AutomationsModule:
             check=False,
         )
 
-    def _enabled_jobs(self) -> list[AutomationJob]:
+    def _enabled_jobs(self, jobs: list[AutomationJob] | None = None) -> list[AutomationJob]:
+        loaded = jobs if jobs is not None else self._load_jobs()
         return sorted(
-            [job for job in self._load_jobs() if job.enabled and job.status == "active"],
+            [job for job in loaded if job.enabled and job.status == "active"],
             key=lambda item: (item.order, item.id),
         )
 
@@ -380,14 +391,25 @@ class AutomationsModule:
         return current >= checked_at + timedelta(hours=max(job.ttl_hours, 1))
 
     def _load_jobs(self) -> list[AutomationJob]:
+        return self._load_job_records()[0]
+
+    def _load_job_records(self) -> tuple[list[AutomationJob], list[dict[str, str]]]:
         if not self.jobs_root.is_dir():
-            return []
+            return [], []
         jobs = []
+        errors = []
         for path in sorted(self.jobs_root.glob("*.yml")):
-            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            try:
+                payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except (OSError, yaml.YAMLError) as exc:
+                errors.append({"id": path.stem, "error": f"Invalid automation job: {path}: {exc}"})
+                continue
             if isinstance(payload, dict):
-                jobs.append(self._job(payload))
-        return jobs
+                try:
+                    jobs.append(self._job(payload))
+                except ValueError as exc:
+                    errors.append({"id": path.stem, "error": str(exc)})
+        return jobs, errors
 
     def _get_job(self, job_id: str) -> AutomationJob:
         slug = normalize_slug(job_id)

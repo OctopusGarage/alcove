@@ -2681,6 +2681,32 @@ def test_cli_export_global_home_copies_user_state(tmp_path, capsys):
     assert payload["manifest_excerpt"]["entry_details"][0]["sha256"]
 
 
+def test_cli_export_global_rejects_output_inside_exported_entry(tmp_path, capsys):
+    home_root = tmp_path / "home"
+    main(
+        [
+            "pin",
+            "--home",
+            str(home_root),
+            "add",
+            "Recursive Pin",
+            "--description",
+            "Do not recursively export this pin.",
+            "--json",
+        ]
+    )
+    capsys.readouterr()
+
+    output_dir = home_root / "pins" / "backup"
+    code = main(["export", "--home", str(home_root), "global", str(output_dir), "--json"])
+    captured = capsys.readouterr()
+
+    assert code == 2
+    payload = json.loads(captured.out)
+    assert "inside exported source" in payload["error"]["message"]
+    assert not (output_dir / "pins" / "recursive-pin.md").exists()
+
+
 def test_cli_export_kb_and_all_copy_managed_kb_without_legacy_dirs(tmp_path, capsys):
     home_root = tmp_path / "home"
     kb_root = tmp_path / "kb"

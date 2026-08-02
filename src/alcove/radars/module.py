@@ -237,9 +237,18 @@ class RadarModule:
         current_time = current_time or datetime.now(UTC)
         ran = 0
         skipped = 0
-        errors = 0
+        definitions, load_errors = self._load_definition_records()
+        errors = len(load_errors)
         rows: List[dict[str, Any]] = []
-        for definition in self._load_definitions():
+        rows.extend(
+            {
+                "id": item["id"],
+                "status": "error",
+                "error": item["error"],
+            }
+            for item in load_errors
+        )
+        for definition in definitions:
             if definition.status != "active" or not definition.schedule.enabled:
                 skipped += 1
                 continue
@@ -286,14 +295,27 @@ class RadarModule:
         return Path(__file__).resolve().parent / "presets"
 
     def _load_definitions(self) -> List[RadarDefinition]:
+        return self._load_definition_records()[0]
+
+    def _load_definition_records(self) -> tuple[List[RadarDefinition], List[dict[str, str]]]:
         if not self.definitions_root.is_dir():
-            return []
+            return [], []
         definitions = []
+        errors = []
         for path in sorted(self.definitions_root.glob("*.yml")):
-            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            try:
+                payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except (OSError, yaml.YAMLError) as exc:
+                errors.append(
+                    {"id": path.stem, "error": f"Invalid radar definition: {path}: {exc}"}
+                )
+                continue
             if isinstance(payload, dict):
-                definitions.append(self._definition(payload))
-        return definitions
+                try:
+                    definitions.append(self._definition(payload))
+                except ValueError as exc:
+                    errors.append({"id": path.stem, "error": str(exc)})
+        return definitions, errors
 
     def _definition(self, payload: dict[str, Any]) -> RadarDefinition:
         sources_payload = self._list_field(payload, "sources", "sources must be a list")
