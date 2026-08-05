@@ -402,6 +402,85 @@ def test_mcp_server_registers_v1_tools(tmp_path):
     }
 
 
+def test_mcp_radar_proposal_tools_share_governed_lifecycle(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    day = "2026-08-05"
+    radar_root = home.root / "radars"
+    run_path = radar_root / "runs" / "mcp" / day / "run.json"
+    scored_path = radar_root / "cache" / "mcp" / day / "scored.json"
+    for path in (run_path, scored_path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    run_path.write_text(
+        json.dumps(
+            {
+                "id": "mcp",
+                "run_id": "mcp:2026-08-05",
+                "date": day,
+                "reports": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    scored_path.write_text(
+        json.dumps(
+            [
+                {
+                    "title": "MCP proposal signal",
+                    "url": "https://example.test/mcp-proposal",
+                    "summary": "A test signal.",
+                    "included": True,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    mcp = create_mcp_server(default_home=str(home.root))
+
+    generated = asyncio.run(
+        mcp.call_tool(
+            "alcove_radar_proposal_generate",
+            {"radar_id": "mcp", "run_day": day, "action_type": "idea"},
+        )
+    ).structured_content
+    proposal_id = generated["proposals"][0]["id"]
+    assert (
+        asyncio.run(
+            mcp.call_tool("alcove_radar_proposal_get", {"proposal_id": proposal_id})
+        ).structured_content["id"]
+        == proposal_id
+    )
+    assert (
+        asyncio.run(
+            mcp.call_tool("alcove_radar_proposal_list", {"status": "pending"})
+        ).structured_content["count"]
+        == 1
+    )
+
+    accepted = asyncio.run(
+        mcp.call_tool("alcove_radar_proposal_accept", {"proposal_id": proposal_id})
+    ).structured_content
+    repeated = asyncio.run(
+        mcp.call_tool("alcove_radar_proposal_accept", {"proposal_id": proposal_id})
+    ).structured_content
+    assert accepted["target"]["type"] == "idea"
+    assert repeated["idempotent"] is True
+
+    for action, tool_name in (
+        ("task", "alcove_radar_proposal_defer"),
+        ("prompt", "alcove_radar_proposal_reject"),
+    ):
+        proposal = asyncio.run(
+            mcp.call_tool(
+                "alcove_radar_proposal_generate",
+                {"radar_id": "mcp", "run_day": day, "action_type": action},
+            )
+        ).structured_content["proposals"][0]
+        resolved = asyncio.run(
+            mcp.call_tool(tool_name, {"proposal_id": proposal["id"]})
+        ).structured_content
+        assert resolved["status"] in {"deferred", "rejected"}
+
+
 def test_mcp_full_toolset_matches_inventory(tmp_path):
     Workspace.init(tmp_path)
     mcp = create_mcp_server(str(tmp_path))
