@@ -25,13 +25,19 @@ class _GlobalRoutineCapabilities(_GlobalPlannerPayloadSupport):
         return self._planner_list_payload("routines", self._tasks_module().routine_list(status))
 
     def routine_materialize_due_payload(self, today: str = "") -> dict[str, Any]:
-        created = self._tasks_module().routine_materialize_due(today=today or None)
+        materialization = self._tasks_module().routine_materialize_due_payload(today=today or None)
+        created = materialization["items"]
         return self._planner_write_payload(
-            {"status": "materialized", "created": self._planner_items(created)},
+            {
+                "status": "materialized",
+                "created": self._planner_items(created),
+                "errors": materialization["errors"],
+                "error_items": materialization["error_items"],
+            },
             action="routine.materialize_due",
             target=today or "due",
             activity_summary="Materialized due routines",
-            activity_metrics={"created": len(created)},
+            activity_metrics={"created": len(created), "errors": materialization["errors"]},
             activity_metadata={"today": today},
         )
 
