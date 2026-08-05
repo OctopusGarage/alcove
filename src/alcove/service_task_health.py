@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 
-TASK_HEALTH_NOTIFICATION_VERSION = 2
+TASK_HEALTH_NOTIFICATION_VERSION = 3
 
 
 def build_task_health_summary(payload: dict[str, Any]) -> dict[str, Any]:
@@ -89,6 +89,16 @@ def task_health_notification_was_sent_today(value: Any) -> bool:
     )
 
 
+def task_health_notification_should_send(value: Any, task_health: dict[str, Any]) -> bool:
+    if not task_health_notification_was_sent_today(value):
+        return True
+    if not isinstance(value, dict):
+        return True
+    previous_status = str(value.get("task_health_status") or "")
+    current_status = str(task_health.get("status") or "unknown")
+    return bool(previous_status and current_status and previous_status != current_status)
+
+
 def _module_health(
     *,
     module: str,
@@ -99,6 +109,18 @@ def _module_health(
     status = str(payload.get("status") or "unknown")
     error_count = _int_value(payload.get(error_key))
     task_status = "skipped" if status == "skipped" else "failed" if error_count > 0 else "success"
+    if (
+        module == "radars"
+        and task_status == "success"
+        and _int_value(payload.get("ran")) == 0
+        and _int_value(payload.get("skipped")) > 0
+    ):
+        task_status = "skipped"
+    skipped_without_success = (
+        _skipped_radars_without_last_success(payload) if module == "radars" else 0
+    )
+    if skipped_without_success:
+        task_status = "failed"
     summary = " ".join(f"{key}={_int_value(payload.get(key))}" for key in metrics)
     record: dict[str, Any] = {
         "module": module,
@@ -106,7 +128,12 @@ def _module_health(
         "summary": summary,
     }
     if task_status == "failed":
-        record["error"] = f"{module} reported {error_key}={error_count}"
+        if skipped_without_success:
+            record["error"] = (
+                f"radars skipped without last successful run: {skipped_without_success}"
+            )
+        else:
+            record["error"] = f"{module} reported {error_key}={error_count}"
     return record
 
 
@@ -142,14 +169,14 @@ def _task_health_check_line(check: dict[str, Any]) -> str:
         "failed": "异常",
         "skipped": "跳过",
     }.get(status, status or "未知")
-    if status == "skipped":
-        return f"- {module}：{status_label}"
-
     if module_key == "radars":
         return (
             f"- {module}：{status_label} · "
             f"{_radar_task_health_summary(status, str(check.get('summary') or ''))}"
         )
+
+    if status == "skipped":
+        return f"- {module}：{status_label}"
 
     detail = _task_health_summary_text(str(check.get("summary") or ""))
     return f"- {module}：{status_label}{f' · {detail}' if detail else ''}"
@@ -193,8 +220,11 @@ def _radar_task_health_summary(status: str, summary: str) -> str:
     values = _task_health_summary_values(summary)
     errors = _int_value(values.get("errors"))
     ran = _int_value(values.get("ran"))
-    last_run = "上次运行异常" if status == "failed" or errors > 0 else "上次运行成功"
-    return f"{last_run}；本轮运行 {ran} 个；错误 {errors} 个"
+    skipped = _int_value(values.get("skipped"))
+    if status == "skipped":
+        return f"本轮未执行；本轮运行 {ran} 个；跳过 {skipped} 个；错误 {errors} 个"
+    run_state = "本轮运行异常" if status == "failed" or errors > 0 else "本轮运行成功"
+    return f"{run_state}；本轮运行 {ran} 个；错误 {errors} 个"
 
 
 def _task_health_summary_values(summary: str) -> dict[str, str]:
@@ -205,6 +235,22 @@ def _task_health_summary_values(summary: str) -> dict[str, str]:
             continue
         values[key] = value
     return values
+
+
+def _skipped_radars_without_last_success(payload: dict[str, Any]) -> int:
+    rows = payload.get("radars")
+    if not isinstance(rows, list):
+        return 0
+    count = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if row.get("status") != "skipped":
+            continue
+        if row.get("last_run_success") is not False:
+            continue
+        count += 1
+    return count
 
 
 def _int_value(value: Any) -> int:

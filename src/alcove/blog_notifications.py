@@ -5,7 +5,12 @@ from pathlib import Path
 import re
 from typing import Any
 
-from alcove.notifications import send_telegram_message, telegram_credential
+from alcove.notifications import (
+    send_feishu_message,
+    send_tcb_notification,
+    send_telegram_message,
+    telegram_credential,
+)
 
 
 class BlogNotifier:
@@ -21,17 +26,30 @@ class BlogNotifier:
         captures: list[dict[str, Any]],
         summary: str,
     ) -> dict[str, Any]:
-        if source.notify.channel != "telegram":
+        if source.notify.channel not in {"telegram", "feishu", "lark", "tcb", "tmux_claude_bot"}:
             return {"status": "skipped", "reason": "unsupported notification channel"}
-        if not self._has_telegram_credentials():
+        if source.notify.channel == "telegram" and not self._has_telegram_credentials():
             return {"status": "skipped", "reason": "telegram token or chat id missing"}
 
         statuses = []
         for article, capture in zip(articles, captures, strict=True):
-            status = send_telegram_message(
-                home=self.home,
-                text=self.article_message(source, article, capture, summary=summary),
-            )
+            text = self.article_message(source, article, capture, summary=summary)
+            if source.notify.channel == "feishu":
+                status = send_feishu_message(
+                    home=self.home,
+                    sink={},
+                    title=f"Blog Monitor: {source.name}",
+                    text=text,
+                )
+            elif source.notify.channel in {"lark", "tcb", "tmux_claude_bot"}:
+                status = send_tcb_notification(
+                    sink=self._tcb_sink(source),
+                    title=f"Blog Monitor: {source.name}",
+                    text=text,
+                    attachments=[],
+                )
+            else:
+                status = send_telegram_message(home=self.home, text=text)
             status.update(
                 {
                     "source_id": source.id,
@@ -51,7 +69,7 @@ class BlogNotifier:
 
     def notify_failure(self, source: Any, *, stage: str, error: str) -> dict[str, Any]:
         retry_command = self.failure_retry_command(source)
-        if source.notify.channel != "telegram":
+        if source.notify.channel not in {"telegram", "feishu", "lark", "tcb", "tmux_claude_bot"}:
             return {
                 "status": "skipped",
                 "reason": "unsupported notification channel",
@@ -60,7 +78,7 @@ class BlogNotifier:
                 "error": error,
                 "retry_command": retry_command,
             }
-        if not self._has_telegram_credentials():
+        if source.notify.channel == "telegram" and not self._has_telegram_credentials():
             return {
                 "status": "skipped",
                 "reason": "telegram token or chat id missing",
@@ -69,10 +87,23 @@ class BlogNotifier:
                 "error": error,
                 "retry_command": retry_command,
             }
-        result = send_telegram_message(
-            home=self.home,
-            text=self.failure_message(source, stage=stage, error=error),
-        )
+        text = self.failure_message(source, stage=stage, error=error)
+        if source.notify.channel == "feishu":
+            result = send_feishu_message(
+                home=self.home,
+                sink={},
+                title=f"Blog Monitor Failed: {source.name}",
+                text=text,
+            )
+        elif source.notify.channel in {"lark", "tcb", "tmux_claude_bot"}:
+            result = send_tcb_notification(
+                sink=self._tcb_sink(source),
+                title=f"Blog Monitor Failed: {source.name}",
+                text=text,
+                attachments=[],
+            )
+        else:
+            result = send_telegram_message(home=self.home, text=text)
         return {
             **result,
             "source_id": source.id,
@@ -130,6 +161,14 @@ class BlogNotifier:
         token = self.telegram_credential("ALCOVE_TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_TOKEN")
         chat_id = self.telegram_credential("ALCOVE_TELEGRAM_CHAT_ID", "TELEGRAM_CHAT_ID")
         return bool(token and chat_id)
+
+    def _tcb_sink(self, source: Any) -> dict[str, Any]:
+        channel = str(source.notify.channel or "").strip()
+        if channel == "lark":
+            return {"type": "tcb", "channel": "lark"}
+        if channel == "tmux_claude_bot":
+            return {"type": "tmux_claude_bot"}
+        return {"type": "tcb"}
 
 
 def captured_article_summary(capture: dict[str, Any], max_chars: int = 1200) -> str:

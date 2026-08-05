@@ -6,6 +6,7 @@ import json
 import pytest
 import yaml
 
+import alcove.blog_notifications as blog_notifications
 from alcove.blog_discovery import _candidate_sitemap_urls
 import alcove.notifications as notifications
 from alcove.blog_monitor import BlogArticle, BlogMonitorModule
@@ -203,6 +204,78 @@ def test_blog_notify_sends_title_url_and_captured_summary(tmp_path, monkeypatch)
     assert "Second useful article" in sent_payloads[0]["text"]
     assert "https://example.com/blog/two" in sent_payloads[0]["text"]
     assert "This article explains practical monitoring improvements." in sent_payloads[0]["text"]
+
+
+def test_blog_notify_sends_new_article_to_lark_via_tcb(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    kb_root = tmp_path / "kb"
+    kb_root.mkdir()
+    home.register_knowledge_base("social_media_posts", kb_root)
+    page = tmp_path / "blog.html"
+    _write_html(page, [("https://example.com/blog/one", "First useful article")])
+    module = BlogMonitorModule(home)
+    module.add(
+        name="Example Blog",
+        url=page.as_uri(),
+        source_id="example",
+        link_pattern="/blog/",
+        capture_enabled=True,
+        kb="social_media_posts",
+        inbox_path="inbox/openai",
+        notify_enabled=True,
+    )
+    source_path = home.root / "blog-monitor/sources/example.yml"
+    source_payload = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    source_payload["notify"]["channel"] = "lark"
+    source_path.write_text(yaml.safe_dump(source_payload, sort_keys=False), encoding="utf-8")
+    module.seed(source_id="example")
+    _write_html(
+        page,
+        [
+            ("https://example.com/blog/one", "First useful article"),
+            ("https://example.com/blog/two", "Second useful article"),
+        ],
+    )
+    captured_dir = kb_root / "inbox/openai/second-useful-article"
+    captured_dir.mkdir(parents=True)
+    (captured_dir / "summary.md").write_text(
+        "# Summary\n\nThis article explains practical monitoring improvements.\n",
+        encoding="utf-8",
+    )
+
+    def fake_capture(source, article: BlogArticle):
+        return {
+            "status": "captured",
+            "adapter": "clipsmith",
+            "inbox_path": str(captured_dir),
+        }
+
+    sent_payloads: list[dict] = []
+
+    def fake_tcb_notify(*, sink, title, text, attachments):
+        sent_payloads.append(
+            {"sink": sink, "title": title, "text": text, "attachments": attachments}
+        )
+        return {"status": "sent", "deliveries": [{"channel": "lark", "ok": True}]}
+
+    monkeypatch.setattr(module, "_capture_article", fake_capture)
+    monkeypatch.setattr(blog_notifications, "send_tcb_notification", fake_tcb_notify)
+
+    result = module.check(source_id="example")
+
+    row = result["sources"][0]
+    assert row["notify"]["status"] == "sent"
+    assert row["notify"]["messages"][0]["source_id"] == "example"
+    assert row["notify"]["messages"][0]["article_title"] == "Second useful article"
+    assert len(sent_payloads) == 1
+    assert sent_payloads[0]["sink"] == {"type": "tcb", "channel": "lark"}
+    assert sent_payloads[0]["title"] == "Blog Monitor: Example Blog"
+    assert sent_payloads[0]["attachments"] == []
+    text = sent_payloads[0]["text"]
+    assert "Blog Monitor: Example Blog" in text
+    assert "Second useful article" in text
+    assert "https://example.com/blog/two" in text
+    assert "This article explains practical monitoring improvements." in text
 
 
 def test_blog_notify_reads_telegram_credentials_from_alcove_env_file(tmp_path, monkeypatch):
@@ -676,6 +749,55 @@ def test_blog_discovery_failure_marks_attention_and_sends_alert(tmp_path, monkey
     payload = json.loads(run_files[0].read_text(encoding="utf-8"))
     assert payload["error"] == "blocked by challenge"
     assert payload["stage"] == "discovery"
+
+
+def test_blog_discovery_failure_sends_lark_alert_via_tcb(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    page = tmp_path / "blog.html"
+    _write_html(page, [("https://example.com/blog/one", "First useful article")])
+    module = BlogMonitorModule(home)
+    module.add(
+        name="Example Blog",
+        url=page.as_uri(),
+        source_id="example",
+        link_pattern="/blog/",
+        notify_enabled=True,
+    )
+    source_path = home.root / "blog-monitor/sources/example.yml"
+    source_payload = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    source_payload["notify"]["channel"] = "lark"
+    source_path.write_text(yaml.safe_dump(source_payload, sort_keys=False), encoding="utf-8")
+    sent_payloads: list[dict] = []
+
+    def fake_tcb_notify(*, sink, title, text, attachments):
+        sent_payloads.append(
+            {"sink": sink, "title": title, "text": text, "attachments": attachments}
+        )
+        return {"status": "sent", "deliveries": [{"channel": "lark", "ok": True}]}
+
+    monkeypatch.setattr(
+        module,
+        "_discover",
+        lambda _source: (_ for _ in ()).throw(RuntimeError("blocked by challenge")),
+    )
+    monkeypatch.setattr(blog_notifications, "send_tcb_notification", fake_tcb_notify)
+
+    result = module.check(source_id="example", now="2026-07-11T15:00:00+00:00")
+
+    row = result["sources"][0]
+    assert row["status"] == "needs_attention"
+    assert row["notify"]["status"] == "sent"
+    assert row["notify"]["source_id"] == "example"
+    assert row["notify"]["stage"] == "discovery"
+    assert row["notify"]["error"] == "blocked by challenge"
+    assert len(sent_payloads) == 1
+    assert sent_payloads[0]["sink"] == {"type": "tcb", "channel": "lark"}
+    assert sent_payloads[0]["title"] == "Blog Monitor Failed: Example Blog"
+    assert sent_payloads[0]["attachments"] == []
+    text = sent_payloads[0]["text"]
+    assert "Blog Monitor Failed: Example Blog" in text
+    assert "Error: blocked by challenge" in text
+    assert "alcove blog check example --json" in text
 
 
 def test_blog_capture_failure_does_not_mark_new_article_seen(tmp_path, monkeypatch):

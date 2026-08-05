@@ -10,8 +10,8 @@ from alcove.notification_delivery import combined_notification_status
 from alcove.notifications import send_feishu_message, send_telegram_message
 from alcove.service_task_health import (
     TASK_HEALTH_NOTIFICATION_VERSION,
+    task_health_notification_should_send,
     task_health_notification_text,
-    task_health_notification_was_sent_today,
 )
 
 
@@ -26,7 +26,7 @@ class ServiceTaskHealthNotifier:
         state = self._load_state()
         notifications = state.get("task_health_notifications")
         notification_state = notifications if isinstance(notifications, dict) else {}
-        if task_health_notification_was_sent_today(notification_state.get(day)):
+        if not task_health_notification_should_send(notification_state.get(day), task_health):
             return {"status": "skipped", "reason": "already_sent", "day": day}
 
         title = f"Alcove task health: {day}"
@@ -40,6 +40,7 @@ class ServiceTaskHealthNotifier:
             notification_state[day] = {
                 "status": "sent",
                 "version": TASK_HEALTH_NOTIFICATION_VERSION,
+                "task_health_status": str(task_health.get("status") or "unknown"),
             }
             state["task_health_notifications"] = notification_state
             self._save_state(state)

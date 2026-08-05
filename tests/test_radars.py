@@ -233,7 +233,11 @@ def test_radar_check_stale_waits_until_daily_time_in_configured_timezone(tmp_pat
 
     assert before["ran"] == 0
     assert before["radars"][0]["reason"] == "before_daily_time"
+    assert before["radars"][0]["last_run_status"] == "missing"
+    assert before["radars"][0]["last_run_success"] is False
     assert before["radars"][0]["next_run_after"] == f"{today.isoformat()}T10:00+08:00"
     assert after["ran"] == 1
     assert repeated["ran"] == 0
     assert repeated["radars"][0]["reason"] == "already_ran_today"
+    assert repeated["radars"][0]["last_run_status"] == "completed"
+    assert repeated["radars"][0]["last_run_success"] is True

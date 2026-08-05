@@ -261,6 +261,8 @@ class RadarModule:
                     "status": "skipped",
                     "reason": due["reason"],
                     "included": int(latest_run.get("included") or 0),
+                    "last_run_status": _last_run_status(latest_run),
+                    "last_run_success": _last_run_success(latest_run),
                 }
                 if due.get("next_run_after"):
                     row["next_run_after"] = due["next_run_after"]
@@ -481,6 +483,15 @@ class RadarModule:
 def _human_status_label(value: str) -> str:
     text = value.replace("_", " ").replace("-", " ").strip()
     return text[:1].upper() + text[1:] if text else "Inactive"
+
+
+def _last_run_status(latest_run: dict[str, Any]) -> str:
+    status = str(latest_run.get("status") or "").strip()
+    return status or "missing"
+
+
+def _last_run_success(latest_run: dict[str, Any]) -> bool:
+    return _last_run_status(latest_run) == "completed"
 
 
 def _radar_due_state(

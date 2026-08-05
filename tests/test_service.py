@@ -676,17 +676,84 @@ def test_task_health_summary_classifies_failed_and_skipped_modules():
     }
 
 
-def test_task_health_notification_reports_radar_last_run_health_without_skip_noise():
+def test_task_health_summary_classifies_pre_due_radars_as_skipped():
+    summary = build_task_health_summary(
+        {
+            "connectors": {"status": "checked", "refreshed": 0, "skipped": 0, "errors": 0},
+            "watchers": {"status": "checked", "checked": 0, "changed": 0, "errors": 0},
+            "blogs": {"status": "checked", "checked": 0, "new": 0, "errors": 0},
+            "radars": {"status": "checked", "ran": 0, "skipped": 4, "errors": 0},
+            "automations": {"status": "checked", "ran": 0, "skipped": 0, "failed": 0},
+            "publishers": {"status": "checked", "ran": 0, "updated": 0, "errors": 0},
+            "mounts": {"status": "checked", "checked": 0, "refreshed": 0, "skipped": 0},
+            "health": {"status": "ok", "issue_count": 0, "action_count": 0},
+        }
+    )
+
+    radar_check = next(check for check in summary["checks"] if check["module"] == "radars")
+
+    assert summary["status"] == "success"
+    assert summary["skipped"] == 1
+    assert radar_check == {
+        "module": "radars",
+        "status": "skipped",
+        "summary": "ran=0 skipped=4 errors=0",
+    }
+
+
+def test_task_health_summary_fails_skipped_radars_without_last_success():
+    summary = build_task_health_summary(
+        {
+            "connectors": {"status": "checked", "refreshed": 0, "skipped": 0, "errors": 0},
+            "watchers": {"status": "checked", "checked": 0, "changed": 0, "errors": 0},
+            "blogs": {"status": "checked", "checked": 0, "new": 0, "errors": 0},
+            "radars": {
+                "status": "checked",
+                "ran": 0,
+                "skipped": 2,
+                "errors": 0,
+                "radars": [
+                    {
+                        "id": "fresh-radar",
+                        "status": "skipped",
+                        "reason": "before_daily_time",
+                        "last_run_status": "missing",
+                        "last_run_success": False,
+                    },
+                    {
+                        "id": "failed-radar",
+                        "status": "skipped",
+                        "reason": "before_daily_time",
+                        "last_run_status": "completed_with_errors",
+                        "last_run_success": False,
+                    },
+                ],
+            },
+            "automations": {"status": "checked", "ran": 0, "skipped": 0, "failed": 0},
+            "publishers": {"status": "checked", "ran": 0, "updated": 0, "errors": 0},
+            "mounts": {"status": "checked", "checked": 0, "refreshed": 0, "skipped": 0},
+            "health": {"status": "ok", "issue_count": 0, "action_count": 0},
+        }
+    )
+
+    radar_check = next(check for check in summary["checks"] if check["module"] == "radars")
+
+    assert summary["status"] == "failed"
+    assert radar_check["status"] == "failed"
+    assert radar_check["error"] == "radars skipped without last successful run: 2"
+
+
+def test_task_health_notification_reports_radar_pre_due_without_calling_it_normal():
     text = task_health_notification_text(
         {
             "status": "success",
             "checked": 8,
             "failed": 0,
-            "skipped": 0,
+            "skipped": 1,
             "checks": [
                 {
                     "module": "radars",
-                    "status": "success",
+                    "status": "skipped",
                     "summary": "ran=0 skipped=4 errors=0",
                 }
             ],
@@ -694,9 +761,64 @@ def test_task_health_notification_reports_radar_last_run_health_without_skip_noi
         day="2026-07-29",
     )
 
-    assert "雷达：正常 · 上次运行成功；本轮运行 0 个；错误 0 个" in text
-    assert "跳过 4 个" not in text
-    assert "未到执行条件" not in text
+    assert "雷达：跳过 · 本轮未执行；本轮运行 0 个；跳过 4 个；错误 0 个" in text
+    assert "雷达：正常" not in text
+
+
+def test_task_health_notification_resends_when_same_day_status_gets_worse(
+    tmp_path,
+    monkeypatch,
+):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    state_path = home.paths().stats / "service-state.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps(
+            {
+                "task_health_notifications": {
+                    "2026-07-29": {
+                        "status": "sent",
+                        "version": 3,
+                        "task_health_status": "success",
+                    }
+                }
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    telegram: list[str] = []
+
+    def fake_telegram(*, home, text):
+        telegram.append(text)
+        return {"status": "sent"}
+
+    monkeypatch.setattr(
+        "alcove.service_task_health_notifications.send_telegram_message", fake_telegram
+    )
+    monkeypatch.setattr(
+        "alcove.service_task_health_notifications.send_feishu_message",
+        lambda **_kwargs: {"status": "skipped"},
+    )
+
+    first = ServiceTaskHealthNotifier(home).notify_once_per_day(
+        {"status": "failed", "checked": 8, "failed": 1, "skipped": 0, "checks": []},
+        tick_time=datetime.fromisoformat("2026-07-29T12:00:00+00:00"),
+    )
+    second = ServiceTaskHealthNotifier(home).notify_once_per_day(
+        {"status": "failed", "checked": 8, "failed": 1, "skipped": 0, "checks": []},
+        tick_time=datetime.fromisoformat("2026-07-29T12:05:00+00:00"),
+    )
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+
+    assert first["status"] == "partial"
+    assert second == {
+        "status": "skipped",
+        "reason": "already_sent",
+        "day": "2026-07-29",
+    }
+    assert len(telegram) == 1
+    assert state["task_health_notifications"]["2026-07-29"]["task_health_status"] == "failed"
 
 
 def test_task_health_notification_resends_when_prior_send_used_legacy_format(
@@ -743,7 +865,8 @@ def test_task_health_notification_resends_when_prior_send_used_legacy_format(
     assert len(telegram) == 1
     assert telegram[0].startswith("Alcove 任务健康 · 2026-07-29")
     assert state["task_health_notifications"]["2026-07-29"]["status"] == "sent"
-    assert state["task_health_notifications"]["2026-07-29"]["version"] == 2
+    assert state["task_health_notifications"]["2026-07-29"]["version"] == 3
+    assert state["task_health_notifications"]["2026-07-29"]["task_health_status"] == "success"
 
 
 def test_cli_service_tick_can_skip_task_health_notification(tmp_path, monkeypatch, capsys):
