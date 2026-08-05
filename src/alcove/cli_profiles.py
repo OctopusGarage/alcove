@@ -8,6 +8,7 @@ from typing import Any, Callable
 from alcove.agent_workspaces import AgentWorkspacesModule
 from alcove.application import AlcoveApplication
 from alcove.cli_io import print_install_result
+from alcove.entry_contracts import entry_contract_matrix, validate_entry_contract_matrix
 from alcove.home import AlcoveHome, KnowledgeBaseRecord
 from alcove.paths import compact_user_path
 from alcove.profile_installer import ProfileInstaller
@@ -91,6 +92,24 @@ def handle_global_command(
             print(f"# {target}\n{config}")
     else:
         print_install_result(result)
+    return 0
+
+
+def handle_entry_command(
+    args: Any,
+    parser: argparse.ArgumentParser,
+    *,
+    argument_error: ArgumentError,
+) -> int:
+    if args.entry_command != "contract":
+        return argument_error(parser, "the following arguments are required: entry_command")
+    home_part = f"--home {args.home}" if getattr(args, "home", None) else ""
+    payload = (
+        validate_entry_contract_matrix(home_part=home_part)
+        if args.validate
+        else entry_contract_matrix(home_part=home_part)
+    )
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
 
 

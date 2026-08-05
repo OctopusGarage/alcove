@@ -19,6 +19,8 @@ personal hobbies are user data under `~/.alcove/radars/definitions/`.
 ├── reports/<radar-id>/<date>.html
 ├── reports/<radar-id>/<date>.ai.md   optional AI summary artifact
 ├── okf/<radar-id>/index.md    derived OKF-readable latest-run index
+├── proposals/*.json           governed action proposals derived from runs
+├── proposals/index.json       derived proposal status index
 └── events.jsonl
 ```
 
@@ -87,6 +89,31 @@ absence from cache can mean the source failed, the upstream feed did not contain
 the story, or the query did not match the cached title/URL/summary exactly. If
 the selected date has no `run.json`, the stage is `no_run` and the missing
 artifact paths are included.
+
+## Governed Action Proposals
+
+Action proposals are an explicit confirmation boundary between radar evidence
+and global planner/prompt writes. They are extracted only from an existing
+`run.json`, its `scored.json`, report paths, radar OKF index, and source URLs;
+generation does not fetch sources or write a task, idea, or prompt.
+
+```sh
+alcove radar proposal generate <radar-id> --date YYYY-MM-DD --action-type idea --json
+alcove radar proposal list --status pending --json
+alcove radar proposal get <proposal-id> --json
+alcove radar proposal accept <proposal-id> --json
+alcove radar proposal defer <proposal-id> --json
+alcove radar proposal reject <proposal-id> --json
+```
+
+Each proposal stores a stable `run_id`, source URL, scored/report/OKF paths,
+source adapter, deduplication key, and lifecycle status: `pending`, `accepted`,
+`rejected`, `deferred`, or `duplicate`. Duplicate extraction is idempotent.
+Acceptance records the resulting task/idea/prompt ID and can be repeated safely;
+the second acceptance returns an idempotent receipt without creating another
+target. MCP exposes read-only list/get in `lite`; extraction and confirmation
+tools are available in the full toolset. The dashboard snapshot includes
+proposal rows and pending counts.
 
 `alcove service tick` runs only active definitions with `schedule.enabled: true`.
 Definitions may set a local daily trigger:

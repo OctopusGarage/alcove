@@ -175,6 +175,7 @@ class RadarPipeline:
         return {
             "schema": RADAR_RUN_SCHEMA,
             "id": definition.id,
+            "run_id": f"{definition.id}:{run_day}",
             "name": definition.name,
             "status": "completed" if failed_sources == 0 else "completed_with_errors",
             "date": run_day,

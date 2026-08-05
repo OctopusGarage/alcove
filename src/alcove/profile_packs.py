@@ -147,6 +147,7 @@ Fallback routing table when project skills are unavailable:
 | Track todo, idea, routine, project, mount, connector | list/search the matching module first | use the matching `alcove task/idea/routine/project/mount/connector` command |
 | Check monitored blogs now | `alcove blog{home_part} list --status '' --json`, then `alcove blog{home_part} check --json` or `alcove blog{home_part} check <source-id> --json` | only add/update sources after explicit confirmation |
 | Run an information radar | `alcove radar{home_part} list --json`, then `alcove radar{home_part} status <radar-id> --json` | `alcove radar{home_part} run <radar-id> --json`, `--force --ai --notify`, or `--skip-fetch --force --ai --notify` after choosing an existing definition |
+| Propose a radar action | `alcove radar{home_part} proposal list --status pending --json`, then inspect `get` evidence | `alcove radar{home_part} proposal accept <proposal-id> --json` only after explicit confirmation |
 
 Fallback blog monitor rules:
 

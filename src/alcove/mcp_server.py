@@ -7,6 +7,7 @@ from alcove.mcp_external_tools import register_mcp_external_tools
 from alcove.mcp_global_tools import register_mcp_global_tools
 from alcove.mcp_managed_kb_tools import register_mcp_managed_kb_tools
 from alcove.mcp_planner_tools import register_mcp_planner_tools
+from alcove.mcp_radar_tools import register_mcp_radar_tools
 from alcove.mcp_registrar import McpToolRegistrar
 from alcove.mcp_search_requests import search_request
 
@@ -110,6 +111,7 @@ def create_mcp_server(
     register_mcp_global_tools(registrar, context)
     register_mcp_managed_kb_tools(registrar, context)
     register_mcp_planner_tools(registrar, context)
+    register_mcp_radar_tools(registrar, context)
 
     @tool
     def alcove_command_hints(

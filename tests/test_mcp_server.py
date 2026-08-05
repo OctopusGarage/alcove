@@ -428,7 +428,7 @@ def test_mcp_server_lite_toolset_keeps_global_common_tools_small(tmp_path):
     assert "alcove_connector_github_stars_import_url" not in tools
     assert "alcove_mount_scan" not in tools
     assert "alcove_export_all" not in tools
-    assert len(tools) <= 27
+    assert len(tools) <= 29
 
 
 def test_mcp_server_kb_toolset_keeps_kb_workflow_without_admin_tools(tmp_path):

@@ -421,6 +421,8 @@ definitions, not hard-coded product modules.
 ├── reports/<radar-id>/<date>.{md,html}
 ├── reports/<radar-id>/<date>.ai.md
 ├── okf/<radar-id>/index.md
+├── proposals/<proposal-id>.json
+└── proposals/index.json
 └── events.jsonl
 ```
 
@@ -434,7 +436,15 @@ alcove radar init tech-news --from-preset tech-news --json
 alcove radar run tech-news --json
 alcove radar run tech-news --force --ai --notify --json
 alcove radar run tech-news --skip-fetch --force --ai --notify --json
+alcove radar proposal generate tech-news --action-type idea --json
+alcove radar proposal list --status pending --json
+alcove radar proposal accept <proposal-id> --json
 ```
+
+Radar proposals are derived, provenance-carrying confirmation records. They do
+not mutate planner or prompt source-of-truth data until acceptance, then reuse
+the existing governed task/idea/prompt application contracts. Repeated
+acceptance is idempotent.
 
 `service tick` runs scheduled radar definitions only when `schedule.enabled` is
 true. Definitions can set `schedule.daily_time` plus `schedule.timezone`, for

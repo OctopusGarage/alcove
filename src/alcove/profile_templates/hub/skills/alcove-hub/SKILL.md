@@ -82,6 +82,9 @@ This is the high-level router for Alcove. Decide the storage target before writi
 - Use `alcove radar run <radar-id> --force --ai --notify --json` when the user asks to rerun, refresh now, summarize with AI, and send configured notifications.
 - Use `alcove radar run <radar-id> --skip-fetch --force --ai --notify --json` when the user asks to analyze or resend already fetched results without touching external sources.
 - Radar runs fetch and score deterministically first. Optional `ai_summary` is post-report analysis only; it does not rewrite fetched items or scores.
+- To propose an action from an existing run, use `alcove radar proposal generate <radar-id> --date <date> --action-type idea --json`; generation only stores a pending, provenance-carrying proposal.
+- Review `alcove radar proposal list --status pending --json` and inspect each proposal's run, report, OKF, and source URL evidence before accepting, rejecting, or deferring it.
+- Accept only after explicit user confirmation with `alcove radar proposal accept <proposal-id> --json`; repeated acceptance is idempotent and routes through the existing task, idea, or prompt write contract.
 - Scheduled radar definitions may use `schedule.daily_time` and `schedule.timezone`; the local service should wait for that daily window and still run at most once per local date.
 - Scheduled radar runs start Codex or Claude only when the radar definition explicitly enables `ai_summary`. If AI fails, Alcove should still notify with the deterministic report when notification is enabled.
 

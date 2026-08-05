@@ -27,6 +27,14 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("path", nargs="?", default=".")
     status.add_argument("--json", action="store_true")
 
+    entry = sub.add_parser("entry", help="Inspect deterministic agent-entry contracts")
+    entry.add_argument("--home")
+    entry_sub = entry.add_subparsers(dest="entry_command", required=True)
+    entry_contract = entry_sub.add_parser("contract", help="Show or validate the entry matrix")
+    entry_contract.add_argument("--home", default=argparse.SUPPRESS)
+    entry_contract.add_argument("--validate", action="store_true")
+    entry_contract.add_argument("--json", action="store_true")
+
     doctor = sub.add_parser("doctor", help="Check Alcove workspace health")
     doctor.add_argument("--workspace")
     doctor.add_argument("--home")
@@ -320,6 +328,35 @@ def build_parser() -> argparse.ArgumentParser:
     radar_explain.add_argument("--query", required=True)
     radar_explain.add_argument("--date", default="")
     radar_explain.add_argument("--json", action="store_true")
+    radar_proposal = radar_sub.add_parser(
+        "proposal", help="Prepare and govern actions extracted from existing radar runs"
+    )
+    radar_proposal.add_argument("--home", default=argparse.SUPPRESS)
+    radar_proposal_sub = radar_proposal.add_subparsers(dest="radar_proposal_command", required=True)
+    radar_proposal_generate = radar_proposal_sub.add_parser(
+        "generate", help="Extract mutation-free action proposals from an existing run"
+    )
+    radar_proposal_generate.add_argument("radar_id")
+    radar_proposal_generate.add_argument("--date", default="")
+    radar_proposal_generate.add_argument(
+        "--action-type", choices=["task", "idea", "prompt"], default="idea"
+    )
+    radar_proposal_generate.add_argument("--json", action="store_true")
+    radar_proposal_list = radar_proposal_sub.add_parser("list", help="List radar action proposals")
+    radar_proposal_list.add_argument("--status", default="")
+    radar_proposal_list.add_argument("--json", action="store_true")
+    radar_proposal_get = radar_proposal_sub.add_parser("get", help="Show one radar action proposal")
+    radar_proposal_get.add_argument("proposal_id")
+    radar_proposal_get.add_argument("--json", action="store_true")
+    radar_proposal_accept = radar_proposal_sub.add_parser("accept", help="Accept one proposal")
+    radar_proposal_accept.add_argument("proposal_id")
+    radar_proposal_accept.add_argument("--json", action="store_true")
+    for resolution in ("reject", "defer"):
+        proposal_resolution = radar_proposal_sub.add_parser(
+            resolution, help=f"Mark one proposal {resolution}ed"
+        )
+        proposal_resolution.add_argument("proposal_id")
+        proposal_resolution.add_argument("--json", action="store_true")
     radar_preset = radar_sub.add_parser("preset", help="Work with packaged radar presets")
     radar_preset.add_argument("--home", default=argparse.SUPPRESS)
     radar_preset_sub = radar_preset.add_subparsers(dest="radar_preset_command", required=True)
