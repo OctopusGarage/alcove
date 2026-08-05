@@ -5,6 +5,7 @@ import json
 import pytest
 
 from alcove.application import AlcoveApplication
+from alcove.cli import main
 from alcove.home import AlcoveHome
 from alcove.radars import RadarModule
 from alcove.runtime import AlcoveRuntime
@@ -101,6 +102,41 @@ def test_radar_proposal_acceptance_routes_task_and_prompt_contracts(tmp_path, ac
 
     assert accepted["target"]["type"] == action_type
     assert repeated["idempotent"] is True
+
+
+def test_radar_proposal_cli_covers_evidence_and_lifecycle_commands(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    _write_run(home)
+
+    def invoke(*args):
+        assert main(["radar", "proposal", "--home", str(home.root), *args, "--json"]) == 0
+        return json.loads(capsys.readouterr().out)
+
+    generated = invoke("generate", "custom", "--date", "2026-08-05")
+    proposal_id = generated["proposals"][0]["id"]
+    assert invoke("list", "--status", "pending")["count"] == 1
+    assert invoke("get", proposal_id)["id"] == proposal_id
+    assert invoke("accept", proposal_id)["status"] == "accepted"
+
+    deferred = invoke(
+        "generate",
+        "custom",
+        "--date",
+        "2026-08-05",
+        "--action-type",
+        "task",
+    )["proposals"][0]["id"]
+    assert invoke("defer", deferred)["status"] == "deferred"
+
+    rejected = invoke(
+        "generate",
+        "custom",
+        "--date",
+        "2026-08-05",
+        "--action-type",
+        "prompt",
+    )["proposals"][0]["id"]
+    assert invoke("reject", rejected)["status"] == "rejected"
 
 
 def test_radar_proposal_lifecycle_supports_deferred_rejected_and_duplicate(tmp_path):
