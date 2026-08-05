@@ -227,6 +227,39 @@ def test_agent_automation_rejects_unsupported_provider_without_calling_provider(
     assert result["error"] == "unsupported agent provider: unsupported-provider"
 
 
+def test_run_due_reports_and_persists_unsupported_provider_failure(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_agent(
+        name="scheduled local model job",
+        prompt="summarize local files",
+        provider="unsupported-provider",
+        allow_service=True,
+        timeout_seconds=5,
+    )
+
+    result = module.run_due(now="2026-07-12T09:00:00+00:00")
+
+    assert result["ran"] == 1
+    assert result["failed"] == 1
+    assert result["jobs"][0]["status"] == "failed"
+    assert result["jobs"][0]["error"] == "unsupported agent provider: unsupported-provider"
+    job = yaml.safe_load(
+        (home.root / "automations/jobs/scheduled-local-model-job.yml").read_text(encoding="utf-8")
+    )
+    assert job["last_status"] == "failed"
+    assert job["last_error"] == "unsupported agent provider: unsupported-provider"
+    run_payload = json.loads(
+        next((home.root / "automations/runs").glob("*scheduled-local-model-job.json")).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert run_payload["status"] == "failed"
+    event = json.loads((home.root / "automations/events.jsonl").read_text(encoding="utf-8"))
+    assert event["job_id"] == "scheduled-local-model-job"
+    assert event["status"] == "failed"
+
+
 def test_cli_automation_add_list_run(tmp_path, capsys):
     home = tmp_path / ".alcove"
     marker = tmp_path / "marker.txt"
