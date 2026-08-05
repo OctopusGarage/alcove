@@ -18,6 +18,16 @@ def test_dashboard_search_index_projection_filters_and_summarizes_external_rows(
         "prompts": [],
         "projects": [],
         "radars": [],
+        "radar_proposals": [
+            {
+                "title": "Radar action",
+                "status": "pending",
+                "action_type": "idea",
+                "radar_id": "daily",
+                "run_id": "daily:2026-08-05",
+                "source_url": "https://example.test/radar-action",
+            }
+        ],
         "knowledge": {
             "managed": [
                 {
@@ -97,3 +107,6 @@ def test_dashboard_search_index_projection_filters_and_summarizes_external_rows(
         "https://github.com/OctopusGarage/alcove"
         in next(row for row in rows if row["title"] == "octopusgarage/alcove")["text"]
     )
+    proposal = next(row for row in rows if row["type"] == "radar-proposal")
+    assert proposal["title"] == "Radar action"
+    assert "daily:2026-08-05" in proposal["text"]

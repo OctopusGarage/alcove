@@ -449,6 +449,24 @@ For MCP sessions focused on a KB, use the `kb` toolset:
 alcove serve --mcp --toolset kb --kb social_media_posts
 ```
 
+## Agent-entry Contract Matrix
+
+The deterministic contract surface is available without Codex or Claude model
+calls:
+
+```sh
+alcove entry contract --json
+alcove entry contract --validate --home /path/to/alcove-home --json
+```
+
+The matrix records Hub, business workspace, managed-KB, and global profiles;
+Codex and Claude targets; MCP toolsets; install/status commands; home-scope
+transformations; generated artifact policy; and focused verification commands.
+Validation checks entry-policy/toolset alignment, marked entry sections,
+home-argument rendering, stable repeated generation, and reports
+`model_calls: 0`. Use `scripts/smoke-agent-clients.sh` for profile/client
+installation and `scripts/smoke-mcp-matrix.sh` for MCP routing changes.
+
 ## MCP Toolsets
 
 ```text
@@ -478,6 +496,10 @@ full
 ├── export
 └── gardener/health/admin operations
 ```
+
+Radar proposal list/get are included in `lite` as evidence reads. Proposal
+generation, acceptance, rejection, and deferral remain full-toolset actions so
+global MCP stays lightweight while confirmation remains explicit.
 
 The default `alcove serve --mcp` remains `full` for backward compatibility.
 Installers should choose the narrowest useful toolset for the entry mode.

@@ -27,6 +27,39 @@ alcove home init --json > "$fixtures/home-init.json"
 alcove init "$kb" > "$fixtures/kb-init.txt"
 alcove kb add matrix_kb "$kb" --json > "$fixtures/kb-add.json"
 
+run uv run python - "$home" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+home = Path(sys.argv[1])
+root = home / "radars"
+day = "2026-08-05"
+run = root / "runs" / "mcp-radar" / day / "run.json"
+scored = root / "cache" / "mcp-radar" / day / "scored.json"
+report = root / "reports" / "mcp-radar" / f"{day}.md"
+okf = root / "okf" / "mcp-radar" / "index.md"
+for path in (run, scored, report, okf):
+    path.parent.mkdir(parents=True, exist_ok=True)
+run.write_text(json.dumps({
+    "schema": "alcove/radar-run/v1",
+    "id": "mcp-radar",
+    "run_id": "mcp-radar:2026-08-05",
+    "date": day,
+    "reports": {"md": str(report)},
+}), encoding="utf-8")
+scored.write_text(json.dumps([{
+    "source_id": "fixture",
+    "adapter": "fixture",
+    "title": "MCP matrix radar signal",
+    "url": "https://example.test/mcp-radar",
+    "summary": "A deterministic proposal fixture.",
+    "score": 0.9,
+    "score_reason": "fixture",
+    "included": True,
+}]), encoding="utf-8")
+PY
+
 mount_dir="$root/mounted"
 mkdir -p "$mount_dir/docs"
 printf '# Matrix Mount\n\nMCP matrix mounted content.\n' > "$mount_dir/docs/matrix.md"
@@ -332,6 +365,54 @@ async def main() -> None:
         }
         if not {"blog_monitor", "radars", "dashboard"}.issubset(command_hint_ids):
             raise SystemExit(f"command hints missed expected CLI workflows: {command_hints}")
+
+        generated = await call("radar", "alcove_radar_proposal_generate", {
+            "home": str(home),
+            "radar_id": "mcp-radar",
+            "run_day": "2026-08-05",
+            "action_type": "idea",
+        })
+        proposal_id = generated["proposals"][0]["id"]
+        await call("radar", "alcove_radar_proposal_get", {
+            "home": str(home),
+            "proposal_id": proposal_id,
+        })
+        await call("radar", "alcove_radar_proposal_list", {
+            "home": str(home),
+            "status": "pending",
+        })
+        accepted = await call("radar", "alcove_radar_proposal_accept", {
+            "home": str(home),
+            "proposal_id": proposal_id,
+        })
+        if accepted.get("target", {}).get("type") != "idea":
+            raise SystemExit(f"radar proposal acceptance target missing: {accepted}")
+        repeated = await call("radar", "alcove_radar_proposal_accept", {
+            "home": str(home),
+            "proposal_id": proposal_id,
+        })
+        if not repeated.get("idempotent"):
+            raise SystemExit(f"radar proposal acceptance was not idempotent: {repeated}")
+        deferred = await call("radar", "alcove_radar_proposal_generate", {
+            "home": str(home),
+            "radar_id": "mcp-radar",
+            "run_day": "2026-08-05",
+            "action_type": "task",
+        })
+        await call("radar", "alcove_radar_proposal_defer", {
+            "home": str(home),
+            "proposal_id": deferred["proposals"][0]["id"],
+        })
+        rejected = await call("radar", "alcove_radar_proposal_generate", {
+            "home": str(home),
+            "radar_id": "mcp-radar",
+            "run_day": "2026-08-05",
+            "action_type": "prompt",
+        })
+        await call("radar", "alcove_radar_proposal_reject", {
+            "home": str(home),
+            "proposal_id": rejected["proposals"][0]["id"],
+        })
 
         await call("inbox", "alcove_inbox_manual_add", {
             "workspace": str(kb),
@@ -762,6 +843,8 @@ async def main() -> None:
                 "alcove_prompt_save",
                 "alcove_inbox_manual_add",
                 "alcove_health",
+                "alcove_radar_proposal_list",
+                "alcove_radar_proposal_get",
             },
             {
                 "alcove_connector_github_stars_import_url",

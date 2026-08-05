@@ -237,6 +237,9 @@ class DashboardProjection:
         }
 
     def modules(self, counts: dict[str, int]) -> list[dict[str, Any]]:
+        radar_proposal_detail = ""
+        if "radar_proposals_pending" in counts:
+            radar_proposal_detail = f" / {self.count_phrase(counts['radar_proposals_pending'], 'pending action proposal')}"
         return [
             {
                 "id": "pins",
@@ -315,6 +318,7 @@ class DashboardProjection:
                     f"{self.count_phrase(counts['radars'], 'active radar')} / "
                     f"{self.count_phrase(counts['radars_current'], 'current report')} / "
                     f"{self.count_phrase(counts['radars_stale'], 'stale report')}"
+                    f"{radar_proposal_detail}"
                 ),
             },
             {

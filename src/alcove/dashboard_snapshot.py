@@ -13,6 +13,7 @@ from alcove.pins import PinsModule
 from alcove.projects import ProjectsModule
 from alcove.prompts import PromptsModule
 from alcove.radars import RadarModule
+from alcove.radars.proposals import RadarProposalModule
 from alcove.tasks import TasksModule
 
 
@@ -31,6 +32,7 @@ class DashboardSnapshotFacts:
     mount_items: list[dict[str, Any]]
     connector_rows: list[dict[str, Any]]
     radar_rows: list[dict[str, Any]]
+    radar_proposal_rows: list[dict[str, Any]]
     blog_rows: list[dict[str, Any]]
     kb_rows: list[Any]
     knowledge_rows: list[dict[str, Any]]
@@ -109,6 +111,7 @@ class DashboardSnapshotBuilder:
             "connectors": facts.connector_rows,
             "mounts": mount_snapshot_rows,
             "radars": facts.radar_rows,
+            "radar_proposals": facts.radar_proposal_rows,
             "blog_monitor": {"sources": facts.blog_rows},
             "sources": {
                 "connectors": facts.connector_rows,
@@ -177,6 +180,7 @@ class DashboardSnapshotBuilder:
         mount_items = mounts.index_items()
         connector_rows = self.data_sources.connector_rows()
         radar_rows = RadarModule(self.home).dashboard_rows()
+        radar_proposal_rows = RadarProposalModule(self.home).dashboard_rows()
         blog_rows = self.data_sources.blog_rows()
         kb_rows = self.home.list_knowledge_bases()
         knowledge_rows = self.data_sources.knowledge_base_rows(kb_rows)
@@ -207,6 +211,7 @@ class DashboardSnapshotBuilder:
             mount_items=mount_items,
             connector_rows=connector_rows,
             radar_rows=radar_rows,
+            radar_proposal_rows=radar_proposal_rows,
             blog_rows=blog_rows,
             kb_rows=kb_rows,
             knowledge_rows=knowledge_rows,
@@ -248,6 +253,10 @@ class DashboardSnapshotBuilder:
                 [row for row in facts.radar_rows if row.get("definition_status") == "active"]
             ),
             "radars_stale": len([row for row in facts.radar_rows if row["status"] == "stale"]),
+            "radar_proposals": len(facts.radar_proposal_rows),
+            "radar_proposals_pending": len(
+                [row for row in facts.radar_proposal_rows if row.get("status") == "pending"]
+            ),
             "blog_sources": len(facts.blog_rows),
             "blog_sources_active": len(
                 [row for row in facts.blog_rows if row["status"] == "active"]

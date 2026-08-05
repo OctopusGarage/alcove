@@ -128,6 +128,23 @@ def build_dashboard_search_index(snapshot: dict[str, Any]) -> list[dict[str, str
                 "href": "/radars",
             }
         )
+    for proposal in snapshot.get("radar_proposals", []):
+        rows.append(
+            {
+                "type": "radar-proposal",
+                "title": str(proposal.get("title") or proposal.get("id") or ""),
+                "text": " ".join(
+                    [
+                        str(proposal.get("status") or ""),
+                        str(proposal.get("action_type") or ""),
+                        str(proposal.get("radar_id") or ""),
+                        str(proposal.get("run_id") or ""),
+                        str(proposal.get("source_url") or ""),
+                    ]
+                ),
+                "href": "/radars",
+            }
+        )
     rows.extend(_knowledge_rows(snapshot))
     rows.extend(_source_rows(snapshot))
     return rows

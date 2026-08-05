@@ -77,6 +77,14 @@ MCP_TOOL_INVENTORY: Final[dict[str, tuple[str, ...]]] = {
         "alcove_routine_resume",
         "alcove_routine_archive",
     ),
+    "radar": (
+        "alcove_radar_proposal_list",
+        "alcove_radar_proposal_get",
+        "alcove_radar_proposal_generate",
+        "alcove_radar_proposal_accept",
+        "alcove_radar_proposal_reject",
+        "alcove_radar_proposal_defer",
+    ),
     "external_indexes": (
         "alcove_mount_list",
         "alcove_mount_add",
@@ -139,6 +147,10 @@ _LITE_PLANNER_TOOLS: Final[tuple[str, ...]] = (
 
 _LITE_INBOX_TOOLS: Final[tuple[str, ...]] = ("alcove_inbox_manual_add",)
 _LITE_HEALTH_TOOLS: Final[tuple[str, ...]] = ("alcove_health",)
+_LITE_RADAR_TOOLS: Final[tuple[str, ...]] = (
+    "alcove_radar_proposal_list",
+    "alcove_radar_proposal_get",
+)
 
 _KB_GLOBAL_MEMORY_TOOLS: Final[tuple[str, ...]] = (
     "alcove_pin_add",
@@ -225,6 +237,7 @@ def _lite_tools() -> set[str]:
         _inventory_tools("guidance", "search")
         | _selected_tools("global_memory", _LITE_GLOBAL_MEMORY_TOOLS)
         | _selected_tools("planner", _LITE_PLANNER_TOOLS)
+        | _selected_tools("radar", _LITE_RADAR_TOOLS)
         | _selected_tools("inbox", _LITE_INBOX_TOOLS)
         | _selected_tools("health_export", _LITE_HEALTH_TOOLS)
     )

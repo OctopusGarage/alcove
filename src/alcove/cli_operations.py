@@ -193,6 +193,34 @@ def handle_radar_command(
         payload = radar_module.status(args.radar_id)
     elif args.radar_command == "explain":
         payload = radar_module.explain(args.radar_id, query=args.query, run_day=args.date)
+    elif args.radar_command == "proposal":
+        command = args.radar_proposal_command
+        if command == "generate":
+            payload = radar_module.proposal_generate(
+                args.radar_id,
+                args.date,
+                action_type=args.action_type,
+            )
+        elif command == "list":
+            payload = radar_module.proposal_list(args.status)
+        elif command == "get":
+            payload = radar_module.proposal_get(args.proposal_id)
+        elif command == "accept":
+            from alcove.application import AlcoveApplication
+            from alcove.runtime import AlcoveRuntime
+
+            payload = AlcoveApplication(
+                AlcoveRuntime.from_modules(home=radar_module.home)
+            ).global_home.radar_proposal_accept_payload(args.proposal_id)
+        elif command in {"reject", "defer"}:
+            payload = radar_module.proposal_resolve(
+                args.proposal_id,
+                "rejected" if command == "reject" else "deferred",
+            )
+        else:
+            return argument_error(
+                parser, "the following arguments are required: radar_proposal_command"
+            )
     elif args.radar_command == "preset":
         if args.radar_preset_command != "list":
             return argument_error(

@@ -23,6 +23,7 @@ from alcove.cli_operations import (
 )
 from alcove.cli_planner import handle_idea_command, handle_task_command
 from alcove.cli_profiles import (
+    handle_entry_command,
     handle_global_command,
     handle_hub_command,
     handle_kb_command,
@@ -158,6 +159,10 @@ def _radar(args: argparse.Namespace, context: CliDispatchContext) -> int:
 
 def _hub(args: argparse.Namespace, context: CliDispatchContext) -> int:
     return handle_hub_command(args, context.parser, argument_error=context.argument_error)
+
+
+def _entry(args: argparse.Namespace, context: CliDispatchContext) -> int:
+    return handle_entry_command(args, context.parser, argument_error=context.argument_error)
 
 
 def _workspace(args: argparse.Namespace, context: CliDispatchContext) -> int:
@@ -352,6 +357,7 @@ _COMMANDS: dict[str, CommandHandler] = {
     "blog": _blog,
     "radar": _radar,
     "hub": _hub,
+    "entry": _entry,
     "workspace": _workspace,
     "global": _global,
     "kb": _kb,

@@ -233,6 +233,36 @@ class RadarModule:
 
         return explain_radar_item(self, self.get(radar_id), query=query, run_day=run_day)
 
+    def proposal_generate(
+        self,
+        radar_id: str,
+        run_day: str = "",
+        *,
+        action_type: str = "idea",
+    ) -> dict[str, Any]:
+        from alcove.radars.proposals import RadarProposalModule
+
+        return RadarProposalModule(self.home).generate(
+            radar_id,
+            run_day,
+            action_type=action_type,
+        )
+
+    def proposal_list(self, status: str = "") -> dict[str, Any]:
+        from alcove.radars.proposals import RadarProposalModule
+
+        return RadarProposalModule(self.home).list(status)
+
+    def proposal_get(self, proposal_id: str) -> dict[str, Any]:
+        from alcove.radars.proposals import RadarProposalModule
+
+        return RadarProposalModule(self.home).get(proposal_id)
+
+    def proposal_resolve(self, proposal_id: str, status: str) -> dict[str, Any]:
+        from alcove.radars.proposals import RadarProposalModule
+
+        return RadarProposalModule(self.home).resolve(proposal_id, status)
+
     def check_stale(self, *, current_time: datetime | None = None) -> dict[str, Any]:
         current_time = current_time or datetime.now(UTC)
         ran = 0

@@ -7,6 +7,7 @@ from alcove.application_global_prompts import _GlobalPromptCapabilities
 from alcove.paths import compact_user_path
 from alcove.pins import AddPinRequest, Pin, PinsModule, UpdatePinRequest
 from alcove.projects import AddProjectRequest, ProjectRecord, ProjectsModule
+from alcove.radars.proposals import RadarProposalModule
 
 
 class _GlobalHomeCapabilities(_GlobalPromptCapabilities, _GlobalPlannerCapabilities):
@@ -15,6 +16,13 @@ class _GlobalHomeCapabilities(_GlobalPromptCapabilities, _GlobalPlannerCapabilit
 
     def _projects_module(self) -> ProjectsModule:
         return ProjectsModule(self.runtime.workspace, home=self.runtime.home)
+
+    def radar_proposal_accept_payload(self, proposal_id: str) -> dict[str, Any]:
+        if self.runtime.home is None:
+            raise ValueError("Radar action proposals require Alcove Home")
+        return self.runtime.scope_payload(
+            RadarProposalModule(self.runtime.home).accept(proposal_id, self)
+        )
 
     def pin_add_payload(self, request: AddPinRequest) -> dict[str, Any]:
         result = self._pins_module().add(request)
