@@ -857,6 +857,68 @@
   background: transparent;
 }
 
+.code-block {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--graphite);
+  border-radius: 6px;
+  background: var(--graphite);
+  color: var(--sheet);
+}
+
+.code-block-topline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255, 255, 251, 0.14);
+  color: #cbd8ce;
+  font-family: "SF Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.code-copy {
+  padding: 3px 7px;
+  border: 1px solid rgba(255, 255, 251, 0.3);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--sheet);
+  font: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.code-copy:hover,
+.code-copy:focus-visible {
+  border-color: var(--sheet);
+  outline: 0;
+}
+
+.code-block pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 14px;
+  overflow-x: auto;
+  border: 0;
+  border-radius: 0;
+  background: var(--graphite);
+  color: #f2f6ef;
+  font-family: "SF Mono", ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre;
+}
+
+.code-block pre code {
+  color: inherit;
+  white-space: inherit;
+  overflow-wrap: normal;
+}
+
 .table-scroll {
   min-width: 0;
   max-width: 100%;

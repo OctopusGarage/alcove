@@ -195,7 +195,9 @@ class DashboardSnapshotBuilder:
             for pin in active_pins
             if "theme-pin" in pin.tags or "source-markdown-pin" in pin.tags
         ]
-        dashboard_pins = theme_pins or active_pins
+        # The Pins route is the global personal-pin view. Imported markdown pins remain
+        # classified as themes, but must not hide directly created regular pins.
+        dashboard_pins = active_pins
         activity = self.data_sources.activity_rows()
         return DashboardSnapshotFacts(
             pins=pins,

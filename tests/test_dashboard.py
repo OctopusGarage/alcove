@@ -102,6 +102,35 @@ def test_dashboard_snapshot_counts_global_modules(tmp_path):
     assert "search_index" in snapshot
 
 
+def test_dashboard_pins_include_regular_pins_alongside_imported_theme_pins(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    PinsModule(home=home).add(
+        AddPinRequest(
+            title="Imported Themes",
+            summary="Legacy imported pin collection.",
+            content="Imported content.",
+            kind="regular",
+            tags=["source-markdown-pin"],
+        )
+    )
+    PinsModule(home=home).add(
+        AddPinRequest(
+            title="CLIProxyAPI Local API",
+            summary="Local API commands.",
+            content="curl http://127.0.0.1:8317/v1/responses",
+            kind="regular",
+            tags=["cliproxyapi"],
+        )
+    )
+
+    snapshot = DashboardModule(home=home).snapshot()
+
+    displayed_titles = [pin["title"] for pin in snapshot["pins"]["themes"]]
+    assert set(displayed_titles) == {"Imported Themes", "CLIProxyAPI Local API"}
+    assert snapshot["summary"]["counts"]["pins"] == 2
+    assert snapshot["summary"]["counts"]["pin_collections"] == 2
+
+
 def test_dashboard_module_cards_use_detail_page_counting_contract(tmp_path):
     projection = DashboardProjection(AlcoveHome.init(tmp_path / "home"))
 

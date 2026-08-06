@@ -12,7 +12,7 @@ export function pinCard(pin: ThemePin, options: PinCardOptions = {}): string {
   const refsHtml = refs.map((ref) => `<code>${escapeHtml(ref)}</code>`).join("");
   const body = options.compact
     ? `<p class="pin-excerpt">${escapeHtml(pin.raw_excerpt || pin.content.slice(0, 220))}</p>`
-    : `<div class="markdown-body">${renderMarkdown(pin.content, pin.title)}</div>`;
+    : `<div class="markdown-body">${renderMarkdown(pin.content, pin.title, pin.id)}</div>`;
   const refsBlock = refs.length
     ? `
       <details class="refs" open>
@@ -36,14 +36,16 @@ export function pinCard(pin: ThemePin, options: PinCardOptions = {}): string {
   `;
 }
 
-function renderMarkdown(markdown: string, title: string): string {
-  const lines = stripDuplicateTitle(markdown, title).split("\n");
+export function renderMarkdown(markdown: string, title: string, pinId = "pin"): string {
+  const lines = stripDuplicateTitle(normalizeEscapedNewlines(markdown), title).split("\n");
   const html: string[] = [];
   let paragraph: string[] = [];
   let list: string[] = [];
   let table: string[] = [];
   let code: string[] = [];
   let inCode = false;
+  let codeLanguage = "text";
+  let codeBlockIndex = 0;
 
   const flushParagraph = () => {
     if (!paragraph.length) return;
@@ -71,11 +73,13 @@ function renderMarkdown(markdown: string, title: string): string {
     const trimmed = line.trim();
     if (trimmed.startsWith("```")) {
       if (inCode) {
-        html.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
+        html.push(renderCodeBlock(code.join("\n"), codeLanguage, pinId, codeBlockIndex));
+        codeBlockIndex += 1;
         code = [];
         inCode = false;
       } else {
         flushBlocks();
+        codeLanguage = trimmed.slice(3).trim() || "text";
         inCode = true;
       }
       continue;
@@ -113,10 +117,26 @@ function renderMarkdown(markdown: string, title: string): string {
     paragraph.push(trimmed);
   }
   if (inCode) {
-    html.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
+    html.push(renderCodeBlock(code.join("\n"), codeLanguage, pinId, codeBlockIndex));
   }
   flushBlocks();
   return html.join("");
+}
+
+function normalizeEscapedNewlines(markdown: string): string {
+  return markdown.replaceAll("\\r\\n", "\n").replaceAll("\\n", "\n");
+}
+
+function renderCodeBlock(code: string, language: string, pinId: string, index: number): string {
+  const codeId = `pin-code-${encodeURIComponent(pinId)}-${index}`;
+  return `
+    <div class="code-block">
+      <div class="code-block-topline">
+        <span>${escapeHtml(language)}</span>
+        <button type="button" class="code-copy" data-copy-target="${escapeHtml(codeId)}" aria-label="Copy code block">Copy</button>
+      </div>
+      <pre><code id="${escapeHtml(codeId)}">${escapeHtml(code)}</code></pre>
+    </div>`;
 }
 
 function stripDuplicateTitle(markdown: string, title: string): string {
