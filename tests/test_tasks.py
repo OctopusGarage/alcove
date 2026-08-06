@@ -471,6 +471,26 @@ def test_due_digest_respects_configured_send_time(tmp_path, monkeypatch):
     assert "Timed weekly digest" in sent[0]
 
 
+def test_due_digest_retries_after_notification_failure(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = TasksModule(home=home)
+    module.task_add(AddTaskRequest(title="Retry failed digest"))
+    (home.paths().tasks / "notifications.yml").write_text(
+        "digests:\n  weekly:\n    enabled: true\n    day: sunday\n    notify: true\n",
+        encoding="utf-8",
+    )
+    results = iter([{"status": "failed", "error": "temporary outage"}, {"status": "sent"}])
+    monkeypatch.setattr("alcove.tasks.send_telegram_message", lambda **_: next(results))
+
+    failed = module.run_due_notifications(now=datetime.fromisoformat("2026-07-12T21:00:00+08:00"))
+    retried = module.run_due_notifications(now=datetime.fromisoformat("2026-07-12T21:01:00+08:00"))
+
+    assert failed["sent"] == 0
+    assert failed["skipped_items"] == [{"period": "weekly", "reason": "notification_not_sent"}]
+    assert retried["sent"] == 1
+    assert retried["digests"][0]["notify"]["status"] == "sent"
+
+
 def test_search_includes_active_ideas_and_pending_tasks(tmp_path):
     workspace = Workspace.init(tmp_path)
     module = TasksModule(workspace)
