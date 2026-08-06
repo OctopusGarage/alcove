@@ -525,8 +525,12 @@ class TasksModule:
                 notify=bool(policy.get("notify", True)),
                 sinks=notification_sinks(policy),
             )
-            state[state_key] = now_iso()
-            sent.append(digest)
+            notify_status = str(digest.get("notify", {}).get("status") or "skipped")
+            if not policy.get("notify", True) or notify_status in {"sent", "partial"}:
+                state[state_key] = now_iso()
+                sent.append(digest)
+            else:
+                skipped.append({"period": period, "reason": "notification_not_sent"})
         if sent:
             self._save_notification_state(state)
         return {
