@@ -126,9 +126,17 @@ schedule:
   ttl_hours: 24
 ```
 
-When `daily_time` is set, the scheduler runs the radar only after that local
-time and only once per local date. Without `daily_time`, Alcove keeps the older
-TTL-compatible behavior and runs the first due scheduled tick for the day.
+When `daily_time` is set, it is the earliest local execution time. A completed
+run remains fresh until `run_at + ttl_hours`; a fresh successful run is skipped
+and reported as healthy even when it crosses a local date boundary. Once that
+success expires, the radar runs on the first service tick at or after
+`daily_time`. A missing, malformed, or non-completed run is not considered a
+successful run. Without `daily_time`, Alcove runs the first tick after the
+latest successful run expires.
+
+Skipped radar health rows include the last run status and timestamp. When the
+last run was unsuccessful, they also include source-level errors or the stored
+run error so the health notification can identify what needs investigation.
 Scheduled runs are deterministic unless the radar definition explicitly enables
 `ai_summary.enabled: true`. When AI summary is enabled, Alcove calls the
 configured provider after the deterministic report is already written:
@@ -206,6 +214,7 @@ notify:
   sinks:
     - type: tcb
       channel: lark      # telegram | lark | both
+      session: <project-session>  # route Lark delivery to the session-bound group
       document_formats: [md, html]
 ```
 

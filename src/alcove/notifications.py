@@ -80,6 +80,9 @@ def send_tcb_notification(
     source = str(sink.get("source") or "alcove").strip()
     if source:
         args.extend(["--source", source])
+    session = str(sink.get("session") or "").strip()
+    if session:
+        args.extend(["--session", session])
     for attachment in attachments:
         args.extend(["--attach", str(attachment)])
     timeout = _positive_int(sink.get("timeout_seconds"), default=60)

@@ -158,6 +158,35 @@ def test_send_tcb_notification_uses_notify_attach_protocol(monkeypatch, tmp_path
     assert calls[0]["input"] == "Core summary"
 
 
+def test_send_tcb_notification_routes_to_explicit_session(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    class Completed:
+        returncode = 0
+        stdout = '{"status":"sent"}\n'
+        stderr = ""
+
+    def fake_run(command, input, text, capture_output, timeout, check):
+        calls.append(command)
+        return Completed()
+
+    monkeypatch.setattr(notifications.subprocess, "run", fake_run)
+
+    notifications.send_tcb_notification(
+        sink={
+            "type": "tcb",
+            "channel": "lark",
+            "session": "tmux_proj_alcovehub",
+        },
+        title="Radar ready",
+        text="Core summary",
+        attachments=[],
+    )
+
+    assert calls[0][0:2] == ["tcb", "notify"]
+    assert calls[0][calls[0].index("--session") + 1] == "tmux_proj_alcovehub"
+
+
 def test_send_tcb_notification_normalizes_failed_deliveries(monkeypatch) -> None:
     class Completed:
         returncode = 0

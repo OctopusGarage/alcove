@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -228,7 +229,7 @@ def test_radar_check_stale_waits_until_daily_time_in_configured_timezone(tmp_pat
         current_time=datetime.combine(today, datetime.min.time(), zone).replace(hour=10)
     )
     repeated = module.check_stale(
-        current_time=datetime.combine(today, datetime.min.time(), zone).replace(hour=10, minute=30)
+        current_time=datetime.combine(today, datetime.min.time(), zone).replace(hour=23, minute=30)
     )
 
     assert before["ran"] == 0
@@ -238,6 +239,86 @@ def test_radar_check_stale_waits_until_daily_time_in_configured_timezone(tmp_pat
     assert before["radars"][0]["next_run_after"] == f"{today.isoformat()}T10:00+08:00"
     assert after["ran"] == 1
     assert repeated["ran"] == 0
-    assert repeated["radars"][0]["reason"] == "already_ran_today"
+    assert repeated["radars"][0]["reason"] == "within_ttl"
     assert repeated["radars"][0]["last_run_status"] == "completed"
     assert repeated["radars"][0]["last_run_success"] is True
+
+
+def test_radar_check_stale_uses_recent_success_ttl_before_daily_time(tmp_path) -> None:
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = RadarModule(home)
+    module.upsert_definition(
+        RadarDefinition(
+            id="fresh-radar",
+            name="Fresh Radar",
+            schedule=RadarSchedule(
+                enabled=True,
+                ttl_hours=24,
+                daily_time="10:00",
+                timezone="Asia/Singapore",
+            ),
+            sources=[RadarSource(id="fixture", adapter="fixture")],
+        )
+    )
+    run_path = home.root / "radars" / "runs" / "fresh-radar" / "2026-08-05" / "run.json"
+    run_path.parent.mkdir(parents=True)
+    run_path.write_text(
+        json.dumps(
+            {
+                "schema": "alcove/radar-run/v1",
+                "id": "fresh-radar",
+                "date": "2026-08-05",
+                "run_at": "2026-08-05T02:13:02+00:00",
+                "status": "completed",
+                "included": 3,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = module.check_stale(current_time=datetime.fromisoformat("2026-08-06T09:49:00+08:00"))
+
+    row = payload["radars"][0]
+    assert payload["ran"] == 0
+    assert row["reason"] == "within_ttl"
+    assert row["last_run_success"] is True
+    assert row["next_run_after"] == "2026-08-06T10:13+08:00"
+
+
+def test_radar_check_stale_exposes_recent_failed_run_reason_before_daily_time(tmp_path) -> None:
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = RadarModule(home)
+    module.upsert_definition(
+        RadarDefinition(
+            id="failed-radar",
+            name="Failed Radar",
+            schedule=RadarSchedule(
+                enabled=True,
+                ttl_hours=24,
+                daily_time="10:00",
+                timezone="Asia/Singapore",
+            ),
+            sources=[RadarSource(id="fixture", adapter="fixture")],
+        )
+    )
+    run_path = home.root / "radars" / "runs" / "failed-radar" / "2026-08-05" / "run.json"
+    run_path.parent.mkdir(parents=True)
+    run_path.write_text(
+        json.dumps(
+            {
+                "schema": "alcove/radar-run/v1",
+                "id": "failed-radar",
+                "date": "2026-08-05",
+                "run_at": "2026-08-05T02:13:02+00:00",
+                "status": "completed_with_errors",
+                "sources": [{"id": "fixture", "status": "error", "error": "feed timed out"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = module.check_stale(current_time=datetime.fromisoformat("2026-08-06T09:49:00+08:00"))
+
+    row = payload["radars"][0]
+    assert row["last_run_success"] is False
+    assert row["last_run_error"] == "fixture: feed timed out"

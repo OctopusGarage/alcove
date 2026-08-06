@@ -115,7 +115,13 @@ def _module_health(
         and _int_value(payload.get("ran")) == 0
         and _int_value(payload.get("skipped")) > 0
     ):
-        task_status = "skipped"
+        task_status = (
+            "skipped"
+            if not isinstance(payload.get("radars"), list)
+            or not payload["radars"]
+            or _skipped_radars_without_last_success(payload)
+            else "success"
+        )
     skipped_without_success = (
         _skipped_radars_without_last_success(payload) if module == "radars" else 0
     )
@@ -129,9 +135,12 @@ def _module_health(
     }
     if task_status == "failed":
         if skipped_without_success:
+            details = _radar_skip_errors(payload)
             record["error"] = (
                 f"radars skipped without last successful run: {skipped_without_success}"
             )
+            if details:
+                record["error"] += f" ({details})"
         else:
             record["error"] = f"{module} reported {error_key}={error_count}"
     return record
@@ -170,10 +179,13 @@ def _task_health_check_line(check: dict[str, Any]) -> str:
         "skipped": "跳过",
     }.get(status, status or "未知")
     if module_key == "radars":
-        return (
+        line = (
             f"- {module}：{status_label} · "
             f"{_radar_task_health_summary(status, str(check.get('summary') or ''))}"
         )
+        if status == "failed" and check.get("error"):
+            line += f" · {check['error']}"
+        return line
 
     if status == "skipped":
         return f"- {module}：{status_label}"
@@ -251,6 +263,22 @@ def _skipped_radars_without_last_success(payload: dict[str, Any]) -> int:
             continue
         count += 1
     return count
+
+
+def _radar_skip_errors(payload: dict[str, Any]) -> str:
+    rows = payload.get("radars")
+    if not isinstance(rows, list):
+        return ""
+    details = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get("last_run_success") is not False:
+            continue
+        radar_id = str(row.get("id") or "radar")
+        if not row.get("last_run_error"):
+            continue
+        error = str(row["last_run_error"])
+        details.append(f"{radar_id}: {error}")
+    return "; ".join(details)
 
 
 def _int_value(value: Any) -> int:

@@ -743,6 +743,40 @@ def test_task_health_summary_fails_skipped_radars_without_last_success():
     assert radar_check["error"] == "radars skipped without last successful run: 2"
 
 
+def test_task_health_summary_treats_skipped_radars_with_recent_success_as_healthy():
+    summary = build_task_health_summary(
+        {
+            "connectors": {"status": "checked", "refreshed": 0, "skipped": 0, "errors": 0},
+            "watchers": {"status": "checked", "checked": 0, "changed": 0, "errors": 0},
+            "blogs": {"status": "checked", "checked": 0, "new": 0, "errors": 0},
+            "radars": {
+                "status": "checked",
+                "ran": 0,
+                "skipped": 4,
+                "errors": 0,
+                "radars": [
+                    {
+                        "id": "fresh-radar",
+                        "status": "skipped",
+                        "reason": "within_ttl",
+                        "last_run_status": "completed",
+                        "last_run_success": True,
+                    }
+                ],
+            },
+            "automations": {"status": "checked", "ran": 0, "skipped": 0, "failed": 0},
+            "publishers": {"status": "checked", "ran": 0, "updated": 0, "errors": 0},
+            "mounts": {"status": "checked", "checked": 0, "refreshed": 0, "skipped": 0},
+            "health": {"status": "ok", "issue_count": 0, "action_count": 0},
+        }
+    )
+
+    radar_check = next(check for check in summary["checks"] if check["module"] == "radars")
+
+    assert summary["status"] == "success"
+    assert radar_check["status"] == "success"
+
+
 def test_task_health_notification_reports_radar_pre_due_without_calling_it_normal():
     text = task_health_notification_text(
         {

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, time
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from typing import Any, List
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -294,6 +294,11 @@ class RadarModule:
                     "last_run_status": _last_run_status(latest_run),
                     "last_run_success": _last_run_success(latest_run),
                 }
+                if latest_run.get("run_at"):
+                    row["last_run_at"] = str(latest_run["run_at"])
+                last_run_error = _last_run_error(latest_run)
+                if last_run_error:
+                    row["last_run_error"] = last_run_error
                 if due.get("next_run_after"):
                     row["next_run_after"] = due["next_run_after"]
                 rows.append(row)
@@ -524,6 +529,28 @@ def _last_run_success(latest_run: dict[str, Any]) -> bool:
     return _last_run_status(latest_run) == "completed"
 
 
+def _last_run_error(latest_run: dict[str, Any]) -> str:
+    if not latest_run:
+        return "no previous run"
+    errors = []
+    sources = latest_run.get("sources")
+    if isinstance(sources, list):
+        for source in sources:
+            if not isinstance(source, dict) or source.get("status") != "error":
+                continue
+            source_id = str(source.get("id") or "source")
+            error = str(source.get("error") or "unknown error")
+            errors.append(f"{source_id}: {error}")
+    if errors:
+        return "; ".join(errors)
+    error = str(latest_run.get("error") or "").strip()
+    if error:
+        return error
+    if _last_run_status(latest_run) != "completed":
+        return f"last run status: {_last_run_status(latest_run)}"
+    return ""
+
+
 def _radar_due_state(
     schedule: RadarSchedule,
     latest_run: dict[str, Any],
@@ -533,8 +560,17 @@ def _radar_due_state(
     zone = _schedule_zone(schedule)
     local_now = _local_datetime(current_time, zone)
     today = local_now.date().isoformat()
-    if latest_run.get("date") == today:
-        return {"due": False, "reason": "already_ran_today", "local_date": today}
+    run_at = _parse_run_timestamp(latest_run.get("run_at"))
+    if latest_run.get("status") == "completed" and run_at is not None:
+        ttl = timedelta(hours=max(int(schedule.ttl_hours or 1), 1))
+        expires_at = run_at + ttl
+        if run_at <= current_time.astimezone(UTC) < expires_at:
+            return {
+                "due": False,
+                "reason": "within_ttl",
+                "local_date": today,
+                "next_run_after": expires_at.astimezone(zone).isoformat(timespec="minutes"),
+            }
     if not schedule.daily_time:
         return {"due": True, "reason": "due", "local_date": today}
     due_time = _parse_daily_time(schedule.daily_time)
@@ -548,6 +584,17 @@ def _radar_due_state(
             "next_run_after": next_run.isoformat(timespec="minutes"),
         }
     return {"due": True, "reason": "due", "local_date": today}
+
+
+def _parse_run_timestamp(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def _validate_schedule(schedule: RadarSchedule) -> None:
