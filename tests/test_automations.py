@@ -164,6 +164,72 @@ def test_failed_shell_automation_persists_failure_state_and_run_event(tmp_path):
     assert event["status"] == "failed"
 
 
+def test_timed_out_automation_persists_actionable_failure_state(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="slow job", command="sleep 60", timeout_seconds=3)
+
+    def timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=3)
+
+    monkeypatch.setattr("alcove.automations.subprocess.run", timeout)
+
+    result = module.run("slow-job", timestamp="2026-07-12T09:00:00+00:00")
+
+    assert result["status"] == "failed"
+    assert result["error"] == "timed out after 3s"
+    job = yaml.safe_load((home.root / "automations/jobs/slow-job.yml").read_text())
+    assert job["last_status"] == "failed"
+    assert job["last_error"] == "timed out after 3s"
+    run_payload = json.loads(
+        next((home.root / "automations/runs").glob("*slow-job.json")).read_text()
+    )
+    assert run_payload["error"] == "timed out after 3s"
+    event = json.loads((home.root / "automations/events.jsonl").read_text().strip())
+    assert event["status"] == "failed"
+
+
+def test_failed_automation_notifies_each_configured_sink_and_reports_partial_delivery(
+    tmp_path, monkeypatch
+):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="notified failure", command="exit 7", notify=True)
+    job_path = home.root / "automations/jobs/notified-failure.yml"
+    job = yaml.safe_load(job_path.read_text(encoding="utf-8"))
+    job["notify"]["sinks"] = [
+        {"type": "telegram", "name": "Operations"},
+        {"type": "feishu", "name": "Operations"},
+    ]
+    job_path.write_text(yaml.safe_dump(job, sort_keys=False), encoding="utf-8")
+
+    sent: list[str] = []
+
+    def send_telegram(*, home, text):
+        sent.append(text)
+        return {"status": "sent"}
+
+    def send_feishu(*, home, sink, title, text):
+        sent.append(f"{title}\n{text}")
+        return {"status": "failed", "error": "webhook unavailable"}
+
+    monkeypatch.setattr("alcove.automations.send_telegram_message", send_telegram)
+    monkeypatch.setattr("alcove.automations.send_feishu_message", send_feishu)
+
+    result = module.run("notified-failure", timestamp="2026-07-12T09:00:00+00:00")
+
+    assert result["status"] == "failed"
+    assert result["notify"] == {
+        "status": "partial",
+        "sinks": {
+            "operations": {"status": "sent"},
+            "operations-2": {"status": "failed", "error": "webhook unavailable"},
+        },
+    }
+    assert len(sent) == 2
+    assert all("Status: failed" in message for message in sent)
+
+
 def test_git_sync_noop_reports_success(tmp_path, monkeypatch):
     home = AlcoveHome.init(tmp_path / ".alcove")
     repo = tmp_path / "repo"
