@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import io
 import json
+from urllib.error import URLError
 
 import pytest
 
 from alcove.radars.models import RadarDefinition, RadarSource
 from alcove.radars.sources import fetch_source, registered_adapters
+from alcove.radars.sources import rss as rss_module
 
 
 def test_fixture_adapter_loads_items_from_json_file(tmp_path) -> None:
@@ -73,6 +76,36 @@ def test_rss_adapter_reads_local_rss_and_atom_feeds(tmp_path) -> None:
     assert rss_items[0].summary == "Summary Source"
     assert atom_items[0].title == "Atom News"
     assert atom_items[0].url == "https://example.test/atom"
+
+
+def test_rss_adapter_retries_transient_network_errors(monkeypatch) -> None:
+    payload = b"""<?xml version="1.0"?>
+<rss version="2.0"><channel>
+<item><title>Recovered News</title><link>https://example.test/recovered</link></item>
+</channel></rss>"""
+    attempts = 0
+
+    def fake_urlopen(request, timeout):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise URLError("[SSL: UNEXPECTED_EOF_WHILE_READING]")
+        return io.BytesIO(payload)
+
+    monkeypatch.setattr(rss_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(rss_module.time, "sleep", lambda _seconds: None)
+    definition = RadarDefinition(
+        id="news",
+        name="News",
+        sources=[
+            RadarSource(id="espn-top", adapter="rss", params={"url": "https://example.test/rss"})
+        ],
+    )
+
+    items = fetch_source(definition, definition.sources[0])
+
+    assert attempts == 2
+    assert items[0].title == "Recovered News"
 
 
 def test_rss_adapter_rejects_entity_expansion_xml(tmp_path) -> None:

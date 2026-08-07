@@ -3,6 +3,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from html import unescape
 from html.parser import HTMLParser
+import time
+from typing import Any
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from defusedxml import ElementTree
@@ -11,6 +14,8 @@ from alcove.radars.models import RadarDefinition, RadarItem, RadarSource
 
 
 ATOM_NS = "{http://www.w3.org/2005/Atom}"
+FETCH_ATTEMPTS = 3
+RETRY_DELAYS_SECONDS = (0.5, 1.0)
 
 
 class RssAdapter:
@@ -22,7 +27,7 @@ class RssAdapter:
         if not url:
             raise ValueError(f"rss radar source requires params.url: {source.id}")
         request = Request(url, headers={"User-Agent": "AlcoveRadar/0.1"})  # noqa: S310
-        with urlopen(request, timeout=20) as response:  # noqa: S310
+        with _open_with_retries(request) as response:
             raw = response.read(2_000_000)
         root = ElementTree.fromstring(raw)
         nodes = root.findall(".//item") or root.findall(f".//{ATOM_NS}entry")
@@ -57,6 +62,19 @@ class RssAdapter:
                     )
                 )
         return items
+
+
+def _open_with_retries(request: Request) -> Any:
+    for attempt in range(FETCH_ATTEMPTS):
+        try:
+            return urlopen(request, timeout=20)  # noqa: S310
+        except HTTPError:
+            raise
+        except (URLError, TimeoutError):
+            if attempt == FETCH_ATTEMPTS - 1:
+                raise
+            time.sleep(RETRY_DELAYS_SECONDS[attempt])
+    raise RuntimeError("RSS fetch retry loop exhausted")
 
 
 def _first_text(node: ElementTree.Element, names: Sequence[str]) -> str:
