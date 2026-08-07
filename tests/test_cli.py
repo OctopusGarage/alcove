@@ -2756,6 +2756,47 @@ def test_cli_task_family_payloads_include_home_scope(tmp_path, capsys):
     assert json.loads(materialize_output.out)["home"] == str(home_root.resolve())
 
 
+def test_cli_materialize_due_reports_malformed_routine_errors(tmp_path, capsys):
+    home = tmp_path / ".alcove"
+    AlcoveHome.init(home)
+    (home / "tasks" / "tasks.json").write_text(
+        json.dumps(
+            {
+                "ideas": [],
+                "tasks": [],
+                "routines": [
+                    {
+                        "id": "broken-routine",
+                        "title": "Broken routine",
+                        "status": "active",
+                        "next_due": "2026-07-08",
+                        "schedule": {"frequency": "weekly", "weekdays": []},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    code = main(
+        [
+            "task",
+            "--home",
+            str(home),
+            "materialize-due",
+            "--today",
+            "2026-07-08",
+            "--json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert payload["created"] == []
+    assert payload["errors"] == 1
+    assert payload["error_items"][0]["id"] == "broken-routine"
+
+
 def test_cli_mount_write_payloads_include_home_scope(tmp_path, capsys):
     home_root = tmp_path / "home"
     source = tmp_path / "external"
