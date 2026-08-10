@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 import json
 from pathlib import Path
 from typing import Any
@@ -57,7 +57,8 @@ def test_radar_run_fetches_scores_reports_and_writes_runtime_files(tmp_path) -> 
         )
     )
 
-    result = module.run("tech-news", ai=True)
+    run_at = datetime(2026, 8, 10, 12, 34, 56)
+    result = module.run("tech-news", ai=True, run_at=run_at)
 
     run_day = result["date"]
     cache_dir = home.root / "radars" / "cache" / "tech-news" / run_day
@@ -72,6 +73,7 @@ def test_radar_run_fetches_scores_reports_and_writes_runtime_files(tmp_path) -> 
     event = json.loads(events_path.read_text(encoding="utf-8").strip())
 
     assert result["status"] == "completed"
+    assert result["run_at"] == "2026-08-10T12:34:56+00:00"
     assert result["fetched"] == 3
     assert result["deduped"] == 2
     assert result["included"] == 1

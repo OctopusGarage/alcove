@@ -368,3 +368,34 @@ def test_search_includes_mounted_items_after_scan(tmp_path):
         "status": "active",
     }.items() <= rows[0].items()
     assert rows[0]["path"].startswith("mounts/archive#")
+
+
+def test_mount_scan_single_mount_preserves_other_workspace_mount_indexes(tmp_path):
+    workspace = Workspace.init(tmp_path / "workspace")
+    first_source = tmp_path / "first-docs"
+    second_source = tmp_path / "second-docs"
+    first_source.mkdir()
+    second_source.mkdir()
+    (first_source / "first.md").write_text(
+        "# First Mount\n\nFirst preserved needle.",
+        encoding="utf-8",
+    )
+    (second_source / "second.md").write_text(
+        "# Second Mount\n\nSecond refreshed needle.",
+        encoding="utf-8",
+    )
+    module = MountsModule(workspace)
+    first = module.add(AddMountRequest(path=str(first_source), name="First Docs"))
+    second = module.add(AddMountRequest(path=str(second_source), name="Second Docs"))
+    module.scan()
+
+    report = module.scan(second.id)
+    rows = SearchModule(workspace).search(
+        SearchRequest(query="needle", type_filter="Mounted Item", limit=10)
+    )
+
+    assert report["scanned"] == 1
+    assert {row["path"] for row in rows} == {
+        f"mounts/{first.id}#first.md",
+        f"mounts/{second.id}#second.md",
+    }

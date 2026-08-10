@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 import json
 from zoneinfo import ZoneInfo
 
@@ -225,9 +225,8 @@ def test_radar_check_stale_waits_until_daily_time_in_configured_timezone(tmp_pat
     zone = ZoneInfo("Asia/Singapore")
     today = datetime.now(zone).date()
     before = module.check_stale(current_time=datetime.combine(today, datetime.min.time(), zone))
-    after = module.check_stale(
-        current_time=datetime.combine(today, datetime.min.time(), zone).replace(hour=10)
-    )
+    due_time = datetime.combine(today, datetime.min.time(), zone).replace(hour=10)
+    after = module.check_stale(current_time=due_time)
     repeated = module.check_stale(
         current_time=datetime.combine(today, datetime.min.time(), zone).replace(hour=23, minute=30)
     )
@@ -242,6 +241,41 @@ def test_radar_check_stale_waits_until_daily_time_in_configured_timezone(tmp_pat
     assert repeated["radars"][0]["reason"] == "within_ttl"
     assert repeated["radars"][0]["last_run_status"] == "completed"
     assert repeated["radars"][0]["last_run_success"] is True
+    assert module._latest_run("scheduled-radar")["run_at"] == due_time.astimezone(
+        ZoneInfo("UTC")
+    ).isoformat(timespec="seconds")
+
+
+def test_radar_check_stale_records_naive_current_time_as_utc(tmp_path) -> None:
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    fixture = tmp_path / "items.json"
+    fixture.write_text(
+        '[{"title":"AI signal","url":"https://example.test/ai","summary":"LLM"}]',
+        encoding="utf-8",
+    )
+    module = RadarModule(home)
+    module.upsert_definition(
+        RadarDefinition(
+            id="scheduled-radar",
+            name="Scheduled Radar",
+            schedule=RadarSchedule(
+                enabled=True,
+                ttl_hours=24,
+                daily_time="10:00",
+                timezone="UTC",
+            ),
+            sources=[RadarSource(id="fixture", adapter="fixture", params={"path": str(fixture)})],
+            profile={"interest_tags": ["AI", "LLM"], "min_score_threshold": 0.5},
+        )
+    )
+
+    due_time = datetime(2026, 8, 10, 10, 0)
+    payload = module.check_stale(current_time=due_time)
+
+    assert payload["ran"] == 1
+    assert module._latest_run("scheduled-radar")["run_at"] == due_time.replace(
+        tzinfo=UTC
+    ).isoformat(timespec="seconds")
 
 
 def test_radar_check_stale_uses_recent_success_ttl_before_daily_time(tmp_path) -> None:
