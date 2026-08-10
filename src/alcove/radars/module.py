@@ -211,6 +211,7 @@ class RadarModule:
         ai: bool = False,
         notify: bool = False,
         run_day: str = "",
+        run_at: datetime | None = None,
     ) -> dict[str, Any]:
         from alcove.radars.pipeline import RadarPipeline
 
@@ -221,6 +222,7 @@ class RadarModule:
             ai=ai,
             notify=notify,
             run_day=run_day,
+            run_at=run_at,
         )
 
     def status(self, radar_id: str = "") -> dict[str, Any]:
@@ -304,7 +306,11 @@ class RadarModule:
                 rows.append(row)
                 continue
             try:
-                report = self.run(definition.id, run_day=str(due.get("local_date") or ""))
+                report = self.run(
+                    definition.id,
+                    run_day=str(due.get("local_date") or ""),
+                    run_at=_utc_datetime(current_time),
+                )
             except Exception as exc:
                 errors += 1
                 rows.append({"id": definition.id, "status": "error", "error": str(exc)})
@@ -616,6 +622,12 @@ def _local_datetime(current_time: datetime, zone: ZoneInfo) -> datetime:
     if current_time.tzinfo is None:
         current_time = current_time.replace(tzinfo=UTC)
     return current_time.astimezone(zone)
+
+
+def _utc_datetime(current_time: datetime) -> datetime:
+    if current_time.tzinfo is None:
+        return current_time.replace(tzinfo=UTC)
+    return current_time.astimezone(UTC)
 
 
 def _parse_daily_time(value: str) -> time:

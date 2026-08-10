@@ -433,11 +433,22 @@ class MountsModule:
                 {mount.id: by_mount.get(mount.id, []) for mount in mounts}, mounts
             )
             return
-        self.index_store.write_mount_index(items)
+        self.index_store.write_mount_index(self._merged_workspace_index_items(items, mounts))
         by_mount = {}
         for item in items:
             by_mount.setdefault(str(item.get("mount_id") or ""), []).append(item)
         self._write_okf_indexes({mount.id: by_mount.get(mount.id, []) for mount in mounts}, mounts)
+
+    def _merged_workspace_index_items(self, items: list[dict], mounts: list[Mount]) -> list[dict]:
+        refreshed_mount_ids = {mount.id for mount in mounts}
+        preserved: list[dict] = []
+        for dataset in self.index_store.mount_datasets():
+            preserved.extend(
+                item
+                for item in dataset.items
+                if str(item.get("mount_id") or "") not in refreshed_mount_ids
+            )
+        return [*preserved, *items]
 
     def _write_okf_indexes(
         self, items_by_mount: dict[str, list[dict]], mounts: list[Mount]

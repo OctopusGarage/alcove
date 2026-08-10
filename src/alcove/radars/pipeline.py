@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from html import escape, unescape
 import json
 from pathlib import Path
@@ -20,7 +20,7 @@ from alcove.notification_delivery import (
     notification_sinks,
 )
 from alcove.paths import compact_user_path
-from alcove.radars.models import RADAR_RUN_SCHEMA, RadarDefinition, RadarItem, now_iso
+from alcove.radars.models import RADAR_RUN_SCHEMA, RadarDefinition, RadarItem
 from alcove.radars.reporting import render_html, render_markdown, selected_report_items
 from alcove.radars.scoring import score_items
 from alcove.radars.sources import fetch_source
@@ -42,6 +42,7 @@ class RadarPipeline:
         ai: bool = False,
         notify: bool = False,
         run_day: str = "",
+        run_at: datetime | None = None,
     ) -> dict[str, Any]:
         run_day = run_day or date.today().isoformat()
         run_path = self.module.runs_root / definition.id / run_day / "run.json"
@@ -74,6 +75,7 @@ class RadarPipeline:
             reports=reports,
             force=force,
             ai=ai,
+            run_at=run_at,
         )
         ai_payload = self._maybe_summarize(
             definition,
@@ -170,8 +172,12 @@ class RadarPipeline:
         reports: dict[str, str],
         force: bool,
         ai: bool,
+        run_at: datetime | None,
     ) -> dict[str, Any]:
         failed_sources = len([row for row in source_results if row.get("status") == "error"])
+        timestamp = run_at or datetime.now(UTC)
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=UTC)
         return {
             "schema": RADAR_RUN_SCHEMA,
             "id": definition.id,
@@ -179,7 +185,7 @@ class RadarPipeline:
             "name": definition.name,
             "status": "completed" if failed_sources == 0 else "completed_with_errors",
             "date": run_day,
-            "run_at": now_iso(),
+            "run_at": timestamp.astimezone(UTC).isoformat(timespec="seconds"),
             "fetched": fetched,
             "deduped": deduped,
             "scored": scored,
