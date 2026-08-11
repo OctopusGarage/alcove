@@ -16,12 +16,14 @@ def _http_request(
     body: bytes = b"",
     *,
     headers: dict[str, str] | None = None,
+    host: str | None = "localhost",
 ) -> bytes:
     header_lines = [
         f"{method} {path} HTTP/1.1",
-        "Host: localhost",
         "Connection: close",
     ]
+    if host is not None:
+        header_lines.insert(1, f"Host: {host}")
     for key, value in (headers or {}).items():
         header_lines.append(f"{key}: {value}")
     if body:
@@ -195,3 +197,72 @@ def test_dashboard_server_accepts_same_origin_event_posts(tmp_path, monkeypatch)
     assert status == "HTTP/1.0 204 No Content"
     assert body == b""
     assert snapshot["usage"]["dashboard"]["routes"] == {"/tasks": 1}
+
+
+def test_dashboard_server_head_snapshot_has_fresh_headers_without_body(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / "home")
+    requests = [_http_request("HEAD", "/snapshot.json")]
+
+    responses = _serve_requests(monkeypatch, home, requests)
+    status, headers, body = _parse_http_response(responses[0])
+
+    assert status == "HTTP/1.0 200 OK"
+    assert headers["content-type"] == "application/json; charset=utf-8"
+    assert headers["cache-control"] == "no-store"
+    assert int(headers["content-length"]) > 0
+    assert body == b""
+
+
+def test_dashboard_server_rejects_non_object_events_and_unknown_post_paths(
+    tmp_path,
+    monkeypatch,
+):
+    home = AlcoveHome.init(tmp_path / "home")
+    requests = [
+        _http_request("POST", "/events", b'["not", "an", "object"]'),
+        _http_request("POST", "/unknown", b"{}"),
+    ]
+
+    responses = _serve_requests(monkeypatch, home, requests)
+    non_object_status, _, _ = _parse_http_response(responses[0])
+    unknown_status, _, _ = _parse_http_response(responses[1])
+    snapshot = DashboardModule(home=home).snapshot()
+
+    assert non_object_status.startswith("HTTP/1.0 400 ")
+    assert unknown_status.startswith("HTTP/1.0 404 ")
+    assert snapshot["usage"]["dashboard"]["routes"] == {}
+
+
+def test_dashboard_server_rejects_browser_origin_when_host_header_is_missing(
+    tmp_path,
+    monkeypatch,
+):
+    home = AlcoveHome.init(tmp_path / "home")
+    requests = [
+        _http_request(
+            "POST",
+            "/events",
+            b"{}",
+            headers={"Origin": "http://localhost"},
+            host=None,
+        )
+    ]
+
+    responses = _serve_requests(monkeypatch, home, requests)
+    status, _, _ = _parse_http_response(responses[0])
+    snapshot = DashboardModule(home=home).snapshot()
+
+    assert status.startswith("HTTP/1.0 403 ")
+    assert snapshot["usage"]["dashboard"]["routes"] == {}
+
+
+def test_dashboard_server_spa_fallback_serves_index_for_unknown_get(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / "home")
+    requests = [_http_request("GET", "/missing/client/route?tab=tasks")]
+
+    responses = _serve_requests(monkeypatch, home, requests)
+    status, headers, body = _parse_http_response(responses[0])
+
+    assert status == "HTTP/1.0 200 OK"
+    assert headers["content-type"].startswith("text/html")
+    assert b"Alcove" in body
