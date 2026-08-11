@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import time
+import threading
 from datetime import datetime
 
 import pytest
@@ -489,6 +490,49 @@ def test_due_digest_retries_after_notification_failure(tmp_path, monkeypatch):
     assert failed["skipped_items"] == [{"period": "weekly", "reason": "notification_not_sent"}]
     assert retried["sent"] == 1
     assert retried["digests"][0]["notify"]["status"] == "sent"
+
+
+def test_due_digest_sends_once_when_scheduler_ticks_overlap(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = TasksModule(home=home)
+    module.task_add(AddTaskRequest(title="Concurrent digest item"))
+    (home.paths().tasks / "notifications.yml").write_text(
+        "digests:\n  weekly:\n    enabled: true\n    day: sunday\n    notify: true\n",
+        encoding="utf-8",
+    )
+    sent: list[str] = []
+
+    def fake_send(*, home, text):
+        time.sleep(0.1)
+        sent.append(text)
+        return {"status": "sent"}
+
+    monkeypatch.setattr("alcove.tasks.send_telegram_message", fake_send)
+
+    results: list[dict] = []
+
+    def run_tick() -> None:
+        results.append(
+            TasksModule(home=home).run_due_notifications(
+                now=datetime.fromisoformat("2026-07-12T21:00:00+08:00")
+            )
+        )
+
+    first = threading.Thread(target=run_tick)
+    second = threading.Thread(target=run_tick)
+    first.start()
+    second.start()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert len(sent) == 1
+    assert sorted(result["sent"] for result in results) == [0, 1]
+    assert any(
+        result["skipped_items"] == [{"period": "weekly", "reason": "already_sent"}]
+        for result in results
+    )
 
 
 def test_search_includes_active_ideas_and_pending_tasks(tmp_path):
