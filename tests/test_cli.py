@@ -1604,6 +1604,119 @@ def test_cli_idea_and_task_workflows(tmp_path, capsys):
     assert json.loads(complete_output.out)["task"]["status"] == "done"
 
 
+def test_cli_global_text_outputs_cover_user_visible_planner_and_home_state(tmp_path, capsys):
+    home = tmp_path / ".alcove"
+    project_root = tmp_path / "work" / "alcove"
+    project_root.mkdir(parents=True)
+
+    home_code = main(["home", "init", "--home", str(home)])
+    home_output = capsys.readouterr()
+    pin_add_code = main(["pin", "--home", str(home), "add", "Text Pin"])
+    pin_add_output = capsys.readouterr()
+    pin_list_code = main(["pin", "--home", str(home), "list"])
+    pin_list_output = capsys.readouterr()
+    project_add_code = main(
+        [
+            "project",
+            "--home",
+            str(home),
+            "add",
+            "alcove",
+            str(project_root),
+            "--note",
+            "Knowledge workbench",
+        ]
+    )
+    project_add_output = capsys.readouterr()
+    project_find_code = main(["project", "--home", str(home), "find", "knowledge"])
+    project_find_output = capsys.readouterr()
+    roots_code = main(["project", "--home", str(home), "roots-set", str(tmp_path / "work")])
+    roots_output = capsys.readouterr()
+    idea_add_code = main(["idea", "--home", str(home), "add", "Text Idea"])
+    idea_add_output = capsys.readouterr()
+    idea_list_code = main(["idea", "--home", str(home), "list"])
+    idea_list_output = capsys.readouterr()
+    idea_promote_code = main(["idea", "--home", str(home), "promote", "text-idea"])
+    idea_promote_output = capsys.readouterr()
+    task_add_code = main(
+        [
+            "task",
+            "--home",
+            str(home),
+            "add",
+            "Text Task",
+            "--priority",
+            "high",
+            "--due",
+            "2026-07-14",
+        ]
+    )
+    task_add_output = capsys.readouterr()
+    task_list_code = main(["task", "--home", str(home), "list"])
+    task_list_output = capsys.readouterr()
+    complete_code = main(["task", "--home", str(home), "complete", "text-task"])
+    complete_output = capsys.readouterr()
+    routine_add_code = main(
+        [
+            "task",
+            "--home",
+            str(home),
+            "routine-add",
+            "Text Routine",
+            "--frequency",
+            "weekly",
+            "--weekday",
+            "tue",
+            "--next-due",
+            "2026-07-14",
+        ]
+    )
+    routine_add_output = capsys.readouterr()
+    routine_list_code = main(["task", "--home", str(home), "routine-list"])
+    routine_list_output = capsys.readouterr()
+    materialize_code = main(
+        ["task", "--home", str(home), "materialize-due", "--today", "2026-07-14"]
+    )
+    materialize_output = capsys.readouterr()
+    digest_code = main(
+        ["task", "--home", str(home), "digest", "--period", "weekly", "--today", "2026-07-14"]
+    )
+    digest_output = capsys.readouterr()
+
+    assert home_code == 0
+    assert f"Alcove home: {home}" in home_output.out
+    assert pin_add_code == 0
+    assert "pin:" in pin_add_output.out
+    assert pin_list_code == 0
+    assert "medium | regular | active | Text Pin | pins/text-pin.md" in pin_list_output.out
+    assert project_add_code == 0
+    assert f"project: alcove | {project_root.resolve()}" in project_add_output.out
+    assert project_find_code == 0
+    assert f"registry | alcove | {project_root.resolve()}" in project_find_output.out
+    assert roots_code == 0
+    assert str((tmp_path / "work").resolve()) in roots_output.out
+    assert idea_add_code == 0
+    assert idea_add_output.out.strip() == "idea: text-idea"
+    assert idea_list_code == 0
+    assert "active | Text Idea | text-idea" in idea_list_output.out
+    assert idea_promote_code == 0
+    assert idea_promote_output.out.strip() == "task: text-idea"
+    assert task_add_code == 0
+    assert task_add_output.out.strip() == "task: text-task"
+    assert task_list_code == 0
+    assert "high | pending | Text Task | text-task" in task_list_output.out
+    assert complete_code == 0
+    assert complete_output.out.strip() == "text-task"
+    assert routine_add_code == 0
+    assert routine_add_output.out.strip() == "routine: text-routine"
+    assert routine_list_code == 0
+    assert "medium | active | 2026-07-14 | Text Routine | text-routine" in routine_list_output.out
+    assert materialize_code == 0
+    assert materialize_output.out.strip() == "created: 1"
+    assert digest_code == 0
+    assert "Text Routine (routine due)" in digest_output.out
+
+
 def test_cli_idea_promote_and_routine_materialize(tmp_path, capsys):
     main(["init", str(tmp_path)])
     capsys.readouterr()

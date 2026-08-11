@@ -19,7 +19,7 @@ upload. The current gate is:
 --cov=src
 --cov-report=term-missing
 --cov-report=xml
---cov-fail-under=70
+--cov-fail-under=80
 ```
 
 Use the full verification script before release work:
