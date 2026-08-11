@@ -4,6 +4,8 @@ from datetime import datetime
 import json
 import plistlib
 import shutil
+import threading
+import time
 
 from alcove.home import AlcoveHome
 from alcove.cli import main
@@ -901,6 +903,51 @@ def test_task_health_notification_resends_when_prior_send_used_legacy_format(
     assert state["task_health_notifications"]["2026-07-29"]["status"] == "sent"
     assert state["task_health_notifications"]["2026-07-29"]["version"] == 3
     assert state["task_health_notifications"]["2026-07-29"]["task_health_status"] == "success"
+
+
+def test_task_health_notification_sends_once_when_scheduler_ticks_overlap(
+    tmp_path,
+    monkeypatch,
+):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    telegram: list[str] = []
+
+    def fake_telegram(*, home, text):
+        time.sleep(0.1)
+        telegram.append(text)
+        return {"status": "sent"}
+
+    monkeypatch.setattr(
+        "alcove.service_task_health_notifications.send_telegram_message", fake_telegram
+    )
+    monkeypatch.setattr(
+        "alcove.service_task_health_notifications.send_feishu_message",
+        lambda **_kwargs: {"status": "skipped"},
+    )
+
+    results: list[dict] = []
+    task_health = {"status": "success", "checked": 8, "failed": 0, "skipped": 0, "checks": []}
+
+    def run_tick() -> None:
+        results.append(
+            ServiceTaskHealthNotifier(home).notify_once_per_day(
+                task_health,
+                tick_time=datetime.fromisoformat("2026-07-29T12:00:00+00:00"),
+            )
+        )
+
+    first = threading.Thread(target=run_tick)
+    second = threading.Thread(target=run_tick)
+    first.start()
+    second.start()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert len(telegram) == 1
+    assert sorted(result["status"] for result in results) == ["partial", "skipped"]
+    assert any(result.get("reason") == "already_sent" for result in results)
 
 
 def test_cli_service_tick_can_skip_task_health_notification(tmp_path, monkeypatch, capsys):

@@ -504,35 +504,36 @@ class TasksModule:
                 "error": str(exc),
             }
         digests = config.get("digests") if isinstance(config.get("digests"), dict) else {}
-        state = self._load_notification_state()
-        sent: list[dict[str, Any]] = []
-        skipped: list[dict[str, Any]] = []
-        for period, raw_policy in digests.items():
-            policy = raw_policy if isinstance(raw_policy, dict) else {}
-            if not policy.get("enabled"):
-                skipped.append({"period": period, "reason": "disabled"})
-                continue
-            if not digest_due(str(period), policy, current, current_time=current_time):
-                skipped.append({"period": period, "reason": "not_due"})
-                continue
-            state_key = digest_state_key(str(period), current)
-            if state.get(state_key):
-                skipped.append({"period": period, "reason": "already_sent"})
-                continue
-            digest = self.task_digest(
-                period=str(period),
-                today=current,
-                notify=bool(policy.get("notify", True)),
-                sinks=notification_sinks(policy),
-            )
-            notify_status = str(digest.get("notify", {}).get("status") or "skipped")
-            if not policy.get("notify", True) or notify_status in {"sent", "partial"}:
-                state[state_key] = now_iso()
-                sent.append(digest)
-            else:
-                skipped.append({"period": period, "reason": "notification_not_sent"})
-        if sent:
-            self._save_notification_state(state)
+        with self._notification_state_lock():
+            state = self._load_notification_state()
+            sent: list[dict[str, Any]] = []
+            skipped: list[dict[str, Any]] = []
+            for period, raw_policy in digests.items():
+                policy = raw_policy if isinstance(raw_policy, dict) else {}
+                if not policy.get("enabled"):
+                    skipped.append({"period": period, "reason": "disabled"})
+                    continue
+                if not digest_due(str(period), policy, current, current_time=current_time):
+                    skipped.append({"period": period, "reason": "not_due"})
+                    continue
+                state_key = digest_state_key(str(period), current)
+                if state.get(state_key):
+                    skipped.append({"period": period, "reason": "already_sent"})
+                    continue
+                digest = self.task_digest(
+                    period=str(period),
+                    today=current,
+                    notify=bool(policy.get("notify", True)),
+                    sinks=notification_sinks(policy),
+                )
+                notify_status = str(digest.get("notify", {}).get("status") or "skipped")
+                if not policy.get("notify", True) or notify_status in {"sent", "partial"}:
+                    state[state_key] = now_iso()
+                    sent.append(digest)
+                else:
+                    skipped.append({"period": period, "reason": "notification_not_sent"})
+            if sent:
+                self._save_notification_state(state)
         return {
             "status": "checked",
             "sent": len(sent),
@@ -687,6 +688,19 @@ class TasksModule:
             json.dumps(state, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
+
+    @contextmanager
+    def _notification_state_lock(self) -> Iterator[None]:
+        self.notification_state_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = self.notification_state_path.with_suffix(
+            self.notification_state_path.suffix + ".lock"
+        )
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def _unique_id(self, title: str, existing: list[str]) -> str:
         slug = normalize_slug(title)
