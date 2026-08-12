@@ -221,21 +221,25 @@ def test_publisher_due_check_handles_legacy_naive_last_synced_at(tmp_path):
     module.init_apple_notes(root_folder="iCloud/Alcove")
     state_path = home.root / "publishers/state/apple-notes.yml"
     state_path.parent.mkdir(parents=True, exist_ok=True)
+    default_targets = yaml.safe_load(
+        (home.root / "publishers/definitions/apple-notes.yml").read_text(encoding="utf-8")
+    )["targets"]
     state_path.write_text(
         yaml.safe_dump(
             {
                 "schema": "alcove/publisher-state/v1",
                 "publisher_id": "apple-notes",
                 "targets": {
-                    "pins_regular": {
+                    target_id: {
                         "note_id": "note-1",
-                        "folder_path": "iCloud/Alcove/pins",
-                        "title": "Regular Pins",
+                        "folder_path": "iCloud/Alcove",
+                        "title": target_id,
                         "content_hash": "unchanged",
                         "last_synced_at": "2026-07-12T08:00:00",
                         "last_status": "success",
                         "last_error": "",
                     }
+                    for target_id in default_targets
                 },
             },
             sort_keys=False,
@@ -278,6 +282,46 @@ def test_apple_notes_init_merges_missing_default_targets_without_overwriting(tmp
         "prompt_library",
         "project_registry",
     }
+
+
+def test_publisher_due_check_runs_when_definition_has_unsynced_targets(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    target = FakeAppleNotesTarget()
+    module = PublisherModule(home, target_factory=lambda _definition: target)
+    module.init_apple_notes(root_folder="iCloud/Alcove")
+    definition_path = home.root / "publishers/definitions/apple-notes.yml"
+    definition = yaml.safe_load(definition_path.read_text(encoding="utf-8"))
+    definition["targets"] = {"pins_regular": definition["targets"]["pins_regular"]}
+    definition_path.write_text(yaml.safe_dump(definition, sort_keys=False), encoding="utf-8")
+    state_path = home.root / "publishers/state/apple-notes.yml"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        yaml.safe_dump(
+            {
+                "schema": "alcove/publisher-state/v1",
+                "publisher_id": "apple-notes",
+                "targets": {
+                    "pins_regular": {
+                        "note_id": "note-1",
+                        "folder_path": "iCloud/Alcove/pins",
+                        "title": "Regular Pins",
+                        "content_hash": "unchanged",
+                        "last_synced_at": "2026-07-12T08:00:00+00:00",
+                        "last_status": "success",
+                        "last_error": "",
+                    }
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    module.init_apple_notes(root_folder="iCloud/Alcove")
+
+    result = module.run_due(timestamp="2026-07-12T09:00:00+00:00")
+
+    assert result["ran"] == 1
+    assert result["updated"] > 0
 
 
 def test_module_publishers_render_actionable_global_memory(tmp_path):
