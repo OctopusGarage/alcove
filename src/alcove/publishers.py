@@ -628,6 +628,9 @@ class PublisherModule:
         state = self._load_state(definition.id)
         if not state:
             return True
+        target_ids = {target.id for target in definition.targets}
+        if any(target_id not in state for target_id in target_ids):
+            return True
         last_values = [value.last_synced_at for value in state.values() if value.last_synced_at]
         if not last_values:
             return True
