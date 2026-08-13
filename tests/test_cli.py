@@ -251,6 +251,168 @@ def test_cli_usage_summary_and_prune(tmp_path, capsys):
     assert json.loads(prune_output.out)["activity_removed"] == 1
 
 
+def test_cli_prompt_save_requires_force_or_proposal(tmp_path, capsys):
+    home = tmp_path / "home"
+
+    code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "save",
+            "Direct Prompt",
+            "--content",
+            "Review a change for regressions before release.",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "Prompt save requires a proposal" in captured.err
+    assert "Traceback" not in captured.err
+    assert not (home / "prompts" / "direct-prompt.md").exists()
+
+
+def test_cli_prompt_save_force_writes_metadata_and_json_eval(tmp_path, capsys):
+    home = tmp_path / "home"
+
+    code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "save",
+            "Release Review",
+            "--content",
+            "Review release notes, user-visible behavior, and regression test evidence.",
+            "--description",
+            "Reusable release-readiness review.",
+            "--tag",
+            "release",
+            "--tags",
+            "review,quality",
+            "--use-case",
+            "Release readiness",
+            "--surface",
+            "codex",
+            "--surfaces",
+            "claude-code,generic-llm",
+            "--trigger",
+            "before release",
+            "--inputs",
+            "diff,verification",
+            "--output",
+            "findings",
+            "--quality-status",
+            "curated",
+            "--quality-score",
+            "0.91",
+            "--quality-notes",
+            "Covered by CLI regression test.",
+            "--force",
+            "--json",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    payload = json.loads(captured.out)
+    prompt = payload["prompt"]
+    assert code == 0
+    assert payload["status"] == "saved"
+    assert payload["prompt_eval"]["force"] is True
+    assert payload["prompt_eval"]["proposal_id"] == ""
+    assert prompt["id"] == "release-review"
+    assert prompt["tags"] == ["quality", "release", "review"]
+    assert prompt["surfaces"] == ["claude-code", "codex", "generic-llm"]
+    assert prompt["inputs"] == ["diff", "verification"]
+    assert prompt["outputs"] == ["findings"]
+    assert prompt["quality"]["score"] == 0.91
+    assert (home / "prompts" / "release-review.md").is_file()
+
+
+def test_cli_prompt_recommend_empty_human_message(tmp_path, capsys):
+    code = main(
+        [
+            "prompt",
+            "--home",
+            str(tmp_path / "home"),
+            "recommend",
+            "no prompt library has been created yet",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert code == 0
+    assert captured.out.strip() == "No matching reusable prompts found."
+
+
+def test_cli_prompt_candidates_scan_list_and_promote(tmp_path, capsys):
+    home = tmp_path / "home"
+    source = tmp_path / "source-prompts.md"
+    source.write_text(
+        "# Incident Review Prompt\n\n"
+        "Use this reusable prompt before closing incident follow-up work.\n\n"
+        "```text\n"
+        "Review the incident change for user-visible regressions, missing rollback notes, "
+        "and verification evidence. Step through the changed files, user-facing behavior, "
+        "and persistence effects before deciding whether it is ready. MUST identify any "
+        "missing tests, incomplete rollback plan, or permission-sensitive path. Output "
+        "findings with file references, impact, and required fixes before release.\n"
+        "```\n",
+        encoding="utf-8",
+    )
+
+    scan_code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "candidates",
+            "scan",
+            str(source),
+        ]
+    )
+    scan_output = capsys.readouterr()
+    list_code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "candidates",
+            "list",
+            "--min-score",
+            "0.5",
+        ]
+    )
+    list_output = capsys.readouterr()
+    promote_code = main(
+        [
+            "prompt",
+            "--home",
+            str(home),
+            "candidates",
+            "promote",
+            "--min-score",
+            "0.5",
+            "--limit",
+            "1",
+            "--json",
+        ]
+    )
+    promote_output = capsys.readouterr()
+
+    promoted = json.loads(promote_output.out)
+    assert scan_code == 0
+    assert "candidates: 1" in scan_output.out
+    assert list_code == 0
+    assert "Incident Review Prompt" in list_output.out
+    assert promote_code == 0
+    assert promoted["status"] == "promoted"
+    assert promoted["count"] == 1
+    assert promoted["prompts"][0]["id"] == "incident-review-prompt"
+    assert (home / "prompts" / "incident-review-prompt.md").is_file()
+
+
 def test_cli_nested_home_groups_preserve_parent_home_option(tmp_path, monkeypatch, capsys):
     user_home = tmp_path / "user-home"
     monkeypatch.setenv("HOME", str(user_home))
