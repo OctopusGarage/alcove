@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime
 import json
+import os
 import plistlib
 import shutil
+import subprocess
 import threading
 import time
 
@@ -71,6 +73,61 @@ def test_service_launchd_path_includes_nvm_codex_bin(tmp_path, monkeypatch):
     path_entries = scheduler["EnvironmentVariables"]["PATH"].split(":")
     assert str(nvm_bin) in path_entries
     assert len(path_entries) == len(set(path_entries))
+
+
+def test_service_install_load_bootstraps_and_kickstarts_scheduler(tmp_path, monkeypatch):
+    user_home = tmp_path / "user-home"
+    monkeypatch.setenv("HOME", str(user_home))
+    monkeypatch.setattr("alcove.service_launchd.sys.platform", "darwin")
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, *, text, capture_output, check):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("alcove.service_launchd.subprocess.run", fake_run)
+    home = AlcoveHome.init(user_home / ".alcove")
+
+    result = ServiceModule(home).install(dashboard=False, scheduler=True, load=True)
+
+    scheduler_plist = user_home / "Library/LaunchAgents/com.octopusgarage.alcove.scheduler.plist"
+    assert result["status"] == "installed"
+    assert result["targets"] == ["scheduler"]
+    assert calls == [
+        ["/bin/launchctl", "bootstrap", f"gui/{os.getuid()}", str(scheduler_plist)],
+        [
+            "/bin/launchctl",
+            "kickstart",
+            "-k",
+            f"gui/{os.getuid()}/com.octopusgarage.alcove.scheduler",
+        ],
+    ]
+
+
+def test_service_start_surfaces_kickstart_failure_after_bootstrap_retry(tmp_path, monkeypatch):
+    user_home = tmp_path / "user-home"
+    monkeypatch.setenv("HOME", str(user_home))
+    monkeypatch.setattr("alcove.service_launchd.sys.platform", "darwin")
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, *, text, capture_output, check):
+        calls.append(cmd)
+        if cmd[1] == "bootstrap":
+            return subprocess.CompletedProcess(cmd, 5, stdout="", stderr="already bootstrapped")
+        return subprocess.CompletedProcess(cmd, 7, stdout="", stderr="operation not permitted")
+
+    monkeypatch.setattr("alcove.service_launchd.subprocess.run", fake_run)
+    home = AlcoveHome.init(user_home / ".alcove")
+
+    try:
+        ServiceModule(home).start(dashboard=False, scheduler=True)
+    except RuntimeError as exc:
+        error = str(exc)
+    else:
+        error = ""
+
+    assert error == "operation not permitted"
+    assert [cmd[1] for cmd in calls] == ["bootstrap", "kickstart"]
 
 
 def test_service_tick_materializes_routines_and_writes_stats(tmp_path):
@@ -1040,6 +1097,42 @@ def test_cli_service_install_status_and_tick(tmp_path, monkeypatch, capsys):
     assert tick_code == 0
     assert '"status": "ok"' in tick_output.out
     assert '"radars": {\n    "status": "skipped"' in tick_output.out
+
+
+def test_cli_service_restart_stops_before_starting_selected_scheduler(
+    tmp_path, monkeypatch, capsys
+):
+    user_home = tmp_path / "user-home"
+    alcove_home = user_home / ".alcove"
+    monkeypatch.setenv("HOME", str(user_home))
+    monkeypatch.setattr("alcove.service_launchd.sys.platform", "darwin")
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, *, text, capture_output, check):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("alcove.service_launchd.subprocess.run", fake_run)
+
+    code = main(
+        [
+            "service",
+            "restart",
+            "--home",
+            str(alcove_home),
+            "--scheduler",
+            "--json",
+        ]
+    )
+    output = capsys.readouterr()
+    payload = json.loads(output.out)
+
+    assert code == 0
+    assert payload["status"] == "restarted"
+    assert payload["targets"] == ["scheduler"]
+    assert payload["records"] == [{"name": "scheduler", "action": "started"}]
+    assert [cmd[1] for cmd in calls] == ["bootout", "bootstrap", "kickstart"]
+    assert all("dashboard" not in " ".join(cmd) for cmd in calls)
 
 
 def test_cli_service_uninstall_removes_selected_launch_agent(tmp_path, monkeypatch, capsys):
