@@ -288,6 +288,8 @@ def test_mcp_command_hints_exposes_cli_only_workflows(tmp_path):
     assert "alcove automation add-shell" in automation_commands
     assert "alcove automation add-git-sync" in automation_commands
     assert "alcove automation add-alcove" in automation_commands
+    assert "dashboard build --json" in automation_commands
+    assert "dashboard refresh --json" not in automation_commands
     assert "alcove automation add-agent" in automation_commands
     assert any("--allow-agent" in note for note in automations["notes"])
 

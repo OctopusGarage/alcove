@@ -36,7 +36,7 @@ alcove automation add-git-sync notes ~/notes \
   --notify \
   --json
 alcove automation add-alcove "daily dashboard" \
-  --args "dashboard refresh --json" \
+  --args "dashboard build --json" \
   --json
 alcove automation add-agent "weekly inbox review" \
   --prompt "Review the latest inbox items and propose next actions." \
