@@ -123,6 +123,21 @@ def test_default_apple_notes_publisher_writes_pin_notes_and_skips_unchanged(tmp_
     assert list((home.root / "publishers/runs").glob("*apple-notes.json"))
 
 
+def test_repeated_publisher_runs_preserve_distinct_run_records(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    target = FakeAppleNotesTarget()
+    module = PublisherModule(home, target_factory=lambda _definition: target)
+    module.init_apple_notes(root_folder="iCloud/Alcove")
+    monkeypatch.setattr("alcove.publishers.now_iso", lambda: "2026-07-29T01:02:03+00:00")
+
+    first = module.run("apple-notes", timestamp="2026-07-29T01:02:03+00:00")
+    second = module.run("apple-notes", force=True, timestamp="2026-07-29T01:02:03+00:00")
+
+    assert first["status"] == "success"
+    assert second["status"] == "success"
+    assert len(list((home.root / "publishers/runs").glob("*apple-notes.json"))) == 2
+
+
 def test_alcove_memory_write_triggers_due_publisher_before_ttl(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     target = FakeAppleNotesTarget()

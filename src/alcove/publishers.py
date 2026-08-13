@@ -573,6 +573,10 @@ class PublisherModule:
         self.runs_root.mkdir(parents=True, exist_ok=True)
         suffix = now_iso().replace(":", "").replace("+", "Z")
         path = self.runs_root / f"{suffix}-{normalize_slug(publisher_id)}.json"
+        index = 2
+        while path.exists():
+            path = self.runs_root / f"{suffix}-{index}-{normalize_slug(publisher_id)}.json"
+            index += 1
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", "utf-8")
         return path
 
