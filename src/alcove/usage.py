@@ -187,17 +187,21 @@ class UsageRecorder:
         search_types: Counter[str] = Counter()
         zero_result = 0
         for event in search_events:
-            metrics = event.get("metrics") if isinstance(event.get("metrics"), dict) else {}
-            metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
-            filters = metadata.get("filters") if isinstance(metadata.get("filters"), dict) else {}
+            raw_metrics = event.get("metrics")
+            metrics = raw_metrics if isinstance(raw_metrics, dict) else {}
+            raw_metadata = event.get("metadata")
+            metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
+            raw_filters = metadata.get("filters")
+            filters = raw_filters if isinstance(raw_filters, dict) else {}
             type_filter = str(filters.get("type") or filters.get("type_filter") or "").strip()
             if type_filter:
                 search_types[type_filter] += 1
-            if int(metrics.get("result_count") or 0) == 0:
+            if self._int_value(metrics.get("result_count"), default=-1) == 0:
                 zero_result += 1
-        route_counter = Counter()
+        route_counter: Counter[str] = Counter()
         for event in dashboard_events:
-            metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+            raw_metadata = event.get("metadata")
+            metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
             route = str(metadata.get("route") or "").strip()
             if route:
                 route_counter[route] += 1
@@ -253,7 +257,8 @@ class UsageRecorder:
         removed = 0
         for event in events:
             timestamp = str(event.get(timestamp_key) or event.get("timestamp") or "")
-            if timestamp and self._parse_timestamp(timestamp) < cutoff:
+            parsed = self._parse_event_timestamp(timestamp)
+            if parsed is not None and parsed < cutoff:
                 removed += 1
                 continue
             kept.append(event)
@@ -269,6 +274,15 @@ class UsageRecorder:
         if parsed.tzinfo is None:
             return parsed.replace(tzinfo=timezone.utc)
         return parsed
+
+    @classmethod
+    def _parse_event_timestamp(cls, value: str) -> datetime | None:
+        if not value:
+            return None
+        try:
+            return cls._parse_timestamp(value)
+        except ValueError:
+            return None
 
     def _query_hash(self, query: str) -> str:
         if not query:
@@ -288,6 +302,13 @@ class UsageRecorder:
                 continue
             clean[str(key)] = str(value)
         return clean
+
+    @staticmethod
+    def _int_value(value: Any, *, default: int = 0) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
 
     def _usage_path(self) -> Any:
         return self.home.paths().logs / "usage.jsonl"
