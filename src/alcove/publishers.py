@@ -628,21 +628,25 @@ class PublisherModule:
         state = self._load_state(definition.id)
         if not state:
             return True
-        target_ids = {target.id for target in definition.targets}
-        if any(target_id not in state for target_id in target_ids):
-            return True
-        last_values = [value.last_synced_at for value in state.values() if value.last_synced_at]
-        if not last_values:
-            return True
-        parsed_values = [_parse_time(value) for value in last_values]
-        if any(value is None for value in parsed_values):
-            return True
         current = _parse_time(timestamp)
         if current is None:
             return True
-        latest_at = max(value for value in parsed_values if value is not None)
-        delta = current - latest_at
-        return delta.total_seconds() >= max(definition.schedule.ttl_hours, 1) * 3600
+        interval_seconds = max(definition.schedule.ttl_hours, 1) * 3600
+        target_ids = {target.id for target in definition.targets}
+        for target_id in target_ids:
+            target_state = state.get(target_id)
+            if target_state is None:
+                return True
+            if target_state.last_status == "failed":
+                return True
+            synced_at = _parse_time(target_state.last_synced_at)
+            if synced_at is None:
+                return True
+            if (current - synced_at).total_seconds() >= interval_seconds:
+                return True
+        if not target_ids:
+            return True
+        return False
 
     def _dirty_sources(self, definition: PublisherDefinition) -> set[str]:
         sources = {target.source.module for target in definition.targets if target.source.module}
