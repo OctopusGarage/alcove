@@ -126,6 +126,26 @@ def test_blog_check_detects_new_article_and_uses_capture_policy(tmp_path, monkey
     assert (home.root / "blog-monitor/events.jsonl").read_text().count("\n") == 1
 
 
+def test_repeated_blog_checks_preserve_distinct_run_records(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    page = tmp_path / "blog.html"
+    _write_html(page, [("https://example.com/blog/one", "First useful article")])
+    module = BlogMonitorModule(home)
+    module.add(
+        name="Example Blog",
+        url=page.as_uri(),
+        source_id="example",
+        link_pattern="/blog/",
+    )
+
+    first = module.check(source_id="example", now="2026-07-11T15:00:00+00:00")
+    second = module.check(source_id="example", now="2026-07-11T15:00:00+00:00")
+
+    assert first["sources"][0]["status"] == "changed"
+    assert second["sources"][0]["status"] == "fresh"
+    assert len(list((home.root / "blog-monitor/runs").glob("*-example.json"))) == 2
+
+
 def test_blog_notify_sends_title_url_and_captured_summary(tmp_path, monkeypatch):
     home = AlcoveHome.init(tmp_path / ".alcove")
     kb_root = tmp_path / "kb"

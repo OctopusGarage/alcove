@@ -71,7 +71,7 @@ def command_hints_tool(
                 f"alcove automation run-due --home {home_hint} --json",
                 f'alcove automation add-shell --home {home_hint} "backup cache" --cmd "rsync -a ~/source/ ~/backup/" --json',
                 f"alcove automation add-git-sync --home {home_hint} notes ~/notes --json",
-                f'alcove automation add-alcove --home {home_hint} "daily dashboard" --args "dashboard refresh --json" --json',
+                f'alcove automation add-alcove --home {home_hint} "daily dashboard" --args "dashboard build --json" --json',
                 f'alcove automation add-agent --home {home_hint} "weekly inbox review" --prompt "Review latest inbox items." --provider codex --json',
             ],
             "notes": [

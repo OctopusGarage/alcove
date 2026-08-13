@@ -233,6 +233,50 @@ def test_dashboard_server_rejects_non_object_events_and_unknown_post_paths(
     assert snapshot["usage"]["dashboard"]["routes"] == {}
 
 
+def test_dashboard_server_rejects_event_posts_with_invalid_content_length(
+    tmp_path,
+    monkeypatch,
+):
+    home = AlcoveHome.init(tmp_path / "home")
+    requests = [
+        _http_request(
+            "POST",
+            "/events",
+            b"{}",
+            headers={"Content-Length": "not-a-number"},
+        )
+    ]
+
+    responses = _serve_requests(monkeypatch, home, requests)
+    status, _, _ = _parse_http_response(responses[0])
+    snapshot = DashboardModule(home=home).snapshot()
+
+    assert status.startswith("HTTP/1.0 400 ")
+    assert snapshot["usage"]["dashboard"]["routes"] == {}
+
+
+def test_dashboard_server_rejects_event_posts_with_negative_content_length(
+    tmp_path,
+    monkeypatch,
+):
+    home = AlcoveHome.init(tmp_path / "home")
+    requests = [
+        _http_request(
+            "POST",
+            "/events",
+            b"{}",
+            headers={"Content-Length": "-1"},
+        )
+    ]
+
+    responses = _serve_requests(monkeypatch, home, requests)
+    status, _, _ = _parse_http_response(responses[0])
+    snapshot = DashboardModule(home=home).snapshot()
+
+    assert status.startswith("HTTP/1.0 400 ")
+    assert snapshot["usage"]["dashboard"]["routes"] == {}
+
+
 def test_dashboard_server_rejects_browser_origin_when_host_header_is_missing(
     tmp_path,
     monkeypatch,

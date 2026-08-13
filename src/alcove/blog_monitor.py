@@ -494,6 +494,10 @@ function hasManualActionText(text) {
     ) -> Path:
         self.runs_root.mkdir(parents=True, exist_ok=True)
         path = self._run_path(source.id, timestamp=timestamp)
+        index = 2
+        while path.exists():
+            path = self._run_path(f"{index}-{source.id}", timestamp=timestamp)
+            index += 1
         payload = {
             "schema": "alcove/blog-run/v1",
             "timestamp": timestamp,

@@ -86,6 +86,13 @@ class RoutineSchedulePlan:
         return date(year, month, min(day_of_month, last_day))
 
     def next_due_on_or_after(self, current: date) -> date:
+        if self.frequency == "monthly":
+            day_of_month = int(self.schedule.get("day_of_month") or 1)
+            last_day = calendar.monthrange(current.year, current.month)[1]
+            current_month_due = date(current.year, current.month, min(day_of_month, last_day))
+            if current <= current_month_due:
+                return current_month_due
+            return self.advance_after(current_month_due)
         probe = current - timedelta(days=1)
         next_due = self.advance_after(probe)
         while next_due < current:

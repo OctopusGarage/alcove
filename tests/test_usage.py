@@ -228,3 +228,70 @@ def test_usage_recorder_prunes_old_usage_and_activity_events(tmp_path):
     assert "Recent search" in usage_path.read_text(encoding="utf-8")
     assert "Old pin" not in activity
     assert "Recent pin" in activity
+
+
+def test_usage_prune_tolerates_invalid_persisted_timestamps(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    recorder = UsageRecorder(home)
+    usage_path = home.paths().logs / "usage.jsonl"
+    activity_path = home.paths().logs / "activity.jsonl"
+    usage_path.write_text(
+        json.dumps(
+            {
+                "timestamp": "not-a-timestamp",
+                "surface": "cli",
+                "area": "search",
+                "action": "search.run",
+                "summary": "Malformed timestamp search",
+                "metrics": {"result_count": 0},
+                "metadata": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    activity_path.write_text(
+        json.dumps(
+            {
+                "updated_at": "not-a-timestamp",
+                "area": "pin",
+                "action": "pin.add",
+                "summary": "Malformed timestamp pin",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = recorder.prune(retention_days=14, now="2026-07-10T12:00:00+08:00")
+
+    assert result == {"usage_removed": 0, "activity_removed": 0}
+    assert "Malformed timestamp search" in usage_path.read_text(encoding="utf-8")
+    assert "Malformed timestamp pin" in activity_path.read_text(encoding="utf-8")
+
+
+def test_usage_rollups_tolerate_invalid_persisted_result_counts(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    recorder = UsageRecorder(home)
+    usage_path = home.paths().logs / "usage.jsonl"
+    usage_path.parent.mkdir(parents=True, exist_ok=True)
+    usage_path.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-07-10T00:00:00+00:00",
+                "surface": "cli",
+                "area": "search",
+                "action": "search.run",
+                "summary": "Malformed result count search",
+                "metrics": {"result_count": "many"},
+                "metadata": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    summary = recorder.write_rollups()
+
+    assert summary["total_events"] == 1
+    assert summary["search"]["zero_result"] == 0

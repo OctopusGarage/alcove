@@ -199,6 +199,23 @@ def test_monthly_routine_materialize_clamps_day_of_month(tmp_path):
     assert module.routine_list()[0].next_due == "2026-02-28"
 
 
+def test_monthly_routine_resume_keeps_due_day_when_today_matches(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    module = TasksModule(workspace)
+    routine = module.routine_add(
+        AddRoutineRequest(
+            title="Month end resume",
+            schedule={"frequency": "monthly", "interval": 1, "day_of_month": 31},
+            next_due="2026-01-31",
+        )
+    )
+    module.routine_pause(routine.id)
+
+    resumed = module.routine_resume(routine.id, today="2026-01-31")
+
+    assert resumed.next_due == "2026-01-31"
+
+
 def test_routine_pause_resume_archive_and_edit(tmp_path):
     workspace = Workspace.init(tmp_path)
     module = TasksModule(workspace)

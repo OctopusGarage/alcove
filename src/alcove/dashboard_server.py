@@ -70,7 +70,14 @@ def serve_dashboard(home: AlcoveHome, host: str = "127.0.0.1", port: int = 8765)
                 self.wfile.write(body)
 
         def _record_client_event(self) -> None:
-            length = int(self.headers.get("Content-Length") or "0")
+            try:
+                length = int(self.headers.get("Content-Length") or "0")
+            except ValueError:
+                self.send_error(400)
+                return
+            if length < 0:
+                self.send_error(400)
+                return
             raw = self.rfile.read(min(length, 16_384)) if length else b"{}"
             try:
                 payload = json.loads(raw.decode("utf-8"))
