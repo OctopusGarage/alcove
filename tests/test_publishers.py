@@ -324,6 +324,150 @@ def test_publisher_due_check_runs_when_definition_has_unsynced_targets(tmp_path)
     assert result["updated"] > 0
 
 
+def _write_apple_notes_state(
+    home: AlcoveHome,
+    definition: dict[str, object],
+    *,
+    failed_target: str = "",
+    invalid_target: str = "",
+    stale_target: str = "",
+) -> None:
+    state_path = home.root / "publishers/state/apple-notes.yml"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        yaml.safe_dump(
+            {
+                "schema": "alcove/publisher-state/v1",
+                "publisher_id": "apple-notes",
+                "targets": {
+                    target_id: {
+                        "note_id": f"note-{index}",
+                        "folder_path": "iCloud/Alcove",
+                        "title": target_id,
+                        "content_hash": "unchanged",
+                        "last_synced_at": (
+                            "not-a-timestamp"
+                            if target_id == invalid_target
+                            else (
+                                "2026-07-10T08:00:00+00:00"
+                                if target_id == stale_target
+                                else "2026-07-12T08:00:00+00:00"
+                            )
+                        ),
+                        "last_status": "failed" if target_id == failed_target else "success",
+                        "last_error": (
+                            "TARGET_MISSING: Missing note" if target_id == failed_target else ""
+                        ),
+                    }
+                    for index, target_id in enumerate(definition["targets"], 1)
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_publisher_due_check_runs_when_any_target_is_stale_after_partial_failure(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    target = FakeAppleNotesTarget()
+    module = PublisherModule(home, target_factory=lambda _definition: target)
+    module.init_apple_notes(root_folder="iCloud/Alcove")
+    definition = yaml.safe_load(
+        (home.root / "publishers/definitions/apple-notes.yml").read_text(encoding="utf-8")
+    )
+    _write_apple_notes_state(home, definition, failed_target="planner_digest")
+
+    result = module.run_due(timestamp="2026-07-12T09:00:00+00:00")
+
+    assert result["ran"] == 1
+    assert result["updated"] > 0
+
+
+def test_publisher_due_check_runs_when_target_sync_time_is_invalid(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    target = FakeAppleNotesTarget()
+    module = PublisherModule(home, target_factory=lambda _definition: target)
+    module.init_apple_notes(root_folder="iCloud/Alcove")
+    definition = yaml.safe_load(
+        (home.root / "publishers/definitions/apple-notes.yml").read_text(encoding="utf-8")
+    )
+    _write_apple_notes_state(home, definition, invalid_target="planner_digest")
+
+    result = module.run_due(timestamp="2026-07-12T09:00:00+00:00")
+
+    assert result["ran"] == 1
+    assert result["updated"] > 0
+
+
+def test_publisher_due_check_runs_when_target_exceeds_ttl(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    target = FakeAppleNotesTarget()
+    module = PublisherModule(home, target_factory=lambda _definition: target)
+    module.init_apple_notes(root_folder="iCloud/Alcove")
+    definition = yaml.safe_load(
+        (home.root / "publishers/definitions/apple-notes.yml").read_text(encoding="utf-8")
+    )
+    _write_apple_notes_state(home, definition, stale_target="planner_digest")
+
+    result = module.run_due(timestamp="2026-07-12T09:00:00+00:00")
+
+    assert result["ran"] == 1
+    assert result["updated"] > 0
+
+
+def test_publisher_due_check_runs_when_current_timestamp_is_invalid(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    target = FakeAppleNotesTarget()
+    module = PublisherModule(home, target_factory=lambda _definition: target)
+    module.init_apple_notes(root_folder="iCloud/Alcove")
+    definition = yaml.safe_load(
+        (home.root / "publishers/definitions/apple-notes.yml").read_text(encoding="utf-8")
+    )
+    _write_apple_notes_state(home, definition)
+
+    result = module.run_due(timestamp="not-a-timestamp")
+
+    assert result["ran"] == 1
+    assert result["updated"] > 0
+
+
+def test_publisher_due_check_skips_when_every_target_is_fresh(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    target = FakeAppleNotesTarget()
+    module = PublisherModule(home, target_factory=lambda _definition: target)
+    module.init_apple_notes(root_folder="iCloud/Alcove")
+    definition = yaml.safe_load(
+        (home.root / "publishers/definitions/apple-notes.yml").read_text(encoding="utf-8")
+    )
+    _write_apple_notes_state(home, definition)
+
+    result = module.run_due(timestamp="2026-07-12T09:00:00+00:00")
+
+    assert result["ran"] == 0
+    assert result["publishers"] == [
+        {"publisher": "apple-notes", "status": "skipped", "reason": "not_due"}
+    ]
+
+
+def test_publisher_due_check_runs_when_active_definition_has_no_targets(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    target = FakeAppleNotesTarget()
+    module = PublisherModule(home, target_factory=lambda _definition: target)
+    module.init_apple_notes(root_folder="iCloud/Alcove")
+    definition_path = home.root / "publishers/definitions/apple-notes.yml"
+    definition = yaml.safe_load(definition_path.read_text(encoding="utf-8"))
+    _write_apple_notes_state(home, definition)
+    definition["targets"] = {}
+    definition_path.write_text(yaml.safe_dump(definition, sort_keys=False), encoding="utf-8")
+
+    result = module.run_due(timestamp="2026-07-12T09:00:00+00:00")
+
+    assert result["ran"] == 1
+    assert result["publishers"][0]["status"] == "success"
+    assert result["publishers"][0]["targets"] == []
+
+
 def test_module_publishers_render_actionable_global_memory(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     TasksModule(home=home).task_add(
