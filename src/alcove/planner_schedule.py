@@ -68,12 +68,12 @@ class RoutineSchedulePlan:
             return current_due + timedelta(days=self.interval)
         if self.frequency == "weekly":
             weekdays = [WEEKDAY_ORDER[day] for day in _list(self.schedule.get("weekdays"))]
-            probe = current_due + timedelta(days=1)
-            while True:
-                delta_weeks = (probe - current_due).days // 7
-                if probe.weekday() in weekdays and delta_weeks % self.interval == 0:
-                    return probe
-                probe += timedelta(days=1)
+            current_weekday = current_due.weekday()
+            for weekday in weekdays:
+                if weekday > current_weekday:
+                    return current_due + timedelta(days=weekday - current_weekday)
+            week_start = current_due - timedelta(days=current_weekday)
+            return week_start + timedelta(weeks=self.interval, days=weekdays[0])
         day_of_month = int(self.schedule.get("day_of_month") or 1)
         month = current_due.month
         year = current_due.year
@@ -94,6 +94,12 @@ class RoutineSchedulePlan:
                 return current_month_due
             return self.advance_after(current_month_due)
         probe = current - timedelta(days=1)
+        if self.frequency == "weekly":
+            weekdays = [WEEKDAY_ORDER[day] for day in _list(self.schedule.get("weekdays"))]
+            for offset in range(7):
+                candidate = current + timedelta(days=offset)
+                if candidate.weekday() in weekdays:
+                    return candidate
         next_due = self.advance_after(probe)
         while next_due < current:
             next_due = self.advance_after(next_due)

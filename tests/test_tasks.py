@@ -182,6 +182,25 @@ def test_weekly_routine_materialize_uses_weekdays_and_is_idempotent(tmp_path):
     assert module.routine_list()[0].next_due == "2026-07-10"
 
 
+def test_biweekly_multi_weekday_routine_skips_off_week_after_last_weekday(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    module = TasksModule(workspace)
+    module.routine_add(
+        AddRoutineRequest(
+            title="Biweekly review",
+            schedule={"frequency": "weekly", "interval": 2, "weekdays": ["wed", "fri"]},
+            next_due="2026-07-08",
+        )
+    )
+
+    first = module.routine_materialize_due(today="2026-07-08")
+    second = module.routine_materialize_due(today="2026-07-10")
+
+    assert [task.due for task in first] == ["2026-07-08"]
+    assert [task.due for task in second] == ["2026-07-10"]
+    assert module.routine_list()[0].next_due == "2026-07-22"
+
+
 def test_monthly_routine_materialize_clamps_day_of_month(tmp_path):
     workspace = Workspace.init(tmp_path)
     module = TasksModule(workspace)

@@ -216,6 +216,8 @@ IDEA -> promote -> TASK
   and overdue-first listing.
 - `ROUTINE`: recurring template with `daily`, `weekly`, or `monthly` schedule;
   supports edit, pause, resume, archive, and idempotent materialization.
+  Weekly schedules can include multiple weekdays; after the last configured
+  weekday in an active interval, the next due date advances by the interval.
 
 Routines materialize when `task materialize-due`, the matching MCP tool, or the
 local service tick runs. The service can also send configured planner digests.
