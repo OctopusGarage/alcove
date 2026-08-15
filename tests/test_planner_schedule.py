@@ -23,6 +23,7 @@ def test_weekly_schedule_next_due_on_or_after_keeps_current_due_weekday() -> Non
 
     assert plan.next_due_on_or_after(date(2026, 7, 8)) == date(2026, 7, 8)
     assert plan.next_due_on_or_after(date(2026, 7, 9)) == date(2026, 7, 10)
+    assert plan.next_due_on_or_after(date(2026, 7, 11)) == date(2026, 7, 15)
 
 
 def test_routine_schedule_plan_preserves_legacy_every_days_items() -> None:
