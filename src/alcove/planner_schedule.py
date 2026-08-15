@@ -96,7 +96,9 @@ class RoutineSchedulePlan:
         probe = current - timedelta(days=1)
         if self.frequency == "weekly":
             weekdays = [WEEKDAY_ORDER[day] for day in _list(self.schedule.get("weekdays"))]
-            for offset in range(7):
+            for offset in range(
+                7
+            ):  # pragma: no branch - validated weekdays always match within a week.
                 candidate = current + timedelta(days=offset)
                 if candidate.weekday() in weekdays:
                     return candidate
