@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+import subprocess
 from types import SimpleNamespace
 
 from alcove import notifications
@@ -109,6 +110,70 @@ def test_send_feishu_message_posts_text_payload_with_optional_signature(
     assert ".html" not in body["content"]["text"]
 
 
+def test_send_feishu_message_reports_remote_error_code(monkeypatch, tmp_path) -> None:
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def read(self) -> bytes:
+            return b'{"code":19022,"msg":"signature mismatch"}'
+
+    monkeypatch.setattr(notifications, "urlopen", lambda request, timeout: FakeResponse())
+
+    result = notifications.send_feishu_message(
+        home=SimpleNamespace(root=tmp_path),
+        sink={"type": "feishu", "webhook": "https://open.feishu.cn/open-apis/bot/v2/hook/test"},
+        title="Radar failed",
+        text="Core summary",
+    )
+
+    assert result["status"] == "failed"
+    assert result["http_status"] == 200
+    assert result["remote_code"] == 19022
+    assert "signature mismatch" in result["response"]
+
+
+def test_send_telegram_document_reports_missing_attachment(tmp_path) -> None:
+    home = SimpleNamespace(root=tmp_path)
+    (tmp_path / ".env").write_text(
+        "ALCOVE_TELEGRAM_BOT_TOKEN=token\nALCOVE_TELEGRAM_CHAT_ID=chat\n",
+        encoding="utf-8",
+    )
+
+    result = notifications.send_telegram_document(
+        home=home,
+        path=tmp_path / "missing-report.md",
+        caption="Radar report",
+    )
+
+    assert result["status"] == "failed"
+    assert "telegram document not found:" in result["error"]
+    assert "missing-report.md" in result["error"]
+
+
+def test_local_env_values_ignores_comments_malformed_and_invalid_names(tmp_path) -> None:
+    (tmp_path / ".env").write_text(
+        "\n"
+        "# local secrets\n"
+        "ALCOVE_TELEGRAM_BOT_TOKEN=' quoted-token '\n"
+        'TELEGRAM_CHAT_ID="chat-123"\n'
+        "NOT A KEY=value\n"
+        "MISSING_EQUALS\n"
+        "=empty-name\n",
+        encoding="utf-8",
+    )
+
+    assert notifications.local_env_values(tmp_path) == {
+        "ALCOVE_TELEGRAM_BOT_TOKEN": "quoted-token",
+        "TELEGRAM_CHAT_ID": "chat-123",
+    }
+
+
 def test_send_tcb_notification_uses_notify_attach_protocol(monkeypatch, tmp_path) -> None:
     calls: list[dict[str, object]] = []
     report_md = tmp_path / "report.md"
@@ -156,6 +221,42 @@ def test_send_tcb_notification_uses_notify_attach_protocol(monkeypatch, tmp_path
     assert str(report_md) in command
     assert str(report_html) in command
     assert calls[0]["input"] == "Core summary"
+
+
+def test_send_tcb_notification_reports_timeout(monkeypatch) -> None:
+    def fake_run(command, input, text, capture_output, timeout, check):
+        raise subprocess.TimeoutExpired(command, timeout)
+
+    monkeypatch.setattr(notifications.subprocess, "run", fake_run)
+
+    result = notifications.send_tcb_notification(
+        sink={"type": "tcb", "timeout_seconds": "2"},
+        title="Radar ready",
+        text="Core summary",
+        attachments=[],
+    )
+
+    assert result == {"status": "failed", "error": "tcb notify timed out after 2s"}
+
+
+def test_send_tcb_notification_compacts_user_path_in_non_json_stdout(monkeypatch) -> None:
+    class Completed:
+        returncode = 0
+        stdout = "queued notification for /Users/alice/AlcoveHub/reports/radar.md\n"
+        stderr = ""
+
+    monkeypatch.setattr(notifications.subprocess, "run", lambda *args, **kwargs: Completed())
+
+    result = notifications.send_tcb_notification(
+        sink={"type": "tcb"},
+        title="Radar ready",
+        text="Core summary",
+        attachments=[],
+    )
+
+    assert result["status"] == "sent"
+    assert result["attachment_count"] == 0
+    assert result["output"] == "queued notification for ~/AlcoveHub/reports/radar.md"
 
 
 def test_send_tcb_notification_routes_to_explicit_session(monkeypatch) -> None:
