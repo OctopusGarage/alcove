@@ -209,6 +209,16 @@ class AutomationsModule:
             results.append(result)
             if result.get("status") == "skipped":
                 skipped += 1
+                if result.get("reason") == "agent job requires --allow-agent or allow_service":
+                    self._write_job(
+                        replace(
+                            job,
+                            checked_at=timestamp,
+                            last_status="skipped",
+                            last_error="",
+                            updated_at=timestamp,
+                        )
+                    )
             else:
                 ran += 1
             if result.get("status") == "failed":
