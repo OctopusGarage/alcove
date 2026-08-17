@@ -107,7 +107,7 @@ class ServiceModule:
             else {"status": "skipped", "ran": 0, "skipped": 0, "errors": 0}
         )
         automations_payload = (
-            AutomationsModule(self.home).run_due()
+            AutomationsModule(self.home).run_due(now=tick_time.isoformat(timespec="seconds"))
             if run_automations
             else {"status": "skipped", "ran": 0, "skipped": 0, "failed": 0}
         )

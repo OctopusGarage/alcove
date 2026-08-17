@@ -74,6 +74,36 @@ def test_run_due_skips_agent_jobs_unless_allowed(tmp_path):
     assert result["jobs"][0]["reason"] == "agent job requires --allow-agent or allow_service"
 
 
+def test_run_due_records_guarded_agent_skip_as_checked(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_agent(
+        name="guarded agent",
+        prompt="summarize",
+        provider="claude",
+        ttl_hours=24,
+        allow_service=False,
+    )
+
+    first = module.run_due(now="2026-07-12T09:00:00+00:00")
+    second = module.run_due(now="2026-07-12T09:01:00+00:00")
+
+    assert first["jobs"] == [
+        {
+            "id": "guarded-agent",
+            "status": "skipped",
+            "reason": "agent job requires --allow-agent or allow_service",
+        }
+    ]
+    assert second["jobs"] == [{"id": "guarded-agent", "status": "skipped", "reason": "not_due"}]
+    job = yaml.safe_load(
+        (home.root / "automations/jobs/guarded-agent.yml").read_text(encoding="utf-8")
+    )
+    assert job["checked_at"] == "2026-07-12T09:00:00+00:00"
+    assert job["last_run_at"] == ""
+    assert job["last_status"] == "skipped"
+
+
 def test_run_due_runs_active_jobs_in_order_and_ignores_disabled_jobs(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     output = tmp_path / "ordered.txt"
@@ -440,6 +470,40 @@ def test_service_tick_runs_due_automations(tmp_path):
 
     assert result["automations"]["ran"] == 1
     assert marker.read_text(encoding="utf-8") == "service"
+
+
+def test_service_tick_uses_today_for_automation_due_checks(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    marker = tmp_path / "should-not-run.txt"
+    AutomationsModule(home).add_shell(
+        name="daily marker",
+        command=f"printf unexpected > {marker}",
+        ttl_hours=24,
+        timeout_seconds=5,
+    )
+    job_path = home.root / "automations" / "jobs" / "daily-marker.yml"
+    job = yaml.safe_load(job_path.read_text(encoding="utf-8"))
+    job["checked_at"] = "2026-07-10T00:00:00+00:00"
+    job_path.write_text(yaml.safe_dump(job, sort_keys=False), encoding="utf-8")
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-10",
+    )
+
+    assert result["automations"]["ran"] == 0
+    assert result["automations"]["jobs"] == [
+        {"id": "daily-marker", "status": "skipped", "reason": "not_due"}
+    ]
+    assert not marker.exists()
+    persisted = yaml.safe_load(job_path.read_text(encoding="utf-8"))
+    assert persisted["checked_at"] == "2026-07-10T00:00:00+00:00"
 
 
 def test_service_tick_tolerates_invalid_persisted_automation_mapping_fields(tmp_path):
