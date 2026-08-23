@@ -327,6 +327,32 @@ def test_service_tick_tolerates_invalid_persisted_routine_schedule(tmp_path):
     assert (home.root / "dashboard" / "snapshot.json").is_file()
 
 
+def test_service_tick_tolerates_malformed_task_store_without_overwriting_it(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    task_store = home.root / "tasks" / "tasks.json"
+    task_store.parent.mkdir(parents=True, exist_ok=True)
+    task_store.write_text("{broken", encoding="utf-8")
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["tasks"]["materialized"] == 0
+    assert result["tasks"]["errors"] == 1
+    assert result["tasks"]["error_items"][0]["id"] == "tasks.json"
+    assert task_store.read_text(encoding="utf-8") == "{broken"
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
 def test_service_tick_tolerates_malformed_connector_source_yaml(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     source_path = home.root / "connectors" / "github-stars" / "sources" / "broken.yml"
