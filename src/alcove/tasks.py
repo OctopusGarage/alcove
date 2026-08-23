@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, date, datetime
 import fcntl
 import json
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -110,6 +110,8 @@ class TasksModule:
         self.home = self.runtime.home
         self.task_root = self.runtime.tasks_root
         taxonomy_root = self.runtime.knowledge_root if self.workspace else self.task_root
+        if taxonomy_root is None:
+            taxonomy_root = self.task_root
         self.taxonomy = load_taxonomy(taxonomy_root)
         self.store_path = self.task_root / "tasks.json"
         self.notification_config_path = self.task_root / "notifications.yml"
@@ -318,55 +320,60 @@ class TasksModule:
         return routines
 
     def routine_materialize_due(self, today: str | date | None = None) -> list[Task]:
-        return self.routine_materialize_due_payload(today=today)["items"]
+        return cast(list[Task], self.routine_materialize_due_payload(today=today)["items"])
 
     def routine_materialize_due_payload(self, today: str | date | None = None) -> dict[str, Any]:
-        with self._transaction() as data:
-            current = self._coerce_date(today) if today is not None else date.today()
-            timestamp = now_iso()
-            created: list[Task] = []
-            errors: list[dict[str, str]] = []
-            for routine in data["routines"]:
-                if routine.get("status", "active") != "active":
-                    continue
-                try:
-                    next_due = self._parse_date(str(routine.get("next_due") or ""))
-                    schedule = RoutineSchedulePlan.from_item(routine)
-                    if next_due > current:
+        created: list[Task] = []
+        errors: list[dict[str, str]] = []
+        try:
+            with self._transaction() as data:
+                current = self._coerce_date(today) if today is not None else date.today()
+                timestamp = now_iso()
+                created = []
+                errors = []
+                for routine in data["routines"]:
+                    if routine.get("status", "active") != "active":
                         continue
-                    due = next_due
-                    due_text = due.isoformat()
-                    if not self._routine_occurrence_exists(
-                        data, str(routine.get("id") or ""), due_text
-                    ):
-                        task = self._new_task(
-                            data,
-                            title=str(routine.get("title") or ""),
-                            notes=str(routine.get("notes") or ""),
-                            tags=[str(tag) for tag in self._list(routine.get("tags"))],
-                            priority=str(routine.get("priority") or "medium"),
-                            due=due_text,
-                            timestamp=timestamp,
+                    try:
+                        next_due = self._parse_date(str(routine.get("next_due") or ""))
+                        schedule = RoutineSchedulePlan.from_item(routine)
+                        if next_due > current:
+                            continue
+                        due = next_due
+                        due_text = due.isoformat()
+                        if not self._routine_occurrence_exists(
+                            data, str(routine.get("id") or ""), due_text
+                        ):
+                            task = self._new_task(
+                                data,
+                                title=str(routine.get("title") or ""),
+                                notes=str(routine.get("notes") or ""),
+                                tags=[str(tag) for tag in self._list(routine.get("tags"))],
+                                priority=str(routine.get("priority") or "medium"),
+                                due=due_text,
+                                timestamp=timestamp,
+                            )
+                            task_data = {**asdict(task), "source_routine_id": routine.get("id")}
+                            data["tasks"].append(task_data)
+                            generated = self._list(routine.get("generated_task_ids"))
+                            generated.append(task_data["id"])
+                            routine["generated_task_ids"] = generated
+                            created.append(self._task(task_data))
+                        while next_due <= current:
+                            next_due = schedule.advance_after(next_due)
+                        routine["next_due"] = next_due.isoformat()
+                        routine["last_materialized_due"] = due_text
+                        routine["updated_at"] = timestamp
+                    except ValueError as exc:
+                        errors.append(
+                            {
+                                "id": str(routine.get("id") or ""),
+                                "title": str(routine.get("title") or ""),
+                                "error": str(exc),
+                            }
                         )
-                        task_data = {**asdict(task), "source_routine_id": routine.get("id")}
-                        data["tasks"].append(task_data)
-                        generated = self._list(routine.get("generated_task_ids"))
-                        generated.append(task_data["id"])
-                        routine["generated_task_ids"] = generated
-                        created.append(self._task(task_data))
-                    while next_due <= current:
-                        next_due = schedule.advance_after(next_due)
-                    routine["next_due"] = next_due.isoformat()
-                    routine["last_materialized_due"] = due_text
-                    routine["updated_at"] = timestamp
-                except ValueError as exc:
-                    errors.append(
-                        {
-                            "id": str(routine.get("id") or ""),
-                            "title": str(routine.get("title") or ""),
-                            "error": str(exc),
-                        }
-                    )
+        except json.JSONDecodeError as exc:
+            errors.append(self._store_error(exc))
         return {"items": created, "errors": len(errors), "error_items": errors}
 
     def routine_edit(
@@ -503,7 +510,8 @@ class TasksModule:
                 "skipped_items": [],
                 "error": str(exc),
             }
-        digests = config.get("digests") if isinstance(config.get("digests"), dict) else {}
+        raw_digests = config.get("digests")
+        digests = raw_digests if isinstance(raw_digests, dict) else {}
         with self._notification_state_lock():
             state = self._load_notification_state()
             sent: list[dict[str, Any]] = []
@@ -557,7 +565,7 @@ class TasksModule:
 
     def _new_task(
         self,
-        data: dict[str, list[dict]],
+        data: dict[str, list[dict[str, Any]]],
         title: str,
         notes: str,
         tags: list[str],
@@ -579,7 +587,7 @@ class TasksModule:
 
     def _new_routine(
         self,
-        data: dict[str, list[dict]],
+        data: dict[str, list[dict[str, Any]]],
         *,
         title: str,
         notes: str,
@@ -627,18 +635,31 @@ class TasksModule:
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def _load(self) -> dict[str, list[dict[str, Any]]]:
-        return self._load_unlocked()
+        try:
+            return self._load_unlocked()
+        except json.JSONDecodeError:
+            return self._empty_store()
 
     def _load_unlocked(self) -> dict[str, list[dict[str, Any]]]:
         if not self.store_path.is_file():
-            return {"ideas": [], "tasks": [], "routines": []}
+            return self._empty_store()
         data = json.loads(self.store_path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
-            return {"ideas": [], "tasks": [], "routines": []}
+            return self._empty_store()
         return {
             "ideas": self._list(data.get("ideas")),
             "tasks": self._list(data.get("tasks")),
             "routines": self._list(data.get("routines")),
+        }
+
+    def _empty_store(self) -> dict[str, list[dict[str, Any]]]:
+        return {"ideas": [], "tasks": [], "routines": []}
+
+    def _store_error(self, exc: json.JSONDecodeError) -> dict[str, str]:
+        return {
+            "id": self.store_path.name,
+            "title": "Task store",
+            "error": f"Invalid task store JSON: {exc}",
         }
 
     def _save(self, data: dict[str, list[dict[str, Any]]]) -> None:
@@ -801,7 +822,7 @@ class TasksModule:
         return [self._task(item) for item in sorted(tasks, key=sort_key)]
 
     def _routine_occurrence_exists(
-        self, data: dict[str, list[dict]], routine_id: str, due: str
+        self, data: dict[str, list[dict[str, Any]]], routine_id: str, due: str
     ) -> bool:
         return any(
             str(task.get("source_routine_id") or task.get("routine_id") or "") == routine_id
@@ -847,7 +868,10 @@ class TasksModule:
                     "status": "skipped",
                     "reason": f"unsupported notification sink: {sink_type}",
                 }
-        payload = {"status": combined_notification_status(results), "sinks": results}
+        payload: dict[str, Any] = {
+            "status": combined_notification_status(results),
+            "sinks": results,
+        }
         if set(results) == {"telegram"}:
             payload.update(results["telegram"])
             payload["sinks"] = results
@@ -855,7 +879,8 @@ class TasksModule:
 
     def _configured_digest_sinks(self, period: str) -> list[dict[str, Any]]:
         config = self._load_notification_config()
-        digests = config.get("digests") if isinstance(config.get("digests"), dict) else {}
+        raw_digests = config.get("digests")
+        digests = raw_digests if isinstance(raw_digests, dict) else {}
         policy = digests.get(period)
         if not isinstance(policy, dict):
             policy = digests.get(normalize_slug(period))

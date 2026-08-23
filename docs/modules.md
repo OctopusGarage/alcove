@@ -203,6 +203,9 @@ Prompt Pack composition are available through `alcove prompt recommend`,
 Ideas, tasks, and routines are stored in `~/.alcove/tasks/tasks.json`.
 Active ideas and pending tasks participate in global search when `--home` is
 provided.
+If `tasks.json` is malformed, read-only planner/dashboard views treat the task
+store as empty and service ticks report the load error without overwriting the
+file, so operators can repair or restore the original JSON.
 
 The planner model is:
 
