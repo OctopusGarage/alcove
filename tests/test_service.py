@@ -354,6 +354,78 @@ def test_service_tick_tolerates_malformed_task_store_without_overwriting_it(tmp_
     assert (home.root / "dashboard" / "snapshot.json").is_file()
 
 
+def test_service_tick_reports_malformed_watcher_tags_without_aborting(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    source_path = home.root / "watchers" / "sources" / "bad-tags.yml"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text(
+        """
+id: bad-tags
+title: Bad Tags
+url: file:///tmp/missing.html
+tags: 123
+status: active
+""",
+        encoding="utf-8",
+    )
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=True,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["watchers"]["status"] == "checked"
+    assert result["watchers"]["errors"] == 1
+    assert result["watchers"]["sources"][0]["id"] == "bad-tags"
+    assert result["watchers"]["sources"][0]["status"] == "error"
+    assert "tags must be a list" in result["watchers"]["sources"][0]["error"]
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
+def test_service_tick_reports_malformed_automation_args_without_aborting(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    job_path = home.root / "automations" / "jobs" / "bad-args.yml"
+    job_path.parent.mkdir(parents=True, exist_ok=True)
+    job_path.write_text(
+        """
+id: bad-args
+name: Bad Args
+kind: alcove
+args: 123
+status: active
+""",
+        encoding="utf-8",
+    )
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=True,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["automations"]["status"] == "checked"
+    assert result["automations"]["failed"] == 1
+    assert result["automations"]["jobs"][0]["id"] == "bad-args"
+    assert result["automations"]["jobs"][0]["status"] == "failed"
+    assert "args must be a list" in result["automations"]["jobs"][0]["error"]
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
 def test_service_tick_tolerates_malformed_connector_source_yaml(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     source_path = home.root / "connectors" / "github-stars" / "sources" / "broken.yml"

@@ -514,7 +514,7 @@ class AutomationsModule:
             timeout_seconds=_positive_int(payload.get("timeout_seconds"), default=600),
             cwd=str(payload.get("cwd") or ""),
             command=str(payload.get("command") or ""),
-            args=[str(arg) for arg in payload.get("args") or []],
+            args=[str(arg) for arg in _list_value(payload, "args")],
             repo_path=str(payload.get("repo_path") or ""),
             commit_message=str(payload.get("commit_message") or ""),
             provider=str(payload.get("provider") or ""),
@@ -578,6 +578,13 @@ def _positive_int(value: Any, *, default: int) -> int:
 
 def _dict_value(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _list_value(payload: dict[str, Any], key: str) -> list[Any]:
+    value = payload.get(key) or []
+    if not isinstance(value, list):
+        raise ValueError(f"{key} must be a list")
+    return value
 
 
 def _expand_path(path: str) -> Path:
