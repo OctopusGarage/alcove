@@ -12,6 +12,7 @@ import time
 from alcove.home import AlcoveHome
 from alcove.cli import main
 from alcove.mounts import AddMountRequest, MountsModule
+from alcove.publishers import PublisherModule
 from alcove.radars import RadarDefinition, RadarModule, RadarSchedule, RadarSource
 from alcove.service import ServiceModule
 from alcove.service_mount_refresh import ServiceMountRefresh
@@ -102,6 +103,53 @@ def test_service_install_load_bootstraps_and_kickstarts_scheduler(tmp_path, monk
             f"gui/{os.getuid()}/com.octopusgarage.alcove.scheduler",
         ],
     ]
+
+
+def test_service_install_load_kickstarts_already_bootstrapped_scheduler(tmp_path, monkeypatch):
+    user_home = tmp_path / "user-home"
+    monkeypatch.setenv("HOME", str(user_home))
+    monkeypatch.setattr("alcove.service_launchd.sys.platform", "darwin")
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, *, text, capture_output, check):
+        calls.append(cmd)
+        if cmd[1] == "bootstrap":
+            return subprocess.CompletedProcess(
+                cmd, 5, stdout="", stderr="Bootstrap failed: service already bootstrapped"
+            )
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("alcove.service_launchd.subprocess.run", fake_run)
+    home = AlcoveHome.init(user_home / ".alcove")
+
+    result = ServiceModule(home).install(dashboard=False, scheduler=True, load=True)
+
+    assert result["status"] == "installed"
+    assert result["targets"] == ["scheduler"]
+    assert [cmd[1] for cmd in calls] == ["bootstrap", "kickstart"]
+
+
+def test_service_install_rejects_launch_agent_plist_symlink(tmp_path, monkeypatch):
+    user_home = tmp_path / "user-home"
+    monkeypatch.setenv("HOME", str(user_home))
+    launch_agents = user_home / "Library" / "LaunchAgents"
+    launch_agents.mkdir(parents=True)
+    victim = tmp_path / "keep.txt"
+    victim.write_text("keep-me", encoding="utf-8")
+    scheduler_plist = launch_agents / "com.octopusgarage.alcove.scheduler.plist"
+    scheduler_plist.symlink_to(victim)
+    home = AlcoveHome.init(user_home / ".alcove")
+
+    try:
+        ServiceModule(home).install(dashboard=False, scheduler=True)
+    except RuntimeError as exc:
+        error = str(exc)
+    else:
+        error = ""
+
+    assert "Refusing to write launchd plist through symlink" in error
+    assert victim.read_text(encoding="utf-8") == "keep-me"
+    assert scheduler_plist.is_symlink()
 
 
 def test_service_start_surfaces_kickstart_failure_after_bootstrap_retry(tmp_path, monkeypatch):
@@ -353,6 +401,78 @@ def test_service_tick_tolerates_malformed_task_store_without_overwriting_it(tmp_
     assert (home.root / "dashboard" / "snapshot.json").is_file()
 
 
+def test_service_tick_reports_malformed_watcher_tags_without_aborting(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    source_path = home.root / "watchers" / "sources" / "bad-tags.yml"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text(
+        """
+id: bad-tags
+title: Bad Tags
+url: file:///tmp/missing.html
+tags: 123
+status: active
+""",
+        encoding="utf-8",
+    )
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=True,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["watchers"]["status"] == "checked"
+    assert result["watchers"]["errors"] == 1
+    assert result["watchers"]["sources"][0]["id"] == "bad-tags"
+    assert result["watchers"]["sources"][0]["status"] == "error"
+    assert "tags must be a list" in result["watchers"]["sources"][0]["error"]
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
+def test_service_tick_reports_malformed_automation_args_without_aborting(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    job_path = home.root / "automations" / "jobs" / "bad-args.yml"
+    job_path.parent.mkdir(parents=True, exist_ok=True)
+    job_path.write_text(
+        """
+id: bad-args
+name: Bad Args
+kind: alcove
+args: 123
+status: active
+""",
+        encoding="utf-8",
+    )
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=True,
+        run_publishers=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["automations"]["status"] == "checked"
+    assert result["automations"]["failed"] == 1
+    assert result["automations"]["jobs"][0]["id"] == "bad-args"
+    assert result["automations"]["jobs"][0]["status"] == "failed"
+    assert "args must be a list" in result["automations"]["jobs"][0]["error"]
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
 def test_service_tick_tolerates_malformed_connector_source_yaml(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     source_path = home.root / "connectors" / "github-stars" / "sources" / "broken.yml"
@@ -420,6 +540,84 @@ def test_service_tick_tolerates_malformed_publisher_definition_yaml(tmp_path):
     assert result["status"] == "ok"
     assert result["publishers"]["status"] == "checked"
     assert result["health"]["issue_count"] >= 1
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
+def test_service_tick_reports_malformed_publisher_state_without_aborting(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    PublisherModule(home).init_apple_notes()
+    state_path = home.root / "publishers" / "state" / "apple-notes.yml"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text("targets: [", encoding="utf-8")
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["publishers"]["status"] == "checked"
+    assert result["publishers"]["ran"] == 0
+    assert result["publishers"]["errors"] == 1
+    assert result["publishers"]["publishers"][0]["publisher"] == "apple-notes"
+    assert result["publishers"]["publishers"][0]["status"] == "error"
+    assert "apple-notes.yml" in result["publishers"]["publishers"][0]["error"]
+    assert state_path.read_text(encoding="utf-8") == "targets: ["
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
+def test_service_tick_reports_malformed_publisher_definition_shape_without_aborting(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    definition_path = home.root / "publishers" / "definitions" / "bad-shape.yml"
+    definition_path.parent.mkdir(parents=True, exist_ok=True)
+    definition_path.write_text(
+        "\n".join(
+            [
+                "schema: alcove/publisher-definition/v1",
+                "id: bad-shape",
+                "status: active",
+                "schedule:",
+                "  enabled: true",
+                "targets:",
+                "  planner_digest:",
+                "    source:",
+                "      module: tasks",
+                "      filter: not-a-mapping",
+                "    render:",
+                "      template: planner_digest",
+                "      title: Planner Digest",
+                "    target:",
+                "      title: Planner Digest",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["publishers"]["status"] == "checked"
+    assert result["publishers"]["ran"] == 0
+    assert result["publishers"]["errors"] == 1
+    assert result["publishers"]["publishers"][0]["publisher"] == "bad-shape"
+    assert result["publishers"]["publishers"][0]["status"] == "error"
+    assert "source filter must be a mapping" in result["publishers"]["publishers"][0]["error"]
     assert (home.root / "dashboard" / "snapshot.json").is_file()
 
 

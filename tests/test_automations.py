@@ -1,6 +1,7 @@
 import json
 import subprocess
 
+import pytest
 import yaml
 
 from alcove.automations import AutomationsModule
@@ -539,3 +540,30 @@ def test_service_tick_tolerates_invalid_persisted_automation_mapping_fields(tmp_
     assert result["status"] == "ok"
     assert result["automations"]["ran"] == 1
     assert result["automations"]["failed"] == 0
+
+
+def test_automation_run_rejects_job_file_symlink_without_overwriting_target(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    jobs_root = home.root / "automations" / "jobs"
+    jobs_root.mkdir(parents=True)
+    target = tmp_path / "do-not-clobber.yml"
+    target.write_text(
+        yaml.safe_dump(
+            {
+                "id": "linked-job",
+                "name": "Linked Job",
+                "kind": "shell",
+                "command": "true",
+                "enabled": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (jobs_root / "linked-job.yml").symlink_to(target)
+
+    with pytest.raises(RuntimeError, match="Refusing to write automation job through symlink"):
+        AutomationsModule(home).run("linked-job", timestamp="2026-07-12T09:00:00+00:00")
+
+    payload = yaml.safe_load(target.read_text(encoding="utf-8"))
+    assert "checked_at" not in payload
+    assert "last_status" not in payload

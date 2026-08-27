@@ -227,6 +227,10 @@ class WatcherModule:
     def _write_source(self, source: WatcherSource) -> None:
         self.sources_root.mkdir(parents=True, exist_ok=True)
         path = self._source_path(source.id)
+        if path.is_symlink():
+            raise RuntimeError(
+                f"Refusing to write watcher source through symlink: {compact_user_path(path)}"
+            )
         path.write_text(
             yaml.safe_dump(source.as_dict(), allow_unicode=True, sort_keys=False),
             encoding="utf-8",
@@ -242,7 +246,7 @@ class WatcherModule:
             url=str(payload.get("url") or ""),
             kind=str(payload.get("kind") or "page"),
             kb=str(payload.get("kb") or ""),
-            tags=[str(tag) for tag in payload.get("tags") or []],
+            tags=[str(tag) for tag in _list_value(payload, "tags")],
             ttl_hours=_positive_int(payload.get("ttl_hours"), default=DEFAULT_TTL_HOURS),
             status=str(payload.get("status") or "active"),
             created_at=str(payload.get("created_at") or ""),
@@ -320,6 +324,13 @@ def _positive_int(value: Any, *, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(parsed, 1)
+
+
+def _list_value(payload: dict[str, Any], key: str) -> list[Any]:
+    value = payload.get(key) or []
+    if not isinstance(value, list):
+        raise ValueError(f"{key} must be a list")
+    return value
 
 
 def _invalid_source_id(value: str) -> bool:
