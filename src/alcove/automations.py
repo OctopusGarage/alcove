@@ -432,6 +432,10 @@ class AutomationsModule:
         self.jobs_root.mkdir(parents=True, exist_ok=True)
         self._validate_job(job)
         path = self.jobs_root / f"{job.id}.yml"
+        if path.is_symlink():
+            raise RuntimeError(
+                f"Refusing to write automation job through symlink: {compact_user_path(path)}"
+            )
         path.write_text(
             yaml.safe_dump(job.as_dict(), allow_unicode=True, sort_keys=False),
             encoding="utf-8",

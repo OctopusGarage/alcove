@@ -227,6 +227,10 @@ class WatcherModule:
     def _write_source(self, source: WatcherSource) -> None:
         self.sources_root.mkdir(parents=True, exist_ok=True)
         path = self._source_path(source.id)
+        if path.is_symlink():
+            raise RuntimeError(
+                f"Refusing to write watcher source through symlink: {compact_user_path(path)}"
+            )
         path.write_text(
             yaml.safe_dump(source.as_dict(), allow_unicode=True, sort_keys=False),
             encoding="utf-8",

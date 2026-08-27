@@ -4,6 +4,7 @@ from alcove.cli import main
 from alcove.home import AlcoveHome
 from alcove.watchers import WatcherModule
 from alcove.workspace import Workspace
+import pytest
 import yaml
 
 
@@ -113,6 +114,35 @@ def test_watcher_check_rejects_persisted_source_id_path_traversal(tmp_path):
     assert result["sources"][0]["id"] == "bad"
     assert "Invalid watcher source id" in result["sources"][0]["error"]
     assert not (tmp_path / "escaped-watcher.yml").exists()
+
+
+def test_watcher_check_rejects_source_file_symlink_without_overwriting_target(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    page = tmp_path / "blog.html"
+    page.write_text("<html><title>First</title><body>v1</body></html>", encoding="utf-8")
+    sources_root = home.root / "watchers" / "sources"
+    sources_root.mkdir(parents=True)
+    target = tmp_path / "do-not-clobber.yml"
+    target.write_text(
+        yaml.safe_dump(
+            {
+                "id": "linked-source",
+                "title": "Linked Source",
+                "url": page.as_uri(),
+                "kind": "page",
+                "status": "active",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (sources_root / "linked-source.yml").symlink_to(target)
+
+    with pytest.raises(RuntimeError, match="Refusing to write watcher source through symlink"):
+        WatcherModule(home).check(source_id="linked-source", now="2026-07-12T09:00:00+00:00")
+
+    payload = yaml.safe_load(target.read_text(encoding="utf-8"))
+    assert "checked_at" not in payload
+    assert "last_signature" not in payload
 
 
 def test_cli_watch_add_list_and_check_file_url(tmp_path, capsys):
