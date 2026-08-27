@@ -236,6 +236,40 @@ def test_mount_update_policy_preserves_current_profile_when_only_excluding(tmp_p
     assert report["skip_reasons"]["excluded"] == 1
 
 
+def test_mount_list_tolerates_invalid_persisted_max_file_size(tmp_path):
+    workspace = Workspace.init(tmp_path / "workspace")
+    source = tmp_path / "source-docs"
+    source.mkdir()
+    store_path = workspace.paths().mounts / "mounts.json"
+    store_path.parent.mkdir(parents=True, exist_ok=True)
+    store_path.write_text(
+        json.dumps(
+            {
+                "mounts": [
+                    {
+                        "id": "legacy-docs",
+                        "name": "Legacy Docs",
+                        "type": "local-folder",
+                        "path": str(source),
+                        "tags": [],
+                        "status": "active",
+                        "created_at": "2026-07-01T00:00:00+00:00",
+                        "updated_at": "2026-07-01T00:00:00+00:00",
+                        "index_policy": {"profile": "raw", "max_file_size_kb": "large"},
+                    }
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    mounts = MountsModule(workspace).list()
+
+    assert mounts[0].id == "legacy-docs"
+    assert mounts[0].index_policy.max_file_size_kb == 976
+
+
 def test_mount_scan_dry_run_reports_without_writing_indexes(tmp_path):
     workspace = Workspace.init(tmp_path / "workspace")
     source = tmp_path / "source-docs"
@@ -250,6 +284,28 @@ def test_mount_scan_dry_run_reports_without_writing_indexes(tmp_path):
     assert report["scanned"] == 1
     assert not (workspace.paths().mounts / "index.json").exists()
     assert not (workspace.paths().mounts / "okf" / mount.id / "index.md").exists()
+
+
+def test_mount_scan_missing_root_preserves_last_good_index(tmp_path):
+    workspace = Workspace.init(tmp_path / "workspace")
+    source = tmp_path / "source-docs"
+    source.mkdir()
+    (source / "note.md").write_text("# Mounted Note\n\nPersistent needle.", encoding="utf-8")
+    module = MountsModule(workspace)
+    mount = module.add(AddMountRequest(path=str(source), name="Source Docs"))
+    module.scan(mount.id)
+    source.joinpath("note.md").unlink()
+    source.rmdir()
+
+    report = module.scan(mount.id)
+    rows = SearchModule(workspace).search(SearchRequest(query="persistent needle"))
+
+    assert report["scanned"] == 1
+    assert report["reused"] == 1
+    assert report["skip_reasons"] == {"missing_root": 1}
+    assert report["errors"] == 1
+    assert report["error_items"][0]["id"] == mount.id
+    assert rows[0]["path"] == f"mounts/{mount.id}#note.md"
 
 
 def test_mount_okf_index_records_policy_for_agent_context(tmp_path):

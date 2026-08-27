@@ -283,13 +283,21 @@ class MountsModule:
         items: list[dict] = []
         skipped = 0
         reused = 0
+        errors: list[dict[str, str]] = []
         skip_reasons: dict[str, int] = {}
         policies: dict[str, dict] = {}
         for mount in mounts:
-            mount_items, mount_skipped, mount_reused, mount_skip_reasons = self._scan_mount(mount)
+            (
+                mount_items,
+                mount_skipped,
+                mount_reused,
+                mount_skip_reasons,
+                mount_errors,
+            ) = self._scan_mount(mount)
             items.extend(mount_items)
             skipped += mount_skipped
             reused += mount_reused
+            errors.extend(mount_errors)
             policies[mount.id] = mount.index_policy.resolve().as_public_dict()
             for reason, count in mount_skip_reasons.items():
                 skip_reasons[reason] = skip_reasons.get(reason, 0) + count
@@ -304,6 +312,8 @@ class MountsModule:
             "policy": policies[mounts[0].id] if len(mounts) == 1 else None,
             "policies": policies,
             "skip_reasons": skip_reasons,
+            "errors": len(errors),
+            "error_items": errors,
             "items": [
                 self._public_item(item, include_diagnostics=include_diagnostics) for item in items
             ],
@@ -315,7 +325,9 @@ class MountsModule:
             rows.extend(dataset.items)
         return rows
 
-    def _scan_mount(self, mount: Mount) -> tuple[list[dict], int, int, dict[str, int]]:
+    def _scan_mount(
+        self, mount: Mount
+    ) -> tuple[list[dict], int, int, dict[str, int], list[dict[str, str]]]:
         root = Path(mount.path).expanduser()
         existing = self._existing_items_by_path(mount)
         policy = mount.index_policy.resolve()
@@ -323,6 +335,22 @@ class MountsModule:
         skipped = 0
         reused = 0
         skip_reasons: dict[str, int] = {}
+        errors: list[dict[str, str]] = []
+        if not root.is_dir():
+            preserved = list(existing.values())
+            return (
+                preserved,
+                skipped,
+                len(preserved),
+                {"missing_root": 1},
+                [
+                    {
+                        "id": mount.id,
+                        "title": mount.name,
+                        "error": f"Mount path is not available: {mount.path}",
+                    }
+                ],
+            )
         for path in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
             if not path.is_file():
                 continue
@@ -368,7 +396,7 @@ class MountsModule:
                     file_mtime_ns=stat.st_mtime_ns,
                 )
             )
-        return items, skipped, reused, skip_reasons
+        return items, skipped, reused, skip_reasons, errors
 
     def _existing_items_by_path(self, mount: Mount) -> dict[str, dict]:
         items: dict[str, dict] = {}
@@ -603,7 +631,10 @@ class MountsModule:
             profile=str(value.get("profile") or "raw"),
             include=[str(item) for item in self._list(value.get("include"))],
             exclude=[str(item) for item in self._list(value.get("exclude"))],
-            max_file_size_kb=int(value.get("max_file_size_kb") or MAX_INDEXED_TEXT_BYTES // 1024),
+            max_file_size_kb=_positive_int(
+                value.get("max_file_size_kb"),
+                default=MAX_INDEXED_TEXT_BYTES // 1024,
+            ),
         )
 
     def _merged_policy(
@@ -654,3 +685,11 @@ def _matches_pattern(relative_path: str, pattern: str) -> bool:
         root = pattern.removesuffix("/**")
         return relative_path == root or relative_path.startswith(f"{root}/")
     return False
+
+
+def _positive_int(value: object, *, default: int) -> int:
+    try:
+        parsed = int(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
