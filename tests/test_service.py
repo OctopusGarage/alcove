@@ -105,6 +105,53 @@ def test_service_install_load_bootstraps_and_kickstarts_scheduler(tmp_path, monk
     ]
 
 
+def test_service_install_load_kickstarts_already_bootstrapped_scheduler(tmp_path, monkeypatch):
+    user_home = tmp_path / "user-home"
+    monkeypatch.setenv("HOME", str(user_home))
+    monkeypatch.setattr("alcove.service_launchd.sys.platform", "darwin")
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, *, text, capture_output, check):
+        calls.append(cmd)
+        if cmd[1] == "bootstrap":
+            return subprocess.CompletedProcess(
+                cmd, 5, stdout="", stderr="Bootstrap failed: service already bootstrapped"
+            )
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("alcove.service_launchd.subprocess.run", fake_run)
+    home = AlcoveHome.init(user_home / ".alcove")
+
+    result = ServiceModule(home).install(dashboard=False, scheduler=True, load=True)
+
+    assert result["status"] == "installed"
+    assert result["targets"] == ["scheduler"]
+    assert [cmd[1] for cmd in calls] == ["bootstrap", "kickstart"]
+
+
+def test_service_install_rejects_launch_agent_plist_symlink(tmp_path, monkeypatch):
+    user_home = tmp_path / "user-home"
+    monkeypatch.setenv("HOME", str(user_home))
+    launch_agents = user_home / "Library" / "LaunchAgents"
+    launch_agents.mkdir(parents=True)
+    victim = tmp_path / "keep.txt"
+    victim.write_text("keep-me", encoding="utf-8")
+    scheduler_plist = launch_agents / "com.octopusgarage.alcove.scheduler.plist"
+    scheduler_plist.symlink_to(victim)
+    home = AlcoveHome.init(user_home / ".alcove")
+
+    try:
+        ServiceModule(home).install(dashboard=False, scheduler=True)
+    except RuntimeError as exc:
+        error = str(exc)
+    else:
+        error = ""
+
+    assert "Refusing to write launchd plist through symlink" in error
+    assert victim.read_text(encoding="utf-8") == "keep-me"
+    assert scheduler_plist.is_symlink()
+
+
 def test_service_start_surfaces_kickstart_failure_after_bootstrap_retry(tmp_path, monkeypatch):
     user_home = tmp_path / "user-home"
     monkeypatch.setenv("HOME", str(user_home))

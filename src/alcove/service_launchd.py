@@ -49,7 +49,7 @@ class ServiceLaunchd:
             )
             files.append(self._write_plist(target.plist_path, payload))
             if load:
-                self._launchctl("bootstrap", target)
+                self._launchctl("bootstrap", target, allow_failure=True)
                 self._launchctl("kickstart", target)
         return self._payload("installed", targets, files)
 
@@ -200,6 +200,10 @@ class ServiceLaunchd:
 
     def _write_plist(self, path: Path, payload: dict[str, Any]) -> dict[str, Any]:
         path.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_symlink():
+            raise RuntimeError(
+                f"Refusing to write launchd plist through symlink: {compact_user_path(path)}"
+            )
         before = path.read_bytes() if path.is_file() else b""
         content = plistlib.dumps(payload, sort_keys=False)
         action = "created" if not before else "unchanged" if before == content else "updated"
