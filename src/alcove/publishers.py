@@ -359,21 +359,36 @@ class PublisherModule:
         updated = 0
         errors = 0
         results = []
-        for definition in self._load_definitions():
+        definitions, load_errors = self._load_definition_records()
+        errors += len(load_errors)
+        results.extend(
+            {
+                "publisher": item["id"],
+                "status": "error",
+                "error": item["error"],
+            }
+            for item in load_errors
+        )
+        for definition in definitions:
             if definition.status != "active" or not definition.schedule.enabled:
                 skipped += 1
                 results.append(
                     {"publisher": definition.id, "status": "skipped", "reason": "inactive"}
                 )
                 continue
-            dirty_sources = self._dirty_sources(definition)
-            if not self._is_due(definition, timestamp) and not dirty_sources:
-                skipped += 1
-                results.append(
-                    {"publisher": definition.id, "status": "skipped", "reason": "not_due"}
-                )
+            try:
+                dirty_sources = self._dirty_sources(definition)
+                if not self._is_due(definition, timestamp) and not dirty_sources:
+                    skipped += 1
+                    results.append(
+                        {"publisher": definition.id, "status": "skipped", "reason": "not_due"}
+                    )
+                    continue
+                result = self.run(definition.id, timestamp=timestamp)
+            except ValueError as exc:
+                errors += 1
+                results.append({"publisher": definition.id, "status": "error", "error": str(exc)})
                 continue
-            result = self.run(definition.id, timestamp=timestamp)
             if dirty_sources:
                 result["due_reason"] = "dirty"
                 result["dirty_sources"] = sorted(dirty_sources)
@@ -482,17 +497,31 @@ class PublisherModule:
         return LocalAppleNotesTarget()
 
     def _load_definitions(self) -> list[PublisherDefinition]:
+        return self._load_definition_records()[0]
+
+    def _load_definition_records(self) -> tuple[list[PublisherDefinition], list[dict[str, str]]]:
         if not self.definitions_root.is_dir():
-            return []
+            return [], []
         definitions = []
+        errors = []
         for path in sorted(self.definitions_root.glob("*.yml")):
             try:
                 payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            except yaml.YAMLError:
+            except (OSError, yaml.YAMLError) as exc:
+                errors.append(
+                    {"id": path.stem, "error": f"Invalid publisher definition: {path}: {exc}"}
+                )
                 continue
             if isinstance(payload, dict):
-                definitions.append(self._definition_from_dict(payload))
-        return definitions
+                try:
+                    definitions.append(self._definition_from_dict(payload))
+                except ValueError as exc:
+                    errors.append({"id": path.stem, "error": str(exc)})
+            else:
+                errors.append(
+                    {"id": path.stem, "error": f"Publisher definition is invalid: {path}"}
+                )
+        return definitions, errors
 
     def _load_definition(self, publisher_id: str) -> PublisherDefinition:
         path = self.definitions_root / f"{normalize_slug(publisher_id)}.yml"
@@ -534,7 +563,10 @@ class PublisherModule:
         path = self.state_root / f"{normalize_slug(publisher_id)}.yml"
         if not path.is_file():
             return {}
-        payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        try:
+            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError) as exc:
+            raise ValueError(f"Invalid publisher state: {path}: {exc}") from exc
         targets = payload.get("targets") if isinstance(payload, dict) else {}
         if not isinstance(targets, dict):
             return {}
@@ -666,12 +698,13 @@ class PublisherModule:
             source = raw.get("source") if isinstance(raw.get("source"), dict) else {}
             render = raw.get("render") if isinstance(raw.get("render"), dict) else {}
             target = raw.get("target") if isinstance(raw.get("target"), dict) else {}
+            source_filter = _mapping_value(source.get("filter") or {}, "source filter")
             targets.append(
                 PublisherTargetDefinition(
                     id=str(target_id),
                     source=PublisherSource(
                         module=str(source.get("module") or ""),
-                        filter=dict(source.get("filter") or {}),
+                        filter=source_filter,
                     ),
                     render=PublisherRender(
                         template=str(render.get("template") or ""),
@@ -697,7 +730,7 @@ class PublisherModule:
                 enabled=bool(schedule.get("enabled", True)),
                 ttl_hours=max(_int_value(schedule.get("ttl_hours"), 24), 1),
             ),
-            target_defaults=dict(payload.get("target_defaults") or {}),
+            target_defaults=_mapping_value(payload.get("target_defaults") or {}, "target_defaults"),
             targets=targets,
         )
 
@@ -1055,6 +1088,12 @@ def _int_value(value: Any, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _mapping_value(value: Any, field_name: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} must be a mapping")
+    return dict(value)
 
 
 def _parse_time(value: str) -> datetime | None:

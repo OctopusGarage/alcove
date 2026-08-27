@@ -12,6 +12,7 @@ import time
 from alcove.home import AlcoveHome
 from alcove.cli import main
 from alcove.mounts import AddMountRequest, MountsModule
+from alcove.publishers import PublisherModule
 from alcove.radars import RadarDefinition, RadarModule, RadarSchedule, RadarSource
 from alcove.service import ServiceModule
 from alcove.service_mount_refresh import ServiceMountRefresh
@@ -420,6 +421,84 @@ def test_service_tick_tolerates_malformed_publisher_definition_yaml(tmp_path):
     assert result["status"] == "ok"
     assert result["publishers"]["status"] == "checked"
     assert result["health"]["issue_count"] >= 1
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
+def test_service_tick_reports_malformed_publisher_state_without_aborting(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    PublisherModule(home).init_apple_notes()
+    state_path = home.root / "publishers" / "state" / "apple-notes.yml"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text("targets: [", encoding="utf-8")
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["publishers"]["status"] == "checked"
+    assert result["publishers"]["ran"] == 0
+    assert result["publishers"]["errors"] == 1
+    assert result["publishers"]["publishers"][0]["publisher"] == "apple-notes"
+    assert result["publishers"]["publishers"][0]["status"] == "error"
+    assert "apple-notes.yml" in result["publishers"]["publishers"][0]["error"]
+    assert state_path.read_text(encoding="utf-8") == "targets: ["
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
+def test_service_tick_reports_malformed_publisher_definition_shape_without_aborting(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    definition_path = home.root / "publishers" / "definitions" / "bad-shape.yml"
+    definition_path.parent.mkdir(parents=True, exist_ok=True)
+    definition_path.write_text(
+        "\n".join(
+            [
+                "schema: alcove/publisher-definition/v1",
+                "id: bad-shape",
+                "status: active",
+                "schedule:",
+                "  enabled: true",
+                "targets:",
+                "  planner_digest:",
+                "    source:",
+                "      module: tasks",
+                "      filter: not-a-mapping",
+                "    render:",
+                "      template: planner_digest",
+                "      title: Planner Digest",
+                "    target:",
+                "      title: Planner Digest",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        run_automations=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["publishers"]["status"] == "checked"
+    assert result["publishers"]["ran"] == 0
+    assert result["publishers"]["errors"] == 1
+    assert result["publishers"]["publishers"][0]["publisher"] == "bad-shape"
+    assert result["publishers"]["publishers"][0]["status"] == "error"
+    assert "source filter must be a mapping" in result["publishers"]["publishers"][0]["error"]
     assert (home.root / "dashboard" / "snapshot.json").is_file()
 
 
