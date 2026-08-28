@@ -145,6 +145,37 @@ def test_watcher_check_rejects_source_file_symlink_without_overwriting_target(tm
     assert "last_signature" not in payload
 
 
+def test_cli_watcher_check_rejects_event_log_symlink_without_appending_to_target(
+    tmp_path,
+    capsys,
+):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    page = tmp_path / "blog.html"
+    page.write_text("<html><title>First</title><body>v1</body></html>", encoding="utf-8")
+    module = WatcherModule(home)
+    added = module.add(title="Linked Event Blog", url=page.as_uri(), kind="page")
+    module.check(source_id=added["source"]["id"])
+    capsys.readouterr()
+    target = tmp_path / "do-not-append.jsonl"
+    target.write_text("sentinel\n", encoding="utf-8")
+    (home.root / "watchers" / "events.jsonl").symlink_to(target)
+    page.write_text("<html><title>Second</title><body>v2</body></html>", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="Refusing to write watcher event through symlink"):
+        main(
+            [
+                "watch",
+                "check",
+                "--home",
+                str(home.root),
+                added["source"]["id"],
+                "--json",
+            ]
+        )
+
+    assert target.read_text(encoding="utf-8") == "sentinel\n"
+
+
 def test_cli_watch_add_list_and_check_file_url(tmp_path, capsys):
     home = tmp_path / ".alcove"
     page = tmp_path / "blog.html"

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from alcove.cli import main
 from alcove.profile_packs import ProfileInstallationPack
 from alcove.workspace import Workspace
@@ -269,6 +271,42 @@ def test_cli_workspace_init_creates_lightweight_business_workspace(tmp_path, mon
     assert "Do not perform Hub-only administration" in skill
     assert "alcove service" not in skill
     assert "alcove export" not in skill
+
+
+def test_cli_workspace_init_rejects_registry_symlink_without_overwriting_target(
+    tmp_path,
+    monkeypatch,
+):
+    home = tmp_path / ".alcove"
+    monkeypatch.setenv("ALCOVE_HOME", str(home))
+    registry_root = home / "workspaces"
+    registry_root.mkdir(parents=True)
+    target = tmp_path / "do-not-clobber.yml"
+    target.write_text("sentinel: true\n", encoding="utf-8")
+    (registry_root / "family.yml").symlink_to(target)
+
+    with pytest.raises(RuntimeError, match="Refusing to write agent workspace registry"):
+        main(["workspace", "init", "family", "--json"])
+
+    assert target.read_text(encoding="utf-8") == "sentinel: true\n"
+
+
+def test_cli_workspace_init_rejects_local_config_symlink_without_overwriting_target(
+    tmp_path,
+    monkeypatch,
+):
+    home = tmp_path / ".alcove"
+    monkeypatch.setenv("ALCOVE_HOME", str(home))
+    workspace_root = home / "workspaces" / "data" / "family"
+    workspace_root.mkdir(parents=True)
+    target = tmp_path / "do-not-clobber-local.yml"
+    target.write_text("sentinel: true\n", encoding="utf-8")
+    (workspace_root / ".alcove-workspace.yml").symlink_to(target)
+
+    with pytest.raises(RuntimeError, match="Refusing to write agent workspace config"):
+        main(["workspace", "init", "family", "--json"])
+
+    assert target.read_text(encoding="utf-8") == "sentinel: true\n"
 
 
 def test_cli_workspace_init_hub_uses_special_hub_profile(tmp_path, monkeypatch, capsys):

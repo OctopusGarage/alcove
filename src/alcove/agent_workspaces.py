@@ -408,14 +408,26 @@ class AgentWorkspacesModule:
 
     def _write_registry(self, record: AgentWorkspaceRecord) -> None:
         data = self._record_yaml(record)
-        self._registry_path(record.id).write_text(
+        path = self._registry_path(record.id)
+        if path.is_symlink():
+            raise RuntimeError(
+                f"Refusing to write agent workspace registry through symlink: "
+                f"{compact_user_path(path)}"
+            )
+        path.write_text(
             yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
             encoding="utf-8",
         )
 
     def _write_local_config(self, record: AgentWorkspaceRecord) -> None:
         data = self._record_yaml(record)
-        (record.path / self._local_config_name(record)).write_text(
+        path = record.path / self._local_config_name(record)
+        if path.is_symlink():
+            raise RuntimeError(
+                f"Refusing to write agent workspace config through symlink: "
+                f"{compact_user_path(path)}"
+            )
+        path.write_text(
             yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
             encoding="utf-8",
         )

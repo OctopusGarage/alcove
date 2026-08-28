@@ -50,8 +50,9 @@ Connector and mount indexes are Alcove-owned caches. Managed KB `archive/` and
 
 Alcove refuses to write selected operational state files through symlinks when
 the path is predictable and owned by Alcove, such as registered connector source
-YAML and automation event logs. Development link mode for agent entry files is
-handled separately and remains explicit.
+YAML, automation and watcher event logs, and agent workspace registry/config
+YAML. Development link mode for agent entry files is handled separately and
+remains explicit.
 
 Agent workspace registry and default entry directories live under Alcove Home:
 
