@@ -161,6 +161,7 @@ class RadarModule:
         )
         self._validate(saved)
         self.definitions_root.mkdir(parents=True, exist_ok=True)
+        _refuse_symlink_write(path, "radar definition")
         path.write_text(
             yaml.safe_dump(saved.as_dict(), allow_unicode=True, sort_keys=False),
             encoding="utf-8",
@@ -647,3 +648,8 @@ def _positive_int(value: Any, *, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return parsed if parsed > 0 else default
+
+
+def _refuse_symlink_write(path: Path, label: str) -> None:
+    if path.is_symlink():
+        raise RuntimeError(f"Refusing to write {label} through symlink: {compact_user_path(path)}")

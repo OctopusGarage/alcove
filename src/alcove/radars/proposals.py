@@ -229,13 +229,14 @@ class RadarProposalModule:
 
     def _write(self, proposal: dict[str, Any]) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
-        (self.root / f"{proposal['id']}.json").write_text(
-            json.dumps(proposal, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
+        path = self.root / f"{proposal['id']}.json"
+        _refuse_symlink_write(path, "radar proposal")
+        path.write_text(json.dumps(proposal, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     def _rebuild_index(self) -> None:
         rows = self._all()
         self.root.mkdir(parents=True, exist_ok=True)
+        _refuse_symlink_write(self.index_path, "radar proposal index")
         self.index_path.write_text(
             json.dumps(
                 {
@@ -329,3 +330,8 @@ def _read_list(path: Path) -> list[dict[str, Any]]:
     return (
         [dict(row) for row in payload if isinstance(row, dict)] if isinstance(payload, list) else []
     )
+
+
+def _refuse_symlink_write(path: Path, label: str) -> None:
+    if path.is_symlink():
+        raise RuntimeError(f"Refusing to write {label} through symlink: {compact_user_path(path)}")

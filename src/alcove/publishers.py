@@ -556,6 +556,7 @@ class PublisherModule:
                 for target in definition.targets
             },
         }
+        _refuse_symlink_write(path, "publisher definition")
         path.write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), "utf-8")
         return path
 
@@ -592,12 +593,14 @@ class PublisherModule:
             "publisher_id": publisher_id,
             "targets": {target_id: asdict(value) for target_id, value in sorted(state.items())},
         }
+        _refuse_symlink_write(path, "publisher state")
         path.write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), "utf-8")
         return path
 
     def _write_render(self, target_id: str, body: str) -> Path:
         self.renders_root.mkdir(parents=True, exist_ok=True)
         path = self.renders_root / f"{_safe_file_stem(target_id)}.md"
+        _refuse_symlink_write(path, "publisher render")
         path.write_text(body.rstrip() + "\n", encoding="utf-8")
         return path
 
@@ -609,11 +612,13 @@ class PublisherModule:
         while path.exists():
             path = self.runs_root / f"{suffix}-{index}-{normalize_slug(publisher_id)}.json"
             index += 1
+        _refuse_symlink_write(path, "publisher run")
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", "utf-8")
         return path
 
     def _record_event(self, publisher_id: str, payload: dict[str, Any], *, timestamp: str) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
+        _refuse_symlink_write(self.events_path, "publisher event log")
         event = {
             "type": "publisher.run",
             "timestamp": timestamp,
@@ -1106,3 +1111,8 @@ def _parse_time(value: str) -> datetime | None:
 
 def _safe_file_stem(value: str) -> str:
     return str(value or "item").replace("/", "-").replace("\\", "-")
+
+
+def _refuse_symlink_write(path: Path, label: str) -> None:
+    if path.is_symlink():
+        raise RuntimeError(f"Refusing to write {label} through symlink: {compact_user_path(path)}")

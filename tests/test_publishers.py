@@ -123,6 +123,30 @@ def test_default_apple_notes_publisher_writes_pin_notes_and_skips_unchanged(tmp_
     assert list((home.root / "publishers/runs").glob("*apple-notes.json"))
 
 
+def test_cli_publish_init_rejects_definition_symlink_without_overwriting_target(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    definitions = home.root / "publishers" / "definitions"
+    definitions.mkdir(parents=True, exist_ok=True)
+    target = tmp_path / "publisher-target.yml"
+    target.write_text("sentinel: true\n", encoding="utf-8")
+    (definitions / "apple-notes.yml").symlink_to(target)
+
+    with pytest.raises(RuntimeError, match="publisher definition"):
+        main(
+            [
+                "publish",
+                "--home",
+                str(home.root),
+                "init",
+                "apple-notes",
+                "--json",
+            ]
+        )
+
+    capsys.readouterr()
+    assert target.read_text(encoding="utf-8") == "sentinel: true\n"
+
+
 def test_repeated_publisher_runs_preserve_distinct_run_records(tmp_path, monkeypatch):
     home = AlcoveHome.init(tmp_path / ".alcove")
     target = FakeAppleNotesTarget()
