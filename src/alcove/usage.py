@@ -4,10 +4,12 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from alcove.home import AlcoveHome
+from alcove.paths import compact_user_path
 
 
 def now_iso() -> str:
@@ -80,7 +82,7 @@ class UsageRecorder:
             "privacy": privacy or {"query_stored": False, "content_stored": False},
             "visible": False,
         }
-        self._append(self._usage_path(), event)
+        self._append(self._usage_path(), event, label="usage log")
         self.write_rollups()
         return event
 
@@ -136,7 +138,7 @@ class UsageRecorder:
             "timestamp": timestamp,
             "updated_at": timestamp,
         }
-        self._append(self._activity_path(), event)
+        self._append(self._activity_path(), event, label="activity log")
         return event
 
     def summary(self, *, limit: int = 50) -> dict[str, Any]:
@@ -150,10 +152,7 @@ class UsageRecorder:
         daily_root = stats_root / "daily"
         stats_root.mkdir(parents=True, exist_ok=True)
         daily_root.mkdir(parents=True, exist_ok=True)
-        (stats_root / "summary.json").write_text(
-            json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        self._write_json(stats_root / "summary.json", summary, label="usage summary")
         for day, day_events in self._events_by_day(events).items():
             payload = self._summary_from_events(day_events, limit=20)
             payload = {
@@ -161,16 +160,15 @@ class UsageRecorder:
                 "event_count": len(day_events),
                 **payload,
             }
-            (daily_root / f"{day}.json").write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
+            self._write_json(daily_root / f"{day}.json", payload, label="daily usage summary")
         return summary
 
     def prune(self, *, retention_days: int, now: str | None = None) -> dict[str, int]:
         cutoff = self._parse_timestamp(now or now_iso()) - timedelta(days=max(retention_days, 0))
-        usage_removed = self._prune_file(self._usage_path(), "timestamp", cutoff)
-        activity_removed = self._prune_file(self._activity_path(), "updated_at", cutoff)
+        usage_removed = self._prune_file(self._usage_path(), "timestamp", cutoff, label="usage log")
+        activity_removed = self._prune_file(
+            self._activity_path(), "updated_at", cutoff, label="activity log"
+        )
         self.write_rollups()
         return {"usage_removed": usage_removed, "activity_removed": activity_removed}
 
@@ -249,7 +247,7 @@ class UsageRecorder:
                 grouped.setdefault(day, []).append(event)
         return grouped
 
-    def _prune_file(self, path: Any, timestamp_key: str, cutoff: datetime) -> int:
+    def _prune_file(self, path: Any, timestamp_key: str, cutoff: datetime, *, label: str) -> int:
         events = self._read_events(path)
         if not events:
             return 0
@@ -262,6 +260,7 @@ class UsageRecorder:
                 removed += 1
                 continue
             kept.append(event)
+        self._refuse_symlink_write(path, label)
         path.write_text(
             "".join(json.dumps(event, ensure_ascii=False) + "\n" for event in kept),
             encoding="utf-8",
@@ -316,11 +315,27 @@ class UsageRecorder:
     def _activity_path(self) -> Any:
         return self.home.paths().logs / "activity.jsonl"
 
-    @staticmethod
-    def _append(path: Any, event: dict[str, Any]) -> None:
+    @classmethod
+    def _append(cls, path: Any, event: dict[str, Any], *, label: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
+        cls._refuse_symlink_write(path, label)
         with path.open("a", encoding="utf-8") as file:
             file.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+    @classmethod
+    def _write_json(cls, path: Path, payload: dict[str, Any], *, label: str) -> None:
+        cls._refuse_symlink_write(path, label)
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+    @staticmethod
+    def _refuse_symlink_write(path: Any, label: str) -> None:
+        if path.is_symlink():
+            raise RuntimeError(
+                f"Refusing to write {label} through symlink: {compact_user_path(path)}"
+            )
 
     @staticmethod
     def _read_events(path: Any) -> list[dict[str, Any]]:
