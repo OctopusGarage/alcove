@@ -565,7 +565,8 @@ Playwright discovery falls back to static HTML and category sitemap discovery
 when a rendered page is blocked or returns no usable article links. If discovery
 or capture still fails, the source is marked `needs_attention`, the failed run
 is recorded, and Telegram receives an actionable alert when notifications are
-enabled.
+enabled. Clipsmith article capture automatically retries transient browser
+navigation failures such as HTTP 403/429/5xx before raising that alert.
 For a user-triggered check from the Hub workspace, use `alcove blog check --json`
 or `alcove blog check <source-id> --json` to force an immediate run. `alcove
 service tick` is reserved for scheduled stale maintenance and may skip sources

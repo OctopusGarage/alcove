@@ -2,9 +2,23 @@ from __future__ import annotations
 
 import json
 import shutil
+import time
 from typing import Any
 
 from alcove.paths import compact_user_path
+
+RETRYABLE_CAPTURE_ERRORS = (
+    "Navigation failed with HTTP 403",
+    "Navigation failed with HTTP 429",
+    "Navigation failed with HTTP 500",
+    "Navigation failed with HTTP 502",
+    "Navigation failed with HTTP 503",
+    "Navigation failed with HTTP 504",
+    "net::ERR_HTTP2_PROTOCOL_ERROR",
+    "net::ERR_NETWORK_CHANGED",
+    "net::ERR_TIMED_OUT",
+    "Timeout",
+)
 
 
 class BlogCaptureModule:
@@ -36,19 +50,16 @@ class BlogCaptureModule:
             }
         output_dir = self.host.captures_root / source.id
         output_dir.mkdir(parents=True, exist_ok=True)
-        capture_result = self.host._run_command(
-            [
-                "npx",
-                "tsx",
-                "scripts/run.ts",
-                "--url",
-                article.url,
-                "--output_dir",
-                str(output_dir),
-            ],
-            cwd=skill_dir,
-            timeout=180,
-        )
+        capture_command = [
+            "npx",
+            "tsx",
+            "scripts/run.ts",
+            "--url",
+            article.url,
+            "--output_dir",
+            str(output_dir),
+        ]
+        capture_result = self._run_capture_with_retry(capture_command, skill_dir)
         if capture_result.returncode != 0:
             return {
                 "status": "failed",
@@ -93,6 +104,13 @@ class BlogCaptureModule:
             "inbox_path": compact_user_path(_json_field(sink.stdout, "path") or target_dir),
         }
 
+    def _run_capture_with_retry(self, command: list[str], skill_dir: Any) -> Any:
+        result = self.host._run_command(command, cwd=skill_dir, timeout=180)
+        if result.returncode == 0 or not _is_retryable_capture_error(result):
+            return result
+        time.sleep(2)
+        return self.host._run_command(command, cwd=skill_dir, timeout=180)
+
 
 def _json_field(text: str, field: str) -> str:
     try:
@@ -102,3 +120,8 @@ def _json_field(text: str, field: str) -> str:
     if not isinstance(data, dict):
         return ""
     return str(data.get(field) or "")
+
+
+def _is_retryable_capture_error(result: Any) -> bool:
+    text = f"{getattr(result, 'stderr', '')}\n{getattr(result, 'stdout', '')}"
+    return any(marker in text for marker in RETRYABLE_CAPTURE_ERRORS)
