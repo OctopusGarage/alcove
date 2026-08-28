@@ -278,6 +278,28 @@ def test_chrome_bookmarks_import_local_rejects_source_id_path_traversal(tmp_path
     assert not (workspace.root / "escaped.yml").exists()
 
 
+def test_chrome_bookmarks_import_local_rejects_source_file_symlink_without_overwriting_target(
+    tmp_path,
+):
+    workspace = Workspace.init(tmp_path / "workspace")
+    source_file = tmp_path / "Bookmarks"
+    _write_chrome_json(source_file)
+    source_path = (
+        workspace.paths().state / "connectors" / "chrome-bookmarks" / "sources" / "default.yml"
+    )
+    source_path.parent.mkdir(parents=True)
+    target = tmp_path / "target.yml"
+    target.write_text("keep me\n", encoding="utf-8")
+    source_path.symlink_to(target)
+
+    with pytest.raises(RuntimeError, match="Refusing to write connector source through symlink"):
+        ChromeBookmarksConnector(workspace).import_local(
+            ChromeBookmarksLocalImportRequest(source_file=str(source_file), source_id="default")
+        )
+
+    assert target.read_text(encoding="utf-8") == "keep me\n"
+
+
 def test_search_and_fetch_include_imported_chrome_bookmarks(tmp_path):
     workspace = Workspace.init(tmp_path / "workspace")
     export_file = tmp_path / "Bookmarks"

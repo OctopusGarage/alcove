@@ -360,6 +360,10 @@ class ConnectorSourceRegistry:
     def _write(self, connector: str, source_id: str, payload: dict[str, Any]) -> None:
         path = self._source_path(connector, source_id)
         path.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_symlink():
+            raise RuntimeError(
+                f"Refusing to write connector source through symlink: {compact_user_path(path)}"
+            )
         path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
     def _source_path(self, connector: str, source_id: str) -> Path:

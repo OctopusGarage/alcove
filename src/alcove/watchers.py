@@ -181,6 +181,11 @@ class WatcherModule:
 
     def _record_event(self, source: WatcherSource, *, title: str, timestamp: str) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
+        if self.events_path.is_symlink():
+            raise RuntimeError(
+                f"Refusing to write watcher event through symlink: "
+                f"{compact_user_path(self.events_path)}"
+            )
         event = {
             "type": "watcher.changed",
             "timestamp": timestamp,

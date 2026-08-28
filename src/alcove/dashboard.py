@@ -33,7 +33,8 @@ class DashboardModule:
 
     def _dashboard_usage_summary(self) -> dict[str, Any]:
         summary = UsageRecorder(self.home).summary()
-        recent = summary.get("recent") if isinstance(summary.get("recent"), list) else []
+        raw_recent = summary.get("recent")
+        recent = raw_recent if isinstance(raw_recent, list) else []
         summary["recent"] = [
             self._dashboard_usage_event(event) for event in recent if isinstance(event, dict)
         ]
@@ -41,7 +42,8 @@ class DashboardModule:
 
     @staticmethod
     def _dashboard_usage_event(event: dict[str, Any]) -> dict[str, Any]:
-        metrics = event.get("metrics") if isinstance(event.get("metrics"), dict) else {}
+        raw_metrics = event.get("metrics")
+        metrics = raw_metrics if isinstance(raw_metrics, dict) else {}
         display_metrics: dict[str, Any] = {}
         if "result_count" in metrics:
             display_metrics["result_count"] = metrics.get("result_count")
@@ -69,6 +71,7 @@ class DashboardModule:
         root.mkdir(parents=True, exist_ok=True)
         snapshot = self.snapshot()
         snapshot_path = root / "snapshot.json"
+        _refuse_symlink_write(snapshot_path, "dashboard snapshot")
         snapshot_path.write_text(
             json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
@@ -78,6 +81,7 @@ class DashboardModule:
         if build_frontend and frontend.is_dir():
             self._build_frontend(frontend, root)
             frontend_built = True
+            _refuse_symlink_write(snapshot_path, "dashboard snapshot")
             snapshot_path.write_text(
                 json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
@@ -124,6 +128,7 @@ class DashboardModule:
         self._record_usage_event(action, summary, raw_metadata)
         log_path = self.home.paths().logs / "activity.jsonl"
         log_path.parent.mkdir(parents=True, exist_ok=True)
+        _refuse_symlink_write(log_path, "activity log")
         event = {
             "type": "event",
             "area": "dashboard",
@@ -246,3 +251,8 @@ class DashboardModule:
                 shutil.copytree(path, target)
             else:
                 shutil.copy2(path, target)
+
+
+def _refuse_symlink_write(path: Path, label: str) -> None:
+    if path.is_symlink():
+        raise RuntimeError(f"Refusing to write {label} through symlink: {compact_user_path(path)}")

@@ -453,6 +453,11 @@ class AutomationsModule:
 
     def _record_event(self, job: AutomationJob, result: dict[str, Any], *, timestamp: str) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
+        if self.events_path.is_symlink():
+            raise RuntimeError(
+                f"Refusing to write automation event through symlink: "
+                f"{compact_user_path(self.events_path)}"
+            )
         event = {
             "type": "automation.run",
             "timestamp": timestamp,

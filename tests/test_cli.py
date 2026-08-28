@@ -2,6 +2,8 @@ import json
 import runpy
 from types import SimpleNamespace
 
+import pytest
+
 from alcove import cli_serve
 from alcove.cli import build_parser, main
 from alcove.connector_sources import ConnectorSourceRegistry
@@ -207,6 +209,56 @@ def test_cli_search_records_privacy_safe_usage(tmp_path, capsys):
     assert summary["search"]["surfaces"] == {"cli": 1}
     assert summary["search"]["zero_result"] == 0
     assert "usage needle" not in events
+
+
+def test_cli_dashboard_build_rejects_snapshot_symlink_without_overwriting_target(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / "home")
+    dashboard_root = home.root / "dashboard"
+    dashboard_root.mkdir(parents=True)
+    target = tmp_path / "snapshot-target.json"
+    target.write_text('{"sentinel": true}\n', encoding="utf-8")
+    (dashboard_root / "snapshot.json").symlink_to(target)
+
+    with pytest.raises(RuntimeError, match="dashboard snapshot"):
+        main(
+            [
+                "dashboard",
+                "--home",
+                str(home.root),
+                "build",
+                "--skip-frontend-build",
+                "--json",
+            ]
+        )
+
+    capsys.readouterr()
+    assert target.read_text(encoding="utf-8") == '{"sentinel": true}\n'
+
+
+def test_cli_dashboard_build_rejects_activity_log_symlink_without_appending_to_target(
+    tmp_path, capsys
+):
+    home = AlcoveHome.init(tmp_path / "home")
+    logs = home.paths().logs
+    logs.mkdir(parents=True, exist_ok=True)
+    target = tmp_path / "activity-target.jsonl"
+    target.write_text("sentinel\n", encoding="utf-8")
+    (logs / "activity.jsonl").symlink_to(target)
+
+    with pytest.raises(RuntimeError, match="activity log"):
+        main(
+            [
+                "dashboard",
+                "--home",
+                str(home.root),
+                "build",
+                "--skip-frontend-build",
+                "--json",
+            ]
+        )
+
+    capsys.readouterr()
+    assert target.read_text(encoding="utf-8") == "sentinel\n"
 
 
 def test_cli_usage_summary_and_prune(tmp_path, capsys):

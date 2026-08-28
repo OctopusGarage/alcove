@@ -627,6 +627,10 @@ function hasManualActionText(text) {
     def _write_source(self, source: BlogSource) -> None:
         self.sources_root.mkdir(parents=True, exist_ok=True)
         path = self._source_path(source.id)
+        if path.is_symlink():
+            raise RuntimeError(
+                f"Refusing to write blog source through symlink: {compact_user_path(path)}"
+            )
         path.write_text(
             yaml.safe_dump(source.as_dict(), allow_unicode=True, sort_keys=False),
             encoding="utf-8",
@@ -701,13 +705,18 @@ function hasManualActionText(text) {
 
     def _write_seen(self, source_id: str, urls: set[str], *, timestamp: str) -> None:
         self.seen_root.mkdir(parents=True, exist_ok=True)
+        path = self._seen_path(source_id)
+        if path.is_symlink():
+            raise RuntimeError(
+                f"Refusing to write blog seen state through symlink: {compact_user_path(path)}"
+            )
         payload = {
             "schema": SEEN_SCHEMA,
             "source_id": source_id,
             "updated_at": timestamp,
             "urls": sorted(urls),
         }
-        self._seen_path(source_id).write_text(
+        path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )

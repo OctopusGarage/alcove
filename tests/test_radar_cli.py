@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 
+import pytest
+import yaml
+
 from alcove.cli import main
 from alcove.home import AlcoveHome
 from alcove.radars import RadarDefinition, RadarModule, RadarSource
@@ -38,6 +41,48 @@ def test_cli_radar_preset_list_and_init(tmp_path, capsys):
     assert '"status": "saved"' in init_output.out
     assert radar_list_code == 0
     assert '"tech-news"' in radar_list_output.out
+
+
+def test_cli_radar_init_rejects_definition_symlink_without_overwriting_target(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    definitions = home.root / "radars" / "definitions"
+    definitions.mkdir(parents=True, exist_ok=True)
+    target = tmp_path / "radar-target.yml"
+    target_payload = yaml.safe_dump(
+        RadarDefinition(
+            id="tech-news",
+            name="User Radar",
+            sources=[
+                RadarSource(
+                    id="fixture",
+                    adapter="fixture",
+                    params={"path": str(tmp_path / "items.json")},
+                )
+            ],
+        ).as_dict(),
+        allow_unicode=True,
+        sort_keys=False,
+    )
+    target.write_text(target_payload, encoding="utf-8")
+    (definitions / "tech-news.yml").symlink_to(target)
+
+    with pytest.raises(RuntimeError, match="radar definition"):
+        main(
+            [
+                "radar",
+                "init",
+                "tech-news",
+                "--home",
+                str(home.root),
+                "--from-preset",
+                "tech-news",
+                "--force",
+                "--json",
+            ]
+        )
+
+    capsys.readouterr()
+    assert target.read_text(encoding="utf-8") == target_payload
 
 
 def test_cli_radar_init_refuses_to_overwrite_user_definition_without_force(tmp_path, capsys):

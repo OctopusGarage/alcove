@@ -61,6 +61,7 @@ class RadarPipeline:
         scored = score_items(definition, deduped)
         cache_dir.mkdir(parents=True, exist_ok=True)
         scored_path = cache_dir / "scored.json"
+        _refuse_symlink_write(scored_path, "radar scored cache")
         scored_path.write_text(_json([item.as_dict() for item in scored]), encoding="utf-8")
         reports = self._write_reports(definition, scored, run_day=run_day)
         report_items = selected_report_items(definition, scored)
@@ -115,6 +116,7 @@ class RadarPipeline:
             return _items_from_json(raw_rows), [{"status": "cached", "count": len(raw_rows)}]
         raw_items, source_results = self._fetch(definition)
         raw_path.parent.mkdir(parents=True, exist_ok=True)
+        _refuse_symlink_write(raw_path, "radar raw cache")
         raw_path.write_text(_json([item.as_dict() for item in raw_items]), encoding="utf-8")
         return raw_items, source_results
 
@@ -149,12 +151,14 @@ class RadarPipeline:
         reports: dict[str, str] = {}
         if "md" in formats:
             md_path = report_dir / f"{run_day}.md"
+            _refuse_symlink_write(md_path, "radar markdown report")
             md_path.write_text(
                 render_markdown(definition, scored, run_day=run_day), encoding="utf-8"
             )
             reports["md"] = compact_user_path(md_path)
         if "html" in formats:
             html_path = report_dir / f"{run_day}.html"
+            _refuse_symlink_write(html_path, "radar html report")
             html_path.write_text(render_html(definition, scored, run_day=run_day), encoding="utf-8")
             reports["html"] = compact_user_path(html_path)
         return reports
@@ -246,6 +250,7 @@ class RadarPipeline:
             summary = str(result["summary"]).strip()
             summary_path = self.module.reports_root / definition.id / f"{run_day}.ai.md"
             summary_path.parent.mkdir(parents=True, exist_ok=True)
+            _refuse_symlink_write(summary_path, "radar AI summary")
             summary_path.write_text(summary + "\n", encoding="utf-8")
             reports["ai_summary"] = compact_user_path(summary_path)
             payload["summary"] = summary
@@ -528,7 +533,9 @@ class RadarPipeline:
     def _write_run(self, radar_id: str, run_day: str, run_payload: dict[str, Any]) -> None:
         run_dir = self.module.runs_root / radar_id / run_day
         run_dir.mkdir(parents=True, exist_ok=True)
-        (run_dir / "run.json").write_text(_json(run_payload), encoding="utf-8")
+        run_path = run_dir / "run.json"
+        _refuse_symlink_write(run_path, "radar run")
+        run_path.write_text(_json(run_payload), encoding="utf-8")
 
     def _write_okf_index(self, definition: RadarDefinition, run_payload: dict[str, Any]) -> None:
         okf_dir = self.module.okf_root / definition.id
@@ -552,10 +559,13 @@ class RadarPipeline:
         if isinstance(reports, dict):
             for format_name, path in sorted(reports.items()):
                 lines.append(f"- Latest {format_name}: {path}")
-        (okf_dir / "index.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        index_path = okf_dir / "index.md"
+        _refuse_symlink_write(index_path, "radar OKF index")
+        index_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     def _append_event(self, run_payload: dict[str, Any]) -> None:
         self.module.events_path.parent.mkdir(parents=True, exist_ok=True)
+        _refuse_symlink_write(self.module.events_path, "radar event log")
         event = {
             "event": "radar.run.completed",
             "radar_id": run_payload["id"],
@@ -703,6 +713,11 @@ def _positive_int(value: Any, *, default: int) -> int:
 
 def _json(payload: Any) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+
+
+def _refuse_symlink_write(path: Path, label: str) -> None:
+    if path.is_symlink():
+        raise RuntimeError(f"Refusing to write {label} through symlink: {compact_user_path(path)}")
 
 
 def _json_mapping(path: Path) -> dict[str, Any]:

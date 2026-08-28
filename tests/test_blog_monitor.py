@@ -77,6 +77,47 @@ def test_blog_seed_rejects_persisted_source_id_path_traversal(tmp_path):
     assert not (tmp_path / "escaped-blog.json").exists()
 
 
+def test_blog_add_rejects_source_file_symlink_without_overwriting_target(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    sources = home.root / "blog-monitor" / "sources"
+    sources.mkdir(parents=True)
+    target = tmp_path / "do-not-clobber.yml"
+    target.write_text("keep-me", encoding="utf-8")
+    (sources / "linked-blog.yml").symlink_to(target)
+
+    with pytest.raises(RuntimeError, match="Refusing to write blog source through symlink"):
+        BlogMonitorModule(home).add(
+            name="Linked Blog",
+            url="https://example.com/blog",
+            source_id="linked-blog",
+        )
+
+    assert target.read_text(encoding="utf-8") == "keep-me"
+
+
+def test_blog_seed_rejects_seen_file_symlink_without_overwriting_target(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    page = tmp_path / "blog.html"
+    _write_html(page, [("https://example.com/blog/one", "First useful article")])
+    module = BlogMonitorModule(home)
+    module.add(
+        name="Linked Seen Blog",
+        url=page.as_uri(),
+        source_id="linked-seen",
+        link_pattern="/blog/",
+    )
+    seen = home.root / "blog-monitor" / "seen"
+    seen.mkdir(parents=True)
+    target = tmp_path / "do-not-clobber.json"
+    target.write_text("keep-me", encoding="utf-8")
+    (seen / "linked-seen.json").symlink_to(target)
+
+    with pytest.raises(RuntimeError, match="Refusing to write blog seen state through symlink"):
+        module.seed(source_id="linked-seen")
+
+    assert target.read_text(encoding="utf-8") == "keep-me"
+
+
 def test_blog_check_detects_new_article_and_uses_capture_policy(tmp_path, monkeypatch):
     home = AlcoveHome.init(tmp_path / ".alcove")
     kb_root = tmp_path / "kb"

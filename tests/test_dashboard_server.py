@@ -4,6 +4,8 @@ from collections.abc import Callable, Iterable
 import json
 import socket
 
+import pytest
+
 import alcove.dashboard_server as dashboard_server
 from alcove.dashboard import DashboardModule
 from alcove.home import AlcoveHome
@@ -197,6 +199,29 @@ def test_dashboard_server_accepts_same_origin_event_posts(tmp_path, monkeypatch)
     assert status == "HTTP/1.0 204 No Content"
     assert body == b""
     assert snapshot["usage"]["dashboard"]["routes"] == {"/tasks": 1}
+
+
+def test_dashboard_server_rejects_usage_log_symlink_without_appending_to_target(
+    tmp_path,
+    monkeypatch,
+):
+    home = AlcoveHome.init(tmp_path / "home")
+    logs = home.paths().logs
+    logs.mkdir(parents=True, exist_ok=True)
+    target = tmp_path / "usage-target.jsonl"
+    target.write_text("sentinel\n", encoding="utf-8")
+    (logs / "usage.jsonl").symlink_to(target)
+    event = {
+        "action": "dashboard.route",
+        "summary": "Dashboard route viewed",
+        "metadata": {"route": "/tasks"},
+    }
+    requests = [_http_request("POST", "/events", json.dumps(event).encode("utf-8"))]
+
+    with pytest.raises(RuntimeError, match="usage log"):
+        _serve_requests(monkeypatch, home, requests)
+
+    assert target.read_text(encoding="utf-8") == "sentinel\n"
 
 
 def test_dashboard_server_head_snapshot_has_fresh_headers_without_body(tmp_path, monkeypatch):
