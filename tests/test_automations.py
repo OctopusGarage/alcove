@@ -195,6 +195,22 @@ def test_failed_shell_automation_persists_failure_state_and_run_event(tmp_path):
     assert event["status"] == "failed"
 
 
+def test_automation_run_rejects_event_log_symlink_without_appending_to_target(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="event guard", command="true", timeout_seconds=5)
+    target = tmp_path / "events-target.jsonl"
+    target.write_text("keep me\n", encoding="utf-8")
+    events_path = home.root / "automations/events.jsonl"
+    events_path.parent.mkdir(parents=True, exist_ok=True)
+    events_path.symlink_to(target)
+
+    with pytest.raises(RuntimeError, match="Refusing to write automation event through symlink"):
+        module.run("event-guard", timestamp="2026-07-12T09:00:00+00:00")
+
+    assert target.read_text(encoding="utf-8") == "keep me\n"
+
+
 def test_timed_out_automation_persists_actionable_failure_state(tmp_path, monkeypatch):
     home = AlcoveHome.init(tmp_path / ".alcove")
     module = AutomationsModule(home)
