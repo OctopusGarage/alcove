@@ -14,8 +14,8 @@ from alcove.radars.models import RadarDefinition, RadarItem, RadarSource
 
 
 ATOM_NS = "{http://www.w3.org/2005/Atom}"
-FETCH_ATTEMPTS = 3
-RETRY_DELAYS_SECONDS = (0.5, 1.0)
+FETCH_ATTEMPTS = 5
+RETRY_DELAYS_SECONDS = (0.5, 1.0, 2.0, 4.0)
 
 
 class RssAdapter:

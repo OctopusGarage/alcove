@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import json
+import time
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from alcove.radars.models import RadarDefinition, RadarItem, RadarSource
 
 
 BASE_FIREBASE = "https://hacker-news.firebaseio.com/v0"
+FETCH_ATTEMPTS = 5
+RETRY_DELAYS_SECONDS = (0.5, 1.0, 2.0, 4.0)
 
 
 class HackerNewsAdapter:
@@ -49,8 +53,17 @@ class HackerNewsAdapter:
 
 def _json_get(url: str) -> object:
     request = Request(url, headers={"User-Agent": "AlcoveRadar/0.1"})  # noqa: S310
-    with urlopen(request, timeout=20) as response:  # noqa: S310
-        return json.loads(response.read(2_000_000).decode("utf-8"))
+    for attempt in range(FETCH_ATTEMPTS):
+        try:
+            with urlopen(request, timeout=20) as response:  # noqa: S310
+                return json.loads(response.read(2_000_000).decode("utf-8"))
+        except HTTPError:
+            raise
+        except (URLError, TimeoutError):
+            if attempt == FETCH_ATTEMPTS - 1:
+                raise
+            time.sleep(RETRY_DELAYS_SECONDS[attempt])
+    raise RuntimeError("Hacker News fetch retry loop exhausted")
 
 
 def _story_time(value: object) -> str:

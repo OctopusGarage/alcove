@@ -8,6 +8,7 @@ import pytest
 
 from alcove.radars.models import RadarDefinition, RadarSource
 from alcove.radars.sources import fetch_source, registered_adapters
+from alcove.radars.sources import hackernews as hackernews_module
 from alcove.radars.sources import rss as rss_module
 
 
@@ -191,6 +192,30 @@ def test_hackernews_adapter_reads_firebase_json(tmp_path) -> None:
     assert items[0].author == "alice"
     assert items[0].published_at == "2025-10-09T08:53:20+00:00"
     assert items[0].metrics["score"] == 42
+
+
+def test_hackernews_adapter_retries_transient_network_errors(monkeypatch) -> None:
+    attempts = 0
+
+    def fake_urlopen(request, timeout):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise URLError("[SSL: UNEXPECTED_EOF_WHILE_READING]")
+        return io.BytesIO(b"[]")
+
+    monkeypatch.setattr(hackernews_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(hackernews_module.time, "sleep", lambda _seconds: None)
+    definition = RadarDefinition(
+        id="hn",
+        name="HN",
+        sources=[RadarSource(id="hn", adapter="hackernews", limit=1)],
+    )
+
+    items = fetch_source(definition, definition.sources[0])
+
+    assert attempts == 2
+    assert items == []
 
 
 def test_github_trending_adapter_extracts_repository_cards(tmp_path) -> None:
