@@ -215,7 +215,31 @@ class DashboardModule:
         dist = self._frontend_dir() / "dist"
         if dist.is_dir():
             self._copy_frontend_dist(dist, self.root, remove_stale=False)
+        else:
+            self._write_static_frontend_index(self.root)
         return self.root
+
+    def _write_static_frontend_index(self, output_dir: Path) -> None:
+        index_path = output_dir / "index.html"
+        _refuse_symlink_write(index_path, "dashboard index")
+        index_path.write_text(
+            """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alcove Dashboard</title>
+</head>
+<body>
+  <main>
+    <h1>Alcove</h1>
+    <p>Dashboard snapshot is available at <a href="./snapshot.json">snapshot.json</a>.</p>
+  </main>
+</body>
+</html>
+""",
+            encoding="utf-8",
+        )
 
     def _build_frontend(self, frontend: Path, output_dir: Path) -> None:
         package_json = frontend / "package.json"
