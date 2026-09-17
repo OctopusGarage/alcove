@@ -86,6 +86,8 @@ class DashboardModule:
                 json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
+        elif not (root / "index.html").is_file():
+            self.ensure_static_frontend()
         return {
             "status": "built",
             "root": str(root),
@@ -206,6 +208,15 @@ class DashboardModule:
     def _frontend_dir(self) -> Path:
         return Path(__file__).resolve().parents[2] / "frontend" / "dashboard"
 
+    def ensure_static_frontend(self) -> Path:
+        self.root.mkdir(parents=True, exist_ok=True)
+        if (self.root / "index.html").is_file():
+            return self.root
+        dist = self._frontend_dir() / "dist"
+        if dist.is_dir():
+            self._copy_frontend_dist(dist, self.root, remove_stale=False)
+        return self.root
+
     def _build_frontend(self, frontend: Path, output_dir: Path) -> None:
         package_json = frontend / "package.json"
         if not package_json.is_file():
@@ -233,13 +244,23 @@ class DashboardModule:
         dist = frontend / "dist"
         if not dist.is_dir():
             raise FileNotFoundError(f"Dashboard frontend build did not create {dist}")
-        for stale in output_dir.iterdir():
-            if stale.name == "snapshot.json":
-                continue
-            if stale.is_dir():
-                shutil.rmtree(stale)
-            else:
-                stale.unlink()
+        self._copy_frontend_dist(dist, output_dir, remove_stale=True)
+
+    def _copy_frontend_dist(
+        self,
+        dist: Path,
+        output_dir: Path,
+        *,
+        remove_stale: bool,
+    ) -> None:
+        if remove_stale:
+            for stale in output_dir.iterdir():
+                if stale.name == "snapshot.json":
+                    continue
+                if stale.is_dir():
+                    shutil.rmtree(stale)
+                else:
+                    stale.unlink()
         for path in dist.iterdir():
             target = output_dir / path.name
             if target.exists():

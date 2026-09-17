@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -11,8 +10,7 @@ from alcove.home import AlcoveHome
 
 
 def serve_dashboard(home: AlcoveHome, host: str = "127.0.0.1", port: int = 8765) -> None:
-    result = DashboardModule(home=home).build()
-    root = Path(result["root"])
+    root = DashboardModule(home=home).ensure_static_frontend()
 
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *args: Any, **kwargs: Any) -> None:

@@ -151,6 +151,35 @@
   padding: 32px;
 }
 
+.loading-state {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  min-height: 100vh;
+  padding: 32px;
+  text-align: center;
+}
+
+.loading-state .brand-mark {
+  width: 52px;
+  height: 52px;
+  margin-bottom: 18px;
+  font-size: 28px;
+}
+
+.loading-state h1 {
+  margin: 4px 0 8px;
+  font-family: Georgia, "Songti SC", serif;
+  font-size: clamp(30px, 6vw, 56px);
+  line-height: 1;
+}
+
+.loading-state p:last-child {
+  max-width: 520px;
+  margin: 0;
+  color: var(--muted);
+}
+
 @media (max-width: 980px) {
   .topbar {
     grid-template-columns: minmax(0, 1fr) auto;

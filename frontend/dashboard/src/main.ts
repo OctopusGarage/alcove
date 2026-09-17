@@ -8,6 +8,7 @@ import { searchSnapshot } from "./search";
 import { loadSnapshot, type DashboardSnapshot } from "./snapshot";
 import { escapeHtml } from "./components/text";
 import { formatSingaporeDateTime } from "./components/date";
+import { renderLoadingState } from "./components/loading-state";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -19,6 +20,8 @@ const root = app;
 let snapshot: DashboardSnapshot | null = null;
 let snapshotFingerprint = "";
 let searchEventTimer: number | undefined;
+
+root.innerHTML = renderLoadingState();
 
 loadSnapshot()
   .then((loaded) => {

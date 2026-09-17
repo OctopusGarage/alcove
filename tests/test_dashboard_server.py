@@ -91,6 +91,44 @@ def _serve_requests(
     return responses
 
 
+def test_dashboard_server_reuses_existing_frontend_build_on_startup(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / "home")
+    root = tmp_path / "dashboard"
+    root.mkdir()
+    (root / "index.html").write_text("<h1>Alcove</h1>", encoding="utf-8")
+    prepare_calls = 0
+
+    class FakeDashboardModule:
+        def __init__(self, home: AlcoveHome) -> None:
+            self.home = home
+
+        def build(self) -> dict[str, str]:
+            raise AssertionError("serve_dashboard should not build snapshots on startup")
+
+        def ensure_static_frontend(self) -> object:
+            nonlocal prepare_calls
+            prepare_calls += 1
+            return root
+
+    class FakeServer:
+        def __init__(self, server_address, handler_class) -> None:
+            self.server_address = server_address
+            self.RequestHandlerClass = handler_class
+
+        def serve_forever(self) -> None:
+            return
+
+        def server_close(self) -> None:
+            return
+
+    monkeypatch.setattr(dashboard_server, "DashboardModule", FakeDashboardModule)
+    monkeypatch.setattr(dashboard_server, "ThreadingHTTPServer", FakeServer)
+
+    dashboard_server.serve_dashboard(home, host="127.0.0.1", port=0)
+
+    assert prepare_calls == 1
+
+
 def test_dashboard_server_snapshot_endpoint_returns_live_no_store_snapshot(tmp_path, monkeypatch):
     home = AlcoveHome.init(tmp_path / "home")
     requests = [_http_request("GET", "/snapshot.json")]
