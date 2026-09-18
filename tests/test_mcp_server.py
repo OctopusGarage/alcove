@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shlex
 
 from alcove.connectors.github_stars import GitHubStarsConnector, GitHubStarsImportRequest
 from alcove.home import AlcoveHome
@@ -299,6 +300,21 @@ def test_mcp_command_hints_can_filter_by_workflow(tmp_path):
 
     assert [workflow["id"] for workflow in payload["workflows"]] == ["radars"]
     assert any("alcove radar run" in command for command in payload["workflows"][0]["commands"])
+
+
+def test_mcp_command_hints_quote_paths_with_spaces(tmp_path):
+    home = tmp_path / "Alcove Home"
+    workspace = tmp_path / "Managed KB"
+
+    payload = command_hints_tool(home=str(home), workspace=str(workspace))
+    commands = [command for workflow in payload["workflows"] for command in workflow["commands"]]
+
+    for command in commands:
+        tokens = shlex.split(command)
+        if "--home" in tokens:
+            assert tokens[tokens.index("--home") + 1] == str(home)
+        if "--workspace" in tokens:
+            assert tokens[tokens.index("--workspace") + 1] == str(workspace)
 
 
 def test_registered_mcp_command_hints_use_context_defaults(tmp_path):

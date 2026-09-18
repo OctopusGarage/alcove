@@ -583,3 +583,19 @@ def test_automation_run_rejects_job_file_symlink_without_overwriting_target(tmp_
     payload = yaml.safe_load(target.read_text(encoding="utf-8"))
     assert "checked_at" not in payload
     assert "last_status" not in payload
+
+
+def test_automation_run_rejects_run_record_symlink_without_writing_target(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="run record guard", command="true", timeout_seconds=5)
+    monkeypatch.setattr("alcove.automations.now_iso", lambda: "2026-07-12T09:00:00+00:00")
+    runs_root = home.root / "automations" / "runs"
+    runs_root.mkdir(parents=True)
+    target = tmp_path / "run-record-target.json"
+    (runs_root / "2026-07-12T090000Z0000-run-record-guard.json").symlink_to(target)
+
+    with pytest.raises(RuntimeError, match="Refusing to write automation run through symlink"):
+        module.run("run-record-guard", timestamp="2026-07-12T09:00:00+00:00")
+
+    assert not target.exists()

@@ -446,9 +446,17 @@ class AutomationsModule:
         suffix = now_iso().replace(":", "").replace("+", "Z")
         path = self.runs_root / f"{suffix}-{job.id}.json"
         index = 2
+        if path.is_symlink():
+            raise RuntimeError(
+                f"Refusing to write automation run through symlink: {compact_user_path(path)}"
+            )
         while path.exists():
             path = self.runs_root / f"{suffix}-{index}-{job.id}.json"
             index += 1
+            if path.is_symlink():
+                raise RuntimeError(
+                    f"Refusing to write automation run through symlink: {compact_user_path(path)}"
+                )
         path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     def _record_event(self, job: AutomationJob, result: dict[str, Any], *, timestamp: str) -> None:
