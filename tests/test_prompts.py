@@ -6,7 +6,11 @@ from pathlib import Path
 from alcove.home import AlcoveHome
 from alcove.markdown import MarkdownDoc, MarkdownRepository
 from alcove.prompt_audit import PromptAuditModule
-from alcove.prompt_ai_eval import evaluate_prompt_candidate
+from alcove.prompt_ai_eval import (
+    configured_prompt_ai_eval_provider,
+    evaluate_prompt_candidate,
+    run_external_prompt_ai_eval,
+)
 from alcove.prompt_composer import PromptComposerModule
 from alcove.prompt_curation import PromptCurationModule
 from alcove.prompt_proposals import PromptProposalModule
@@ -94,6 +98,53 @@ def test_prompt_search_tags_and_archive(tmp_path):
     assert tags == [{"tag": "debug", "count": 1}, {"tag": "writing", "count": 1}]
     assert archived["status"] == "archived"
     assert [prompt.title for prompt in active_after_archive] == ["Writing Shape"]
+
+
+def test_prompt_ai_eval_provider_prefers_environment_over_config(monkeypatch):
+    monkeypatch.setenv("ALCOVE_PROMPT_AI_EVAL_PROVIDER", " Codex ")
+
+    provider = configured_prompt_ai_eval_provider(
+        {
+            "prompt_library": {"ai_eval_provider": "claude"},
+            "prompts": {"ai_eval_provider": "none"},
+        }
+    )
+
+    assert provider == "codex"
+
+
+def test_prompt_ai_eval_provider_reads_legacy_prompts_config(monkeypatch):
+    monkeypatch.delenv("ALCOVE_PROMPT_AI_EVAL_PROVIDER", raising=False)
+
+    provider = configured_prompt_ai_eval_provider({"prompts": {"ai_eval_provider": "Claude"}})
+
+    assert provider == "claude"
+
+
+def test_external_prompt_ai_eval_skips_provider_without_calling_model(tmp_path):
+    prompt = AddPromptRequest(
+        title="Release Verification",
+        content="Verify evidence and return concise findings.",
+    )
+
+    result = run_external_prompt_ai_eval(prompt, provider="off", cwd=tmp_path)
+
+    assert result == {"status": "skipped", "provider": "none"}
+
+
+def test_external_prompt_ai_eval_rejects_unknown_provider_without_calling_model(tmp_path):
+    prompt = AddPromptRequest(
+        title="Release Verification",
+        content="Verify evidence and return concise findings.",
+    )
+
+    result = run_external_prompt_ai_eval(prompt, provider="openai", cwd=tmp_path)
+
+    assert result == {
+        "status": "error",
+        "provider": "openai",
+        "message": "unsupported prompt AI eval provider",
+    }
 
 
 def test_prompt_search_filters_kind_domain_and_surface(tmp_path):
