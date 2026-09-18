@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import shlex
 from typing import Any, Callable
 
 from alcove.agent_workspaces import AgentWorkspacesModule
@@ -103,7 +104,11 @@ def handle_entry_command(
 ) -> int:
     if args.entry_command != "contract":
         return argument_error(parser, "the following arguments are required: entry_command")
-    home_part = f"--home {args.home}" if getattr(args, "home", None) else ""
+    home_part = (
+        f"--home {shlex.quote(str(Path(args.home).expanduser()))}"
+        if getattr(args, "home", None)
+        else ""
+    )
     payload = (
         validate_entry_contract_matrix(home_part=home_part)
         if args.validate

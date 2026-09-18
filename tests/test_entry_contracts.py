@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import shlex
+
 import alcove.entry_contracts as entry_contracts
 from alcove.entry_contracts import entry_contract_matrix, validate_entry_contract_matrix
 from alcove.cli import main
@@ -58,6 +61,17 @@ def test_entry_contract_cli_and_mcp_selection_are_deterministic(tmp_path, capsys
     assert "alcove_radar_proposal_accept" not in lite_tools
     assert full_name == "full"
     assert "alcove_radar_proposal_accept" in full_tools
+
+
+def test_entry_contract_cli_quotes_explicit_home_paths_with_spaces(tmp_path, capsys):
+    home = tmp_path / "Alcove Home"
+
+    code = main(["entry", "contract", "--home", str(home), "--json"])
+    output = json.loads(capsys.readouterr().out)
+
+    assert code == 0
+    explicit = output["contracts"][0]["home_scope"]["explicit"]
+    assert shlex.split(explicit) == ["--home", str(home)]
 
 
 def test_entry_contract_validation_reports_policy_and_generation_drift(monkeypatch):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+import shlex
 from typing import Any
 
 from alcove.paths import compact_user_path
@@ -13,6 +15,8 @@ def command_hints_tool(
     """Return command hints for Alcove workflows intentionally kept outside MCP."""
     home_hint = compact_user_path(home) if home else "~/.alcove"
     workspace_hint = compact_user_path(workspace) if workspace else "<managed-kb>"
+    home_arg = _shell_path_arg(home, default="~/.alcove")
+    workspace_arg = _shell_path_arg(workspace, default="<managed-kb>")
     workflows = [
         {
             "id": "agent_workspaces",
@@ -20,9 +24,9 @@ def command_hints_tool(
             "surface": "cli",
             "intent": "Create, inspect, or run Hub-managed lightweight business workspaces.",
             "commands": [
-                f"alcove workspace list --home {home_hint} --json",
-                f"alcove workspace status --home {home_hint} <workspace-id> --json",
-                f'alcove workspace run --home {home_hint} <workspace-id> --agent codex "prompt" --json',
+                f"alcove workspace list --home {home_arg} --json",
+                f"alcove workspace status --home {home_arg} <workspace-id> --json",
+                f'alcove workspace run --home {home_arg} <workspace-id> --agent codex "prompt" --json',
             ],
             "notes": [
                 "Hub remains the control workspace; custom workspaces are lightweight scene entries.",
@@ -35,10 +39,10 @@ def command_hints_tool(
             "surface": "cli",
             "intent": "Initialize, write, import, and search scene-local workspace knowledge.",
             "commands": [
-                f"alcove workspace okf init --home {home_hint} <workspace-id> --json",
-                f'alcove workspace okf add-note --home {home_hint} <workspace-id> <domain/topic> "Title" --summary "..." --json',
-                f"alcove workspace okf import-file --home {home_hint} <workspace-id> ./documents/file.md --topic <domain/topic> --json",
-                f'alcove workspace okf search --home {home_hint} <workspace-id> "query" --json',
+                f"alcove workspace okf init --home {home_arg} <workspace-id> --json",
+                f'alcove workspace okf add-note --home {home_arg} <workspace-id> <domain/topic> "Title" --summary "..." --json',
+                f"alcove workspace okf import-file --home {home_arg} <workspace-id> ./documents/file.md --topic <domain/topic> --json",
+                f'alcove workspace okf search --home {home_arg} <workspace-id> "query" --json',
             ],
             "notes": [
                 "Use this inside business workspaces for documents, notes, and scene-local recall.",
@@ -51,9 +55,9 @@ def command_hints_tool(
             "surface": "cli",
             "intent": "Discover configured blog updates, capture new articles, and notify.",
             "commands": [
-                f"alcove blog list --home {home_hint} --status '' --json",
-                f"alcove blog check --home {home_hint} --json",
-                f"alcove blog check --home {home_hint} <source-id> --json",
+                f"alcove blog list --home {home_arg} --status '' --json",
+                f"alcove blog check --home {home_arg} --json",
+                f"alcove blog check --home {home_arg} <source-id> --json",
             ],
             "notes": [
                 "Use this from the Hub entry or scheduled service.",
@@ -66,13 +70,13 @@ def command_hints_tool(
             "surface": "cli",
             "intent": "List, create, and run local scheduled automation jobs.",
             "commands": [
-                f"alcove automation list --home {home_hint} --json",
-                f"alcove automation run --home {home_hint} <job-id> --json",
-                f"alcove automation run-due --home {home_hint} --json",
-                f'alcove automation add-shell --home {home_hint} "backup cache" --cmd "rsync -a ~/source/ ~/backup/" --json',
-                f"alcove automation add-git-sync --home {home_hint} notes ~/notes --json",
-                f'alcove automation add-alcove --home {home_hint} "daily dashboard" --args "dashboard build --json" --json',
-                f'alcove automation add-agent --home {home_hint} "weekly inbox review" --prompt "Review latest inbox items." --provider codex --json',
+                f"alcove automation list --home {home_arg} --json",
+                f"alcove automation run --home {home_arg} <job-id> --json",
+                f"alcove automation run-due --home {home_arg} --json",
+                f'alcove automation add-shell --home {home_arg} "backup cache" --cmd "rsync -a ~/source/ ~/backup/" --json',
+                f"alcove automation add-git-sync --home {home_arg} notes ~/notes --json",
+                f'alcove automation add-alcove --home {home_arg} "daily dashboard" --args "dashboard build --json" --json',
+                f'alcove automation add-agent --home {home_arg} "weekly inbox review" --prompt "Review latest inbox items." --provider codex --json',
             ],
             "notes": [
                 "Use run-due for scheduled service work; it respects each job's ttl_hours and latest run state.",
@@ -85,10 +89,10 @@ def command_hints_tool(
             "surface": "cli",
             "intent": "Run user-defined radar sources, score items, render reports, and notify.",
             "commands": [
-                f"alcove radar list --home {home_hint} --json",
-                f"alcove radar status --home {home_hint} <radar-id> --json",
-                f"alcove radar run --home {home_hint} <radar-id> --force --ai --notify --json",
-                f"alcove radar run --home {home_hint} <radar-id> --skip-fetch --force --ai --notify --json",
+                f"alcove radar list --home {home_arg} --json",
+                f"alcove radar status --home {home_arg} <radar-id> --json",
+                f"alcove radar run --home {home_arg} <radar-id> --force --ai --notify --json",
+                f"alcove radar run --home {home_arg} <radar-id> --skip-fetch --force --ai --notify --json",
             ],
             "notes": [
                 "Each radar has its own prompt/profile; do not treat radar types as hard-coded modules.",
@@ -101,8 +105,8 @@ def command_hints_tool(
             "surface": "cli",
             "intent": "Build or serve the local Alcove dashboard snapshot.",
             "commands": [
-                f"alcove dashboard build --home {home_hint} --json",
-                f"alcove serve --dashboard --home {home_hint}",
+                f"alcove dashboard build --home {home_arg} --json",
+                f"alcove serve --dashboard --home {home_arg}",
             ],
             "notes": [
                 "Dashboard reads generated snapshots and should not be used as the write contract.",
@@ -115,9 +119,9 @@ def command_hints_tool(
             "surface": "cli",
             "intent": "Publish selected Alcove module views to external destinations.",
             "commands": [
-                f"alcove publish list --home {home_hint} --json",
-                f"alcove publish run --home {home_hint} apple-notes --json",
-                f"alcove publish init apple-notes --home {home_hint} --root-folder 'iCloud/Alcove' --json",
+                f"alcove publish list --home {home_arg} --json",
+                f"alcove publish run --home {home_arg} apple-notes --json",
+                f"alcove publish init apple-notes --home {home_arg} --root-folder 'iCloud/Alcove' --json",
             ],
             "notes": [
                 "Apple Notes publishing is scheduled when enabled in publisher definitions.",
@@ -130,9 +134,9 @@ def command_hints_tool(
             "surface": "cli",
             "intent": "Install or refresh agent entry files for a managed KB workspace.",
             "commands": [
-                f"alcove kb install-agent --workspace {workspace_hint} --mode symlink",
-                f"alcove kb install-agent --workspace {workspace_hint} --mode copy",
-                f"alcove validate --workspace {workspace_hint} --json",
+                f"alcove kb install-agent --workspace {workspace_arg} --mode symlink",
+                f"alcove kb install-agent --workspace {workspace_arg} --mode copy",
+                f"alcove validate --workspace {workspace_arg} --json",
             ],
             "notes": [
                 "Use symlink mode for local development and copy mode for portable repository state.",
@@ -155,3 +159,9 @@ def command_hints_tool(
         "count": len(workflows),
         "workflows": workflows,
     }
+
+
+def _shell_path_arg(value: str, *, default: str) -> str:
+    if not value:
+        return default
+    return shlex.quote(str(Path(value).expanduser()))
