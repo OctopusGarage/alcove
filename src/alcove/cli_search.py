@@ -21,11 +21,12 @@ def handle_search_command(
     print_search_rows: SearchPrinter,
     argument_error: ArgumentError,
 ) -> int:
+    if args.unindexed:
+        if not getattr(args, "workspace", None):
+            return argument_error(parser, "search --unindexed requires --workspace")
     runtime = runtime_from_args(args)
     app = AlcoveApplication(runtime)
     if args.unindexed:
-        if runtime.workspace is None:
-            return argument_error(parser, "search --unindexed requires --workspace")
         issues = app.search.search_unindexed_payload()["issues"]
         if args.json:
             print(json.dumps({"issues": issues}, ensure_ascii=False, indent=2))

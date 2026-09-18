@@ -211,6 +211,32 @@ def test_cli_search_records_privacy_safe_usage(tmp_path, capsys):
     assert "usage needle" not in events
 
 
+def test_cli_search_tags_prints_limited_counts(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / "home")
+    pins = PinsModule(home=home)
+    pins.add(AddPinRequest(title="Ops Runbook", content="Operational checklist.", tags=["ops"]))
+    pins.add(
+        AddPinRequest(title="Debug Runbook", content="Debug checklist.", tags=["debug", "ops"])
+    )
+
+    code = main(["search", "--home", str(home.root), "--tags", "--limit", "1"])
+    captured = capsys.readouterr()
+
+    assert code == 0
+    assert captured.out.strip() == "ops | 2"
+
+
+def test_cli_search_unindexed_requires_workspace_without_touching_home(tmp_path, capsys):
+    home = tmp_path / "home"
+
+    code = main(["search", "--home", str(home), "--unindexed", "--json"])
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "search --unindexed requires --workspace" in captured.err
+    assert not home.exists()
+
+
 def test_cli_dashboard_build_rejects_snapshot_symlink_without_overwriting_target(tmp_path, capsys):
     home = AlcoveHome.init(tmp_path / "home")
     dashboard_root = home.root / "dashboard"
@@ -396,6 +422,33 @@ def test_cli_prompt_recommend_empty_human_message(tmp_path, capsys):
 
     assert code == 0
     assert captured.out.strip() == "No matching reusable prompts found."
+
+
+def test_cli_workspace_okf_add_note_requires_summary_or_content(tmp_path, monkeypatch, capsys):
+    home = tmp_path / ".alcove"
+    monkeypatch.setenv("ALCOVE_HOME", str(home))
+
+    assert main(["workspace", "init", "family", "--json"]) == 0
+    capsys.readouterr()
+    assert main(["workspace", "okf", "init", "family", "--json"]) == 0
+    capsys.readouterr()
+
+    code = main(
+        [
+            "workspace",
+            "okf",
+            "add-note",
+            "family",
+            "home/insurance",
+            "Missing Summary",
+            "--json",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "workspace okf add-note requires --summary or --content" in captured.err
+    assert not list((home / "workspaces" / "data" / "family" / "okf").rglob("Missing Summary.md"))
 
 
 def test_cli_prompt_candidates_scan_list_and_promote(tmp_path, capsys):
