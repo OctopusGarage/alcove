@@ -378,7 +378,11 @@ class RadarPipeline:
         ai_payload: dict[str, Any],
     ) -> dict[str, Any]:
         text = self._telegram_message(definition, sink, report_items, run_payload, ai_payload)
-        result = send_telegram_message(home=self.module.home, text=text)
+        result = send_telegram_message(
+            home=self.module.home,
+            text=text,
+            parse_mode="HTML",
+        )
         if sink.get("send_document", True):
             documents: dict[str, dict[str, Any]] = {}
             for format_name, path in _report_document_paths(run_payload, sink=sink).items():

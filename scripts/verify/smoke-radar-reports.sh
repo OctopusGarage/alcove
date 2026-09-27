@@ -278,7 +278,8 @@ def fake_run_ai_summary(*, prompt, policy, cwd=None):
     }
 
 
-def fake_send_telegram(*, home, text):
+def fake_send_telegram(*, home, text, parse_mode=""):
+    assert parse_mode == "HTML"
     sent_messages.append(text)
     return {"status": "sent", "attempts": 1}
 

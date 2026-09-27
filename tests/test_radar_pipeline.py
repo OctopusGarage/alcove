@@ -183,7 +183,8 @@ def test_radar_ai_summary_saves_artifact_and_notifies_success(tmp_path, monkeypa
             "summary": "核心AI总结：这个发布值得跟进。",
         }
 
-    def fake_send_telegram(*, home, text):
+    def fake_send_telegram(*, home, text, parse_mode=""):
+        assert parse_mode == "HTML"
         sent_messages.append(text)
         return {"status": "sent", "attempts": 1}
 
@@ -279,7 +280,8 @@ def test_radar_notify_supports_multiple_sinks_with_feishu(tmp_path, monkeypatch)
         "ALCOVE_TEST_FEISHU_WEBHOOK", "https://open.feishu.cn/open-apis/bot/v2/hook/test"
     )
 
-    def fake_send_telegram(*, home, text):
+    def fake_send_telegram(*, home, text, parse_mode=""):
+        assert parse_mode == "HTML"
         sent_telegram_messages.append(text)
         return {"status": "sent", "attempts": 1}
 
@@ -428,7 +430,9 @@ def test_radar_notify_respects_summary_and_top_link_options(tmp_path, monkeypatc
     monkeypatch.setattr(
         radar_pipeline,
         "send_telegram_message",
-        lambda *, home, text: sent_messages.append(text) or {"status": "sent"},
+        lambda *, home, text, parse_mode="": (
+            sent_messages.append(text) or {"status": "sent", "parse_mode": parse_mode}
+        ),
     )
 
     result = module.run("tech-news")
@@ -473,7 +477,8 @@ def test_radar_notify_falls_back_to_report_when_ai_summary_fails(tmp_path, monke
     def fake_run_ai_summary(*, prompt, policy, cwd=None):
         return {"status": "failed", "provider": "claude", "error": "model unavailable"}
 
-    def fake_send_telegram(*, home, text):
+    def fake_send_telegram(*, home, text, parse_mode=""):
+        assert parse_mode == "HTML"
         sent_messages.append(text)
         return {"status": "sent", "attempts": 1}
 
@@ -522,7 +527,8 @@ def test_radar_notify_explains_skipped_ai_summary(tmp_path, monkeypatch) -> None
     def fake_run_ai_summary(*, prompt, policy, cwd=None):
         return {"status": "skipped", "provider": "codex", "reason": "codex is not available"}
 
-    def fake_send_telegram(*, home, text):
+    def fake_send_telegram(*, home, text, parse_mode=""):
+        assert parse_mode == "HTML"
         sent_messages.append(text)
         return {"status": "sent", "attempts": 1}
 

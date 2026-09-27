@@ -277,11 +277,13 @@ def test_cli_radar_run_can_analyze_cached_results_and_notify(tmp_path, capsys, m
             "summary": "Cached AI summary.",
         },
     )
-    monkeypatch.setattr(
-        radar_pipeline,
-        "send_telegram_message",
-        lambda *, home, text: sent_messages.append(text) or {"status": "sent"},
-    )
+
+    def fake_send_telegram(*, home, text, parse_mode=""):
+        assert parse_mode == "HTML"
+        sent_messages.append(text)
+        return {"status": "sent"}
+
+    monkeypatch.setattr(radar_pipeline, "send_telegram_message", fake_send_telegram)
 
     analyze_code = main(
         [

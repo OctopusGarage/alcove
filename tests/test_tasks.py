@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import time
@@ -348,6 +349,36 @@ def test_task_digest_builds_report_and_can_notify(tmp_path, monkeypatch):
     assert "Fresh idea" in digest["text"]
     assert sent[0]["text"].count(digest["title"]) == 1
     assert "Sunday planning" in sent[0]["text"]
+
+
+def test_task_digest_sends_html_significant_titles_as_plain_telegram_text(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = TasksModule(home=home)
+    module.task_add(AddTaskRequest(title="Review <draft> & publish"))
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    def fake_urlopen(request, timeout):
+        captured.update(json.loads(request.data.decode("utf-8")))
+        return FakeResponse()
+
+    monkeypatch.setattr("alcove.notifications.urlopen", fake_urlopen)
+    monkeypatch.setenv("ALCOVE_TELEGRAM_BOT_TOKEN", "token")
+    monkeypatch.setenv("ALCOVE_TELEGRAM_CHAT_ID", "chat")
+
+    digest = module.task_digest(period="weekly", today="2026-07-12", notify=True)
+
+    assert digest["status"] == "sent"
+    assert "Review <draft> & publish" in str(captured["text"])
+    assert "parse_mode" not in captured
 
 
 def test_task_digest_text_is_readable_and_keeps_ids_in_payload(tmp_path):

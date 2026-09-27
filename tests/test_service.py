@@ -1231,6 +1231,60 @@ def test_task_health_notification_sends_once_when_scheduler_ticks_overlap(
     assert any(result.get("reason") == "already_sent" for result in results)
 
 
+def test_mount_refresh_preserves_notification_state_when_scheduler_ticks_overlap(
+    tmp_path,
+    monkeypatch,
+):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    source = tmp_path / "mounted-docs"
+    source.mkdir()
+    (source / "README.md").write_text("# Mounted Docs\n", encoding="utf-8")
+    MountsModule(home=home).add(
+        AddMountRequest(path=str(source), name="Mounted Docs", mount_type="local-folder")
+    )
+    scan_started = threading.Event()
+    finish_scan = threading.Event()
+    original_scan = MountsModule.scan
+
+    def blocked_scan(self, *args, **kwargs):
+        scan_started.set()
+        assert finish_scan.wait(5)
+        return original_scan(self, *args, **kwargs)
+
+    monkeypatch.setattr(MountsModule, "scan", blocked_scan)
+    monkeypatch.setattr(
+        "alcove.service_task_health_notifications.send_telegram_message",
+        lambda **_kwargs: {"status": "sent"},
+    )
+    monkeypatch.setattr(
+        "alcove.service_task_health_notifications.send_feishu_message",
+        lambda **_kwargs: {"status": "skipped"},
+    )
+
+    refresh_thread = threading.Thread(
+        target=lambda: ServiceMountRefresh(home).run(interval_days=2, today="2026-07-29")
+    )
+    notification_thread = threading.Thread(
+        target=lambda: ServiceTaskHealthNotifier(home).notify_once_per_day(
+            {"status": "success", "checked": 8, "failed": 0, "skipped": 0, "checks": []},
+            tick_time=datetime.fromisoformat("2026-07-29T12:00:00+00:00"),
+        )
+    )
+    refresh_thread.start()
+    assert scan_started.wait(5)
+    notification_thread.start()
+    notification_thread.join(timeout=0.2)
+    finish_scan.set()
+    refresh_thread.join(timeout=5)
+    notification_thread.join(timeout=5)
+
+    assert not refresh_thread.is_alive()
+    assert not notification_thread.is_alive()
+    state = json.loads((home.paths().stats / "service-state.json").read_text(encoding="utf-8"))
+    assert "mounts" in state
+    assert "task_health_notifications" in state
+
+
 def test_cli_service_tick_can_skip_task_health_notification(tmp_path, monkeypatch, capsys):
     home = AlcoveHome.init(tmp_path / ".alcove")
     telegram: list[str] = []
