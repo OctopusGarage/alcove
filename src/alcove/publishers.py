@@ -22,7 +22,7 @@ from alcove.projects import ProjectsModule
 from alcove.prompts import PromptsModule
 from alcove.publisher_dirty import (
     clear_publisher_dirty_sources,
-    dirty_sources_for_publisher,
+    dirty_source_marks_for_publisher,
 )
 from alcove.publisher_rendering import (
     content_hash as _content_hash,
@@ -388,7 +388,8 @@ class PublisherModule:
                 )
                 continue
             try:
-                dirty_sources = self._dirty_sources(definition)
+                dirty_marks = self._dirty_source_marks(definition)
+                dirty_sources = set(dirty_marks)
                 if not self._is_due(definition, timestamp) and not dirty_sources:
                     skipped += 1
                     results.append(
@@ -404,7 +405,12 @@ class PublisherModule:
                 result["due_reason"] = "dirty"
                 result["dirty_sources"] = sorted(dirty_sources)
                 if int(result.get("errors") or 0) == 0:
-                    clear_publisher_dirty_sources(self.home, definition.id, dirty_sources)
+                    clear_publisher_dirty_sources(
+                        self.home,
+                        definition.id,
+                        dirty_sources,
+                        expected_marks=dirty_marks,
+                    )
             ran += 1
             updated += int(result.get("updated") or 0)
             errors += int(result.get("errors") or 0)
@@ -618,14 +624,18 @@ class PublisherModule:
     def _write_run(self, publisher_id: str, payload: dict[str, Any]) -> Path:
         self.runs_root.mkdir(parents=True, exist_ok=True)
         suffix = now_iso().replace(":", "").replace("+", "Z")
-        path = self.runs_root / f"{suffix}-{normalize_slug(publisher_id)}.json"
-        index = 2
-        while path.exists():
-            path = self.runs_root / f"{suffix}-{index}-{normalize_slug(publisher_id)}.json"
-            index += 1
-        _refuse_symlink_write(path, "publisher run")
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", "utf-8")
-        return path
+        stem = normalize_slug(publisher_id)
+        index = 1
+        while True:
+            infix = "" if index == 1 else f"-{index}"
+            path = self.runs_root / f"{suffix}{infix}-{stem}.json"
+            _refuse_symlink_write(path, "publisher run")
+            try:
+                with path.open("x", encoding="utf-8") as handle:
+                    handle.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+                return path
+            except FileExistsError:
+                index += 1
 
     def _record_event(self, publisher_id: str, payload: dict[str, Any], *, timestamp: str) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -700,9 +710,9 @@ class PublisherModule:
             return True
         return False
 
-    def _dirty_sources(self, definition: PublisherDefinition) -> set[str]:
+    def _dirty_source_marks(self, definition: PublisherDefinition) -> dict[str, Any]:
         sources = {target.source.module for target in definition.targets if target.source.module}
-        return dirty_sources_for_publisher(self.home, definition.id, sources)
+        return dirty_source_marks_for_publisher(self.home, definition.id, sources)
 
     def _definition_from_dict(self, payload: dict[str, Any]) -> PublisherDefinition:
         schedule = payload.get("schedule") if isinstance(payload.get("schedule"), dict) else {}

@@ -129,6 +129,7 @@ Publisher state is Alcove-owned operational data:
 ├── definitions/*.yml          publisher definitions
 ├── state/*.yml                external target identity and content hashes
 ├── dirty.yml                  source-change triggers for next scheduler tick
+├── dirty.yml.lock             dirty-state transaction lock
 ├── renders/*.md               latest rendered outbound documents
 ├── runs/*.json                per-run audit records
 ├── events.jsonl               publisher run events
@@ -151,7 +152,10 @@ definition is due after 24 hours, and Alcove writes to mirrored sources mark the
 publisher dirty in `publishers/dirty.yml`. The next `alcove service tick` runs
 the dirty publisher even before TTL expiry, compares content hashes, updates
 changed Notes, and clears the dirty marker after a successful run. Overlapping
-due runs are serialized so the same stale state cannot publish twice.
+due runs are serialized so the same stale state cannot publish twice. Dirty
+marks carry per-source generations, so a source changed during publishing stays
+dirty for the next tick rather than being cleared with the older generation.
+Concurrent explicit publisher runs also retain distinct per-run audit files.
 
 Usage logs are local operational data. Search events store query length, result
 count, filters, surface, outcome, and a local salted query hash. Raw query text

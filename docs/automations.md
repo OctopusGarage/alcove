@@ -50,6 +50,8 @@ alcove automation run-due --json
 `run-due` respects each job's `ttl_hours` and latest `checked_at`. It is the
 path used by `alcove service tick`. Overlapping due checks are serialized so a
 job cannot be selected and executed twice before its latest state is persisted.
+Concurrent explicit runs use atomic run-record creation, so every completed
+execution keeps a distinct audit file even when timestamps match.
 
 ## Notifications
 

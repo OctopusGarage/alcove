@@ -1,5 +1,6 @@
 import fcntl
 import json
+from pathlib import Path
 import subprocess
 import threading
 
@@ -50,6 +51,71 @@ def test_repeated_automation_runs_preserve_distinct_run_records(tmp_path, monkey
     assert second["status"] == "success"
     assert output.read_text(encoding="utf-8") == "runrun"
     assert len(list((home.root / "automations/runs").glob("*fast-job.json"))) == 2
+
+
+def test_concurrent_automation_runs_preserve_distinct_run_records(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="concurrent job", command="side-effect", timeout_seconds=5)
+    fixed = "2026-07-29T01:02:03+00:00"
+    monkeypatch.setattr("alcove.automations.now_iso", lambda: fixed)
+    monkeypatch.setattr(
+        "alcove.automations.subprocess.run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, "", ""),
+    )
+    loaded_barrier = threading.Barrier(2)
+    original_get_job = module._get_job
+
+    def synchronized_get_job(job_id):
+        job = original_get_job(job_id)
+        loaded_barrier.wait(timeout=5)
+        return job
+
+    monkeypatch.setattr(module, "_get_job", synchronized_get_job)
+    run_path = home.root / "automations/runs/2026-07-29T010203Z0000-concurrent-job.json"
+    second_open_started = threading.Event()
+    first_open_completed = threading.Event()
+    open_attempts = 0
+    open_attempts_guard = threading.Lock()
+    original_open = Path.open
+
+    def synchronized_open(path, mode="r", *args, **kwargs):
+        nonlocal open_attempts
+        if path == run_path and mode == "x":
+            with open_attempts_guard:
+                open_attempts += 1
+                attempt = open_attempts
+            if attempt == 1:
+                assert second_open_started.wait(timeout=5)
+                handle = original_open(path, mode, *args, **kwargs)
+                first_open_completed.set()
+                return handle
+            if attempt == 2:
+                second_open_started.set()
+                assert first_open_completed.wait(timeout=5)
+        return original_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", synchronized_open)
+    results: list[dict] = []
+    errors: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            results.append(module.run("concurrent-job", timestamp=fixed))
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert not any(thread.is_alive() for thread in threads)
+    assert errors == []
+    assert len(results) == 2
+    assert open_attempts == 2
+    assert len(list((home.root / "automations/runs").glob("*concurrent-job.json"))) == 2
 
 
 def test_run_due_skips_agent_jobs_unless_allowed(tmp_path):
