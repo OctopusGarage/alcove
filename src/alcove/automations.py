@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+import fcntl
 import json
 from pathlib import Path
 import shlex
@@ -186,6 +187,18 @@ class AutomationsModule:
         return {"count": len(jobs), "jobs": jobs, "errors": len(errors), "error_items": errors}
 
     def run_due(self, *, now: str | None = None, allow_agent: bool = False) -> dict[str, Any]:
+        self.root.mkdir(parents=True, exist_ok=True)
+        lock_path = self.root / "run-due.lock"
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                return self._run_due_locked(now=now, allow_agent=allow_agent)
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+    def _run_due_locked(
+        self, *, now: str | None = None, allow_agent: bool = False
+    ) -> dict[str, Any]:
         timestamp = now or now_iso()
         results: list[dict[str, Any]] = []
         ran = 0

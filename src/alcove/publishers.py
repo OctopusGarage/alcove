@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
+import fcntl
 from hashlib import sha256
 import json
 import os
@@ -353,6 +354,16 @@ class PublisherModule:
         return payload
 
     def run_due(self, *, timestamp: str | None = None) -> dict[str, Any]:
+        self.root.mkdir(parents=True, exist_ok=True)
+        lock_path = self.root / "run-due.lock"
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                return self._run_due_locked(timestamp=timestamp)
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+    def _run_due_locked(self, *, timestamp: str | None = None) -> dict[str, Any]:
         timestamp = timestamp or now_iso()
         ran = 0
         skipped = 0

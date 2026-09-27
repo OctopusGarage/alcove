@@ -114,7 +114,8 @@ Automation state is Alcove-owned operational data:
 ~/.alcove/automations/
 ├── jobs/*.yml                 job definitions and latest run state
 ├── runs/*.json                per-run audit records
-└── events.jsonl               automation run events
+├── events.jsonl               automation run events
+└── run-due.lock               due-check and execution lock
 ```
 
 The source of truth for each automation is the YAML job file. Run records and
@@ -130,7 +131,8 @@ Publisher state is Alcove-owned operational data:
 ├── dirty.yml                  source-change triggers for next scheduler tick
 ├── renders/*.md               latest rendered outbound documents
 ├── runs/*.json                per-run audit records
-└── events.jsonl               publisher run events
+├── events.jsonl               publisher run events
+└── run-due.lock               due-check and publish lock
 ```
 
 For Apple Notes publishing, Alcove stores the target `note_id` after the first
@@ -148,7 +150,8 @@ Publisher runs are TTL-based and event-triggered. The default Apple Notes
 definition is due after 24 hours, and Alcove writes to mirrored sources mark the
 publisher dirty in `publishers/dirty.yml`. The next `alcove service tick` runs
 the dirty publisher even before TTL expiry, compares content hashes, updates
-changed Notes, and clears the dirty marker after a successful run.
+changed Notes, and clears the dirty marker after a successful run. Overlapping
+due runs are serialized so the same stale state cannot publish twice.
 
 Usage logs are local operational data. Search events store query length, result
 count, filters, surface, outcome, and a local salted query hash. Raw query text

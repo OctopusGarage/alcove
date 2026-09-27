@@ -7,7 +7,8 @@ They run user-defined shell, git-sync, Alcove CLI, and guarded agent jobs.
 ~/.alcove/automations/
 ├── jobs/*.yml                 job definitions and latest run state
 ├── runs/*.json                per-run audit records
-└── events.jsonl               append-only run events
+├── events.jsonl               append-only run events
+└── run-due.lock               due-check and execution lock
 ```
 
 ## Job Types
@@ -47,7 +48,8 @@ alcove automation run-due --json
 ```
 
 `run-due` respects each job's `ttl_hours` and latest `checked_at`. It is the
-path used by `alcove service tick`.
+path used by `alcove service tick`. Overlapping due checks are serialized so a
+job cannot be selected and executed twice before its latest state is persisted.
 
 ## Notifications
 

@@ -1,5 +1,7 @@
+import fcntl
 import json
 import subprocess
+import threading
 
 import pytest
 import yaml
@@ -142,6 +144,57 @@ def test_run_due_runs_active_jobs_in_order_and_ignores_disabled_jobs(tmp_path):
     assert result["skipped"] == 0
     assert [job["id"] for job in result["jobs"]] == ["early-job", "late-job"]
     assert output.read_text(encoding="utf-8") == "early-late"
+
+
+def test_overlapping_run_due_invocations_execute_job_once(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="single run", command="side-effect", timeout_seconds=5)
+    first_started = threading.Event()
+    second_lock_attempted = threading.Event()
+    release_first = threading.Event()
+    calls: list[str] = []
+    lock_attempts = 0
+    lock_attempts_guard = threading.Lock()
+    original_flock = fcntl.flock
+
+    def observed_flock(fd, operation):
+        nonlocal lock_attempts
+        if operation == fcntl.LOCK_EX:
+            with lock_attempts_guard:
+                lock_attempts += 1
+                if lock_attempts == 2:
+                    second_lock_attempted.set()
+        return original_flock(fd, operation)
+
+    def blocked_run(command, **_kwargs):
+        calls.append(command)
+        first_started.set()
+        assert release_first.wait(5)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("alcove.automations.subprocess.run", blocked_run)
+    monkeypatch.setattr("alcove.automations.fcntl.flock", observed_flock)
+    results: list[dict] = []
+
+    def run_due() -> None:
+        results.append(module.run_due(now="2026-07-12T09:00:00+00:00"))
+
+    first = threading.Thread(target=run_due)
+    second = threading.Thread(target=run_due)
+    first.start()
+    assert first_started.wait(5)
+    second.start()
+    assert second_lock_attempted.wait(5)
+    release_first.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert len(calls) == 1
+    assert sorted(result["ran"] for result in results) == [0, 1]
+    assert sorted(result["skipped"] for result in results) == [0, 1]
 
 
 def test_run_due_handles_legacy_naive_checked_at(tmp_path):

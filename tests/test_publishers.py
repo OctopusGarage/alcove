@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import fcntl
 import json
+import threading
 
 import pytest
 import yaml
@@ -187,6 +189,56 @@ def test_alcove_memory_write_triggers_due_publisher_before_ttl(tmp_path):
     assert any("Event Triggered Pin" in item["body"] for item in target.replacements)
     assert after_clean["ran"] == 0
     assert after_clean["publishers"][0]["reason"] == "not_due"
+
+
+def test_overlapping_run_due_invocations_publish_each_target_once(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    first_started = threading.Event()
+    second_lock_attempted = threading.Event()
+    release_first = threading.Event()
+    lock_attempts = 0
+    lock_attempts_guard = threading.Lock()
+    original_flock = fcntl.flock
+
+    def observed_flock(fd, operation):
+        nonlocal lock_attempts
+        if operation == fcntl.LOCK_EX:
+            with lock_attempts_guard:
+                lock_attempts += 1
+                if lock_attempts == 2:
+                    second_lock_attempted.set()
+        return original_flock(fd, operation)
+
+    class BlockingTarget(FakeAppleNotesTarget):
+        def resolve_or_create(self, **kwargs):
+            first_started.set()
+            assert release_first.wait(5)
+            return super().resolve_or_create(**kwargs)
+
+    target = BlockingTarget()
+    module = PublisherModule(home, target_factory=lambda _definition: target)
+    module.init_apple_notes(root_folder="iCloud/Alcove")
+    monkeypatch.setattr("alcove.publishers.fcntl.flock", observed_flock)
+    results: list[dict] = []
+
+    def run_due() -> None:
+        results.append(module.run_due(timestamp="2026-07-12T09:00:00+00:00"))
+
+    first = threading.Thread(target=run_due)
+    second = threading.Thread(target=run_due)
+    first.start()
+    assert first_started.wait(5)
+    second.start()
+    assert second_lock_attempted.wait(5)
+    release_first.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert len(target.replacements) == 5
+    assert sorted(result["ran"] for result in results) == [0, 1]
+    assert sorted(result["skipped"] for result in results) == [0, 1]
 
 
 @pytest.mark.parametrize(
