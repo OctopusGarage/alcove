@@ -49,7 +49,7 @@ class BlogNotifier:
                     attachments=[],
                 )
             else:
-                status = send_telegram_message(home=self.home, text=text)
+                status = send_telegram_message(home=self.home, text=text, parse_mode="HTML")
             status.update(
                 {
                     "source_id": source.id,
@@ -103,7 +103,7 @@ class BlogNotifier:
                 attachments=[],
             )
         else:
-            result = send_telegram_message(home=self.home, text=text)
+            result = send_telegram_message(home=self.home, text=text, parse_mode="HTML")
         return {
             **result,
             "source_id": source.id,

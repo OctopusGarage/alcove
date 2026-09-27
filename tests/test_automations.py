@@ -1,5 +1,8 @@
+import fcntl
 import json
+from pathlib import Path
 import subprocess
+import threading
 
 import pytest
 import yaml
@@ -48,6 +51,71 @@ def test_repeated_automation_runs_preserve_distinct_run_records(tmp_path, monkey
     assert second["status"] == "success"
     assert output.read_text(encoding="utf-8") == "runrun"
     assert len(list((home.root / "automations/runs").glob("*fast-job.json"))) == 2
+
+
+def test_concurrent_automation_runs_preserve_distinct_run_records(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="concurrent job", command="side-effect", timeout_seconds=5)
+    fixed = "2026-07-29T01:02:03+00:00"
+    monkeypatch.setattr("alcove.automations.now_iso", lambda: fixed)
+    monkeypatch.setattr(
+        "alcove.automations.subprocess.run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, "", ""),
+    )
+    loaded_barrier = threading.Barrier(2)
+    original_get_job = module._get_job
+
+    def synchronized_get_job(job_id):
+        job = original_get_job(job_id)
+        loaded_barrier.wait(timeout=5)
+        return job
+
+    monkeypatch.setattr(module, "_get_job", synchronized_get_job)
+    run_path = home.root / "automations/runs/2026-07-29T010203Z0000-concurrent-job.json"
+    second_open_started = threading.Event()
+    first_open_completed = threading.Event()
+    open_attempts = 0
+    open_attempts_guard = threading.Lock()
+    original_open = Path.open
+
+    def synchronized_open(path, mode="r", *args, **kwargs):
+        nonlocal open_attempts
+        if path == run_path and mode == "x":
+            with open_attempts_guard:
+                open_attempts += 1
+                attempt = open_attempts
+            if attempt == 1:
+                assert second_open_started.wait(timeout=5)
+                handle = original_open(path, mode, *args, **kwargs)
+                first_open_completed.set()
+                return handle
+            if attempt == 2:
+                second_open_started.set()
+                assert first_open_completed.wait(timeout=5)
+        return original_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", synchronized_open)
+    results: list[dict] = []
+    errors: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            results.append(module.run("concurrent-job", timestamp=fixed))
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert not any(thread.is_alive() for thread in threads)
+    assert errors == []
+    assert len(results) == 2
+    assert open_attempts == 2
+    assert len(list((home.root / "automations/runs").glob("*concurrent-job.json"))) == 2
 
 
 def test_run_due_skips_agent_jobs_unless_allowed(tmp_path):
@@ -142,6 +210,57 @@ def test_run_due_runs_active_jobs_in_order_and_ignores_disabled_jobs(tmp_path):
     assert result["skipped"] == 0
     assert [job["id"] for job in result["jobs"]] == ["early-job", "late-job"]
     assert output.read_text(encoding="utf-8") == "early-late"
+
+
+def test_overlapping_run_due_invocations_execute_job_once(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="single run", command="side-effect", timeout_seconds=5)
+    first_started = threading.Event()
+    second_lock_attempted = threading.Event()
+    release_first = threading.Event()
+    calls: list[str] = []
+    lock_attempts = 0
+    lock_attempts_guard = threading.Lock()
+    original_flock = fcntl.flock
+
+    def observed_flock(fd, operation):
+        nonlocal lock_attempts
+        if operation == fcntl.LOCK_EX:
+            with lock_attempts_guard:
+                lock_attempts += 1
+                if lock_attempts == 2:
+                    second_lock_attempted.set()
+        return original_flock(fd, operation)
+
+    def blocked_run(command, **_kwargs):
+        calls.append(command)
+        first_started.set()
+        assert release_first.wait(5)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("alcove.automations.subprocess.run", blocked_run)
+    monkeypatch.setattr("alcove.automations.fcntl.flock", observed_flock)
+    results: list[dict] = []
+
+    def run_due() -> None:
+        results.append(module.run_due(now="2026-07-12T09:00:00+00:00"))
+
+    first = threading.Thread(target=run_due)
+    second = threading.Thread(target=run_due)
+    first.start()
+    assert first_started.wait(5)
+    second.start()
+    assert second_lock_attempted.wait(5)
+    release_first.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert len(calls) == 1
+    assert sorted(result["ran"] for result in results) == [0, 1]
+    assert sorted(result["skipped"] for result in results) == [0, 1]
 
 
 def test_run_due_handles_legacy_naive_checked_at(tmp_path):

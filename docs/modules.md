@@ -351,7 +351,14 @@ launchd
 Mount refresh is deliberately lightweight: the scheduler does not install a
 filesystem watcher. It reuses `alcove mount scan` and its incremental file
 metadata checks, then records the last service refresh in
-`~/.alcove/stats/service-state.json`.
+`~/.alcove/stats/service-state.json`. Mount refresh and task-health notification
+updates serialize their read-modify-write cycles through the same state lock so
+overlapping service ticks preserve both sections.
+
+Telegram delivery treats shared task, automation, and service messages as plain
+text, so user-authored `<`, `>`, and `&` characters do not become markup. Radar
+and blog notifications opt into HTML formatting and escape dynamic content
+before delivery.
 
 Watchers live under `~/.alcove/watchers/`. Each source is a YAML config with
 refresh state, and changes are appended to `events.jsonl`. If a watcher is

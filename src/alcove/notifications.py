@@ -16,12 +16,17 @@ from urllib.request import Request, urlopen
 from alcove.paths import compact_user_path, compact_user_paths_in_text
 
 
-def send_telegram_message(*, home: Any, text: str) -> dict[str, Any]:
+def send_telegram_message(*, home: Any, text: str, parse_mode: str = "") -> dict[str, Any]:
     token = telegram_credential(home, "ALCOVE_TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_TOKEN")
     chat_id = telegram_credential(home, "ALCOVE_TELEGRAM_CHAT_ID", "TELEGRAM_CHAT_ID")
     if not token or not chat_id:
         return {"status": "skipped", "reason": "telegram token or chat id missing"}
-    return send_telegram_message_with_credentials(token=token, chat_id=chat_id, text=text)
+    return send_telegram_message_with_credentials(
+        token=token,
+        chat_id=chat_id,
+        text=text,
+        parse_mode=parse_mode,
+    )
 
 
 def send_telegram_document(*, home: Any, path: Path, caption: str = "") -> dict[str, Any]:
@@ -128,14 +133,12 @@ def send_telegram_message_with_credentials(
     token: str,
     chat_id: str,
     text: str,
+    parse_mode: str = "",
 ) -> dict[str, Any]:
-    body = json.dumps(
-        {
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "HTML",
-        }
-    ).encode("utf-8")
+    payload = {"chat_id": chat_id, "text": text}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+    body = json.dumps(payload).encode("utf-8")
     request = Request(  # noqa: S310
         f"https://api.telegram.org/bot{token}/sendMessage",
         data=body,

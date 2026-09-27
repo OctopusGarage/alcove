@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import fcntl
 import json
+from pathlib import Path
+import threading
 
 import pytest
 import yaml
@@ -187,6 +190,136 @@ def test_alcove_memory_write_triggers_due_publisher_before_ttl(tmp_path):
     assert any("Event Triggered Pin" in item["body"] for item in target.replacements)
     assert after_clean["ran"] == 0
     assert after_clean["publishers"][0]["reason"] == "not_due"
+
+
+def test_publisher_preserves_new_dirty_mark_created_during_publish(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    started = threading.Event()
+    release = threading.Event()
+
+    class BlockingTarget(FakeAppleNotesTarget):
+        block_regular_pins = False
+
+        def replace_note_body(self, *, note_id, title, body):
+            if self.block_regular_pins and title == "Regular Pins":
+                self.block_regular_pins = False
+                started.set()
+                assert release.wait(5)
+            return super().replace_note_body(note_id=note_id, title=title, body=body)
+
+    target = BlockingTarget()
+    module = PublisherModule(home, target_factory=lambda _definition: target)
+    module.init_apple_notes(root_folder="iCloud/Alcove")
+    module.run_due(timestamp="2026-07-12T08:00:00+00:00")
+    app = AlcoveApplication(AlcoveRuntime.resolve(home=home.root))
+    app.global_home.pin_add_payload(AddPinRequest(title="First Pin"))
+
+    target.block_regular_pins = True
+    results: list[dict] = []
+    publishing = threading.Thread(
+        target=lambda: results.append(module.run_due(timestamp="2026-07-12T09:00:00+00:00"))
+    )
+    publishing.start()
+    assert started.wait(5)
+    app.global_home.pin_add_payload(AddPinRequest(title="Late Pin"))
+    release.set()
+    publishing.join(timeout=5)
+
+    follow_up = module.run_due(timestamp="2026-07-12T09:01:00+00:00")
+    regular_pin_updates = [item for item in target.replacements if item["title"] == "Regular Pins"]
+
+    assert not publishing.is_alive()
+    assert results[0]["ran"] == 1
+    assert follow_up["ran"] == 1
+    assert follow_up["publishers"][0]["dirty_sources"] == ["pins"]
+    assert "Late Pin" in regular_pin_updates[-1]["body"]
+
+
+def test_overlapping_run_due_invocations_publish_each_target_once(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    first_started = threading.Event()
+    second_lock_attempted = threading.Event()
+    release_first = threading.Event()
+    lock_attempts = 0
+    lock_attempts_guard = threading.Lock()
+    original_flock = fcntl.flock
+
+    def observed_flock(fd, operation):
+        nonlocal lock_attempts
+        if operation == fcntl.LOCK_EX:
+            with lock_attempts_guard:
+                lock_attempts += 1
+                if lock_attempts == 2:
+                    second_lock_attempted.set()
+        return original_flock(fd, operation)
+
+    class BlockingTarget(FakeAppleNotesTarget):
+        def resolve_or_create(self, **kwargs):
+            first_started.set()
+            assert release_first.wait(5)
+            return super().resolve_or_create(**kwargs)
+
+    target = BlockingTarget()
+    module = PublisherModule(home, target_factory=lambda _definition: target)
+    module.init_apple_notes(root_folder="iCloud/Alcove")
+    monkeypatch.setattr("alcove.publishers.fcntl.flock", observed_flock)
+    results: list[dict] = []
+
+    def run_due() -> None:
+        results.append(module.run_due(timestamp="2026-07-12T09:00:00+00:00"))
+
+    first = threading.Thread(target=run_due)
+    second = threading.Thread(target=run_due)
+    first.start()
+    assert first_started.wait(5)
+    second.start()
+    assert second_lock_attempted.wait(5)
+    release_first.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert len(target.replacements) == 5
+    assert sorted(result["ran"] for result in results) == [0, 1]
+    assert sorted(result["skipped"] for result in results) == [0, 1]
+
+
+def test_concurrent_publisher_runs_preserve_distinct_run_records(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = PublisherModule(home, target_factory=lambda _definition: FakeAppleNotesTarget())
+    module.init_apple_notes(root_folder="iCloud/Alcove")
+    fixed = "2026-07-29T01:02:03+00:00"
+    monkeypatch.setattr("alcove.publishers.now_iso", lambda: fixed)
+    run_path = home.root / "publishers/runs/2026-07-29T010203Z0000-apple-notes.json"
+    open_barrier = threading.Barrier(2)
+    original_open = Path.open
+
+    def synchronized_open(path, mode="r", *args, **kwargs):
+        if path == run_path and mode in {"w", "x"}:
+            open_barrier.wait(timeout=5)
+        return original_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", synchronized_open)
+    results: list[dict] = []
+    errors: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            results.append(module.run("apple-notes", force=True, timestamp=fixed))
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert not any(thread.is_alive() for thread in threads)
+    assert errors == []
+    assert len(results) == 2
+    assert len(list((home.root / "publishers/runs").glob("*apple-notes.json"))) == 2
 
 
 @pytest.mark.parametrize(

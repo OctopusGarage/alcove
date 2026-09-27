@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
+import fcntl
 import json
 from pathlib import Path
 from typing import Any
@@ -22,48 +25,49 @@ class ServiceMountRefresh:
         if not mounts:
             return {"status": "skipped", "reason": "no_mounts", "checked": 0, "refreshed": 0}
 
-        interval = max(int(interval_days or DEFAULT_MOUNT_REFRESH_DAYS), 1)
-        state = self._load_state()
-        stored_mount_state = state.get("mounts")
-        mount_state = stored_mount_state if isinstance(stored_mount_state, dict) else {}
-        last_refreshed_at = str(mount_state.get("last_refreshed_at") or "")
-        now = tick_now(today)
-        if not _is_due(last_refreshed_at, now=now, interval_days=interval):
-            return {
-                "status": "skipped",
-                "reason": "not_due",
-                "checked": len(mounts),
-                "refreshed": 0,
-                "last_refreshed_at": last_refreshed_at,
-                "next_due_at": _next_due_at(last_refreshed_at, interval),
-                "interval_days": interval,
-            }
+        with self._state_lock():
+            interval = max(int(interval_days or DEFAULT_MOUNT_REFRESH_DAYS), 1)
+            state = self._load_state()
+            stored_mount_state = state.get("mounts")
+            mount_state = stored_mount_state if isinstance(stored_mount_state, dict) else {}
+            last_refreshed_at = str(mount_state.get("last_refreshed_at") or "")
+            now = tick_now(today)
+            if not _is_due(last_refreshed_at, now=now, interval_days=interval):
+                return {
+                    "status": "skipped",
+                    "reason": "not_due",
+                    "checked": len(mounts),
+                    "refreshed": 0,
+                    "last_refreshed_at": last_refreshed_at,
+                    "next_due_at": _next_due_at(last_refreshed_at, interval),
+                    "interval_days": interval,
+                }
 
-        report = mount_module.scan()
-        timestamp = now.isoformat(timespec="seconds")
-        payload = {
-            "status": "checked",
-            "checked": len(mounts),
-            "refreshed": len(mounts),
-            "last_refreshed_at": timestamp,
-            "next_due_at": _next_due_at(timestamp, interval),
-            "interval_days": interval,
-            "scanned": _int_value(report.get("scanned")),
-            "skipped": _int_value(report.get("skipped")),
-            "reused": _int_value(report.get("reused")),
-            "skip_reasons": report.get("skip_reasons", {}),
-        }
-        state["mounts"] = {
-            "last_refreshed_at": timestamp,
-            "refresh_interval_days": interval,
-            "last_report": {
-                "scanned": payload["scanned"],
-                "skipped": payload["skipped"],
-                "reused": payload["reused"],
-            },
-        }
-        self._save_state(state)
-        return payload
+            report = mount_module.scan()
+            timestamp = now.isoformat(timespec="seconds")
+            payload = {
+                "status": "checked",
+                "checked": len(mounts),
+                "refreshed": len(mounts),
+                "last_refreshed_at": timestamp,
+                "next_due_at": _next_due_at(timestamp, interval),
+                "interval_days": interval,
+                "scanned": _int_value(report.get("scanned")),
+                "skipped": _int_value(report.get("skipped")),
+                "reused": _int_value(report.get("reused")),
+                "skip_reasons": report.get("skip_reasons", {}),
+            }
+            state["mounts"] = {
+                "last_refreshed_at": timestamp,
+                "refresh_interval_days": interval,
+                "last_report": {
+                    "scanned": payload["scanned"],
+                    "skipped": payload["skipped"],
+                    "reused": payload["reused"],
+                },
+            }
+            self._save_state(state)
+            return payload
 
     def _state_path(self) -> Path:
         return self.home.paths().stats / "service-state.json"
@@ -82,6 +86,18 @@ class ServiceMountRefresh:
         path = self._state_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    @contextmanager
+    def _state_lock(self) -> Iterator[None]:
+        path = self._state_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = path.with_suffix(path.suffix + ".lock")
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def tick_now(today: str) -> datetime:

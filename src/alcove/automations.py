@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+import fcntl
 import json
 from pathlib import Path
 import shlex
@@ -186,6 +187,18 @@ class AutomationsModule:
         return {"count": len(jobs), "jobs": jobs, "errors": len(errors), "error_items": errors}
 
     def run_due(self, *, now: str | None = None, allow_agent: bool = False) -> dict[str, Any]:
+        self.root.mkdir(parents=True, exist_ok=True)
+        lock_path = self.root / "run-due.lock"
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                return self._run_due_locked(now=now, allow_agent=allow_agent)
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+    def _run_due_locked(
+        self, *, now: str | None = None, allow_agent: bool = False
+    ) -> dict[str, Any]:
         timestamp = now or now_iso()
         results: list[dict[str, Any]] = []
         ran = 0
@@ -444,20 +457,20 @@ class AutomationsModule:
     def _write_run(self, job: AutomationJob, result: dict[str, Any]) -> None:
         self.runs_root.mkdir(parents=True, exist_ok=True)
         suffix = now_iso().replace(":", "").replace("+", "Z")
-        path = self.runs_root / f"{suffix}-{job.id}.json"
-        index = 2
-        if path.is_symlink():
-            raise RuntimeError(
-                f"Refusing to write automation run through symlink: {compact_user_path(path)}"
-            )
-        while path.exists():
-            path = self.runs_root / f"{suffix}-{index}-{job.id}.json"
-            index += 1
+        index = 1
+        while True:
+            infix = "" if index == 1 else f"-{index}"
+            path = self.runs_root / f"{suffix}{infix}-{job.id}.json"
             if path.is_symlink():
                 raise RuntimeError(
                     f"Refusing to write automation run through symlink: {compact_user_path(path)}"
                 )
-        path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            try:
+                with path.open("x", encoding="utf-8") as handle:
+                    handle.write(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
+                return
+            except FileExistsError:
+                index += 1
 
     def _record_event(self, job: AutomationJob, result: dict[str, Any], *, timestamp: str) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
