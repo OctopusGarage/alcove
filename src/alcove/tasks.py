@@ -401,6 +401,12 @@ class TasksModule:
                 routine["priority"] = self._priority(priority)
             if schedule is not None:
                 schedule_plan = RoutineSchedulePlan.from_raw(schedule)
+                previous_schedule = RoutineSchedulePlan.from_item(routine)
+                if next_due is None and schedule_plan != previous_schedule:
+                    current_due = self._parse_date(str(routine.get("next_due") or ""))
+                    routine["next_due"] = schedule_plan.next_due_on_or_after(
+                        current_due
+                    ).isoformat()
                 routine["schedule"] = schedule_plan.as_dict()
                 routine["every_days"] = schedule_plan.every_days
             if next_due is not None:
