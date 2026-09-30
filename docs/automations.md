@@ -23,6 +23,8 @@ They run user-defined shell, git-sync, Alcove CLI, and guarded agent jobs.
 `allow_service: true` or the manual command passes `--allow-agent`. This keeps
 background launchd work from silently depending on an open Codex/Claude session
 or starting expensive AI workflows unexpectedly.
+Quoted YAML values such as `allow_service: "false"` and `enabled: "false"` are
+treated as false when job definitions are loaded.
 
 ## Commands
 
