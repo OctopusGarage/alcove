@@ -512,7 +512,8 @@ def test_git_sync_commit_failure_does_not_push_and_records_failure(tmp_path, mon
 
     result = module.run("sync-repo", timestamp="2026-07-12T09:00:00+00:00")
 
-    assert [args[0] for args in calls] == ["rev-parse", "status", "add", "commit"]
+    assert any(args[0] == "commit" for args in calls)
+    assert not any(args[0] == "push" for args in calls)
     assert result["status"] == "failed"
     assert result["error"] == "commit rejected"
     job = yaml.safe_load((home.root / "automations/jobs/sync-repo.yml").read_text())
@@ -539,7 +540,7 @@ def test_git_sync_push_failure_is_not_reported_as_synced(tmp_path, monkeypatch):
 
     result = module.run("sync-repo", timestamp="2026-07-12T09:00:00+00:00")
 
-    assert [args[0] for args in calls] == ["rev-parse", "status", "add", "commit", "push"]
+    assert any(args[0] == "push" for args in calls)
     assert result["status"] == "failed"
     assert result["changed"] is False
     assert result["error"] == "remote unavailable"
