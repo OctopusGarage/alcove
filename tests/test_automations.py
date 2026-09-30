@@ -493,6 +493,65 @@ def test_git_sync_missing_repo_reports_compact_failure_without_git_calls(tmp_pat
     assert result["error"] == "git repo not found: ~/repos/missing"
 
 
+def test_git_sync_commit_failure_does_not_push_and_records_failure(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    module = AutomationsModule(home)
+    module.add_git_sync(name="sync repo", repo_path=str(repo), timeout_seconds=5)
+    calls = []
+
+    def fake_git(_repo, args, _timeout):
+        calls.append(args)
+        if args[0] == "commit":
+            return subprocess.CompletedProcess(args, 1, "", "commit rejected")
+        output = "M changed.txt\n" if args[0] == "status" else ""
+        return subprocess.CompletedProcess(args, 0, output, "")
+
+    monkeypatch.setattr(module, "_git", fake_git)
+
+    result = module.run("sync-repo", timestamp="2026-07-12T09:00:00+00:00")
+
+    assert any(args[0] == "commit" for args in calls)
+    assert not any(args[0] == "push" for args in calls)
+    assert result["status"] == "failed"
+    assert result["error"] == "commit rejected"
+    job = yaml.safe_load((home.root / "automations/jobs/sync-repo.yml").read_text())
+    assert job["last_status"] == "failed"
+    assert job["last_error"] == "commit rejected"
+
+
+def test_git_sync_push_failure_is_not_reported_as_synced(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    module = AutomationsModule(home)
+    module.add_git_sync(name="sync repo", repo_path=str(repo), timeout_seconds=5)
+    calls = []
+
+    def fake_git(_repo, args, _timeout):
+        calls.append(args)
+        if args[0] == "push":
+            return subprocess.CompletedProcess(args, 128, "", "remote unavailable")
+        output = "M changed.txt\n" if args[0] == "status" else ""
+        return subprocess.CompletedProcess(args, 0, output, "")
+
+    monkeypatch.setattr(module, "_git", fake_git)
+
+    result = module.run("sync-repo", timestamp="2026-07-12T09:00:00+00:00")
+
+    assert any(args[0] == "push" for args in calls)
+    assert result["status"] == "failed"
+    assert result["changed"] is False
+    assert result["error"] == "remote unavailable"
+    job = yaml.safe_load((home.root / "automations/jobs/sync-repo.yml").read_text())
+    assert job["last_status"] == "failed"
+    assert job["last_error"] == "remote unavailable"
+    run = json.loads(next((home.root / "automations/runs").glob("*sync-repo.json")).read_text())
+    assert run["status"] == "failed"
+    assert run["changed"] is False
+
+
 def test_agent_automation_rejects_unsupported_provider_without_calling_provider(
     tmp_path, monkeypatch
 ):
