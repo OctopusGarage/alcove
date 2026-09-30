@@ -2059,6 +2059,66 @@ def test_cli_idea_promote_and_routine_materialize(tmp_path, capsys):
     assert json.loads(materialize_output.out)["created"][0]["due"] == "2026-07-08"
 
 
+def test_cli_routine_schedule_edit_realigns_next_due(tmp_path, capsys):
+    assert main(["init", str(tmp_path)]) == 0
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                "task",
+                "--workspace",
+                str(tmp_path),
+                "routine-add",
+                "Review",
+                "--frequency",
+                "weekly",
+                "--weekday",
+                "mon",
+                "--next-due",
+                "2026-10-05",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    assert (
+        main(
+            [
+                "task",
+                "--workspace",
+                str(tmp_path),
+                "routine-edit",
+                "review",
+                "--frequency",
+                "weekly",
+                "--weekday",
+                "fri",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    edited = json.loads(capsys.readouterr().out)["routine"]
+    assert edited["next_due"] == "2026-10-09"
+
+    assert (
+        main(
+            [
+                "task",
+                "--workspace",
+                str(tmp_path),
+                "materialize-due",
+                "--today",
+                "2026-10-05",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["created"] == []
+
+
 def test_cli_task_full_lifecycle_and_digest(tmp_path, capsys, monkeypatch):
     home = tmp_path / ".alcove"
     sent: list[str] = []

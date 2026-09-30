@@ -538,7 +538,7 @@ class AutomationsModule:
             id=normalize_slug(str(payload.get("id") or payload.get("name") or "automation")),
             name=str(payload.get("name") or payload.get("id") or ""),
             kind=str(payload.get("kind") or "shell"),
-            enabled=bool(payload.get("enabled", True)),
+            enabled=_boolean_value(payload.get("enabled", True)),
             order=_positive_int(payload.get("order"), default=100),
             ttl_hours=_positive_int(payload.get("ttl_hours"), default=DEFAULT_TTL_HOURS),
             timeout_seconds=_positive_int(payload.get("timeout_seconds"), default=600),
@@ -549,7 +549,7 @@ class AutomationsModule:
             commit_message=str(payload.get("commit_message") or ""),
             provider=str(payload.get("provider") or ""),
             prompt=str(payload.get("prompt") or ""),
-            allow_service=bool(payload.get("allow_service", False)),
+            allow_service=_boolean_value(payload.get("allow_service", False)),
             notify=_dict_value(payload.get("notify")),
             status=str(payload.get("status") or "active"),
             created_at=str(payload.get("created_at") or ""),
@@ -604,6 +604,12 @@ def _positive_int(value: Any, *, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(parsed, 1)
+
+
+def _boolean_value(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "on", "1"}
+    return bool(value)
 
 
 def _dict_value(value: Any) -> dict[str, Any]:

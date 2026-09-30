@@ -143,6 +143,64 @@ def test_run_due_skips_agent_jobs_unless_allowed(tmp_path):
     assert result["jobs"][0]["reason"] == "agent job requires --allow-agent or allow_service"
 
 
+def test_run_due_does_not_execute_job_with_quoted_false_enabled(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    jobs = home.root / "automations/jobs"
+    jobs.mkdir(parents=True)
+    (jobs / "disabled.yml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "disabled",
+                "name": "Disabled",
+                "kind": "shell",
+                "command": "side-effect",
+                "enabled": "false",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("disabled job should not execute")
+
+    monkeypatch.setattr("alcove.automations.subprocess.run", fail_if_called)
+
+    result = AutomationsModule(home).run_due()
+
+    assert result["ran"] == 0
+    assert result["jobs"] == []
+
+
+def test_run_due_guards_agent_with_quoted_false_allow_service(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    jobs = home.root / "automations/jobs"
+    jobs.mkdir(parents=True)
+    (jobs / "agent.yml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "agent",
+                "name": "Agent",
+                "kind": "agent",
+                "provider": "codex",
+                "prompt": "side-effect",
+                "allow_service": "false",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("guarded agent should not execute")
+
+    monkeypatch.setattr("alcove.automations.subprocess.run", fail_if_called)
+
+    result = AutomationsModule(home).run_due()
+
+    assert result["ran"] == 0
+    assert result["skipped"] == 1
+    assert result["jobs"][0]["reason"] == "agent job requires --allow-agent or allow_service"
+
+
 def test_run_due_records_guarded_agent_skip_as_checked(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     module = AutomationsModule(home)
