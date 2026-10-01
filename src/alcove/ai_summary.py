@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import shlex
 import shutil
@@ -21,14 +22,24 @@ def run_ai_summary(
     selected_command: list[str] | None = None
     availability_errors: list[str] = []
     for candidate_provider in _provider_candidates(provider, policy):
-        command = _command(candidate_provider, policy)
-        executable = _which_command(command[0])
-        if not executable:
-            availability_errors.append(f"{command[0]} is not available")
+        command_template = _command(candidate_provider, policy)
+        executables = _which_commands(command_template[0])
+        if not executables:
+            availability_errors.append(f"{command_template[0]} is not available")
             continue
-        command[0] = executable
+        selected_usable_command: list[str] | None = None
+        for executable in executables:
+            command = list(command_template)
+            command[0] = executable
+            if candidate_provider == "codex" and not _codex_starts(executable):
+                availability_errors.append(f"{command[0]} is not usable")
+                continue
+            selected_usable_command = command
+            break
+        if selected_usable_command is None:
+            continue
         selected_provider = candidate_provider
-        selected_command = command
+        selected_command = selected_usable_command
         break
     if selected_command is None:
         return {
@@ -80,17 +91,45 @@ def _provider_candidates(provider: str, policy: dict[str, Any]) -> list[str]:
     return providers
 
 
-def _which_command(command: str) -> str | None:
+def _which_commands(command: str) -> list[str]:
+    candidates: list[str] = []
     executable = shutil.which(command)
     if executable:
-        return executable
-    if command != "codex":
-        return None
-    for path in _nvm_bin_dirs():
+        candidates.append(executable)
+    for path in _path_bin_dirs():
         candidate = path / command
-        if candidate.is_file():
-            return str(candidate)
-    return None
+        if _executable_file(candidate):
+            candidates.append(str(candidate))
+    if command == "codex":
+        for path in _nvm_bin_dirs():
+            candidate = path / command
+            if _executable_file(candidate):
+                candidates.append(str(candidate))
+    return list(dict.fromkeys(candidates))
+
+
+def _executable_file(path: Path) -> bool:
+    return path.is_file() and path.stat().st_mode & 0o111 != 0
+
+
+def _path_bin_dirs() -> list[Path]:
+    return [Path(value) for value in os.environ.get("PATH", "").split(os.pathsep) if value]
+
+
+def _codex_starts(executable: str) -> bool:
+    try:
+        result = subprocess.run(  # noqa: S603
+            [executable, "--version"],
+            input="",
+            text=True,
+            capture_output=True,
+            timeout=10,
+            check=False,
+            cwd=None,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
 
 
 def _nvm_bin_dirs() -> list[Path]:
