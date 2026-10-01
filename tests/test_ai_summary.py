@@ -185,3 +185,86 @@ def test_ai_summary_tries_later_codex_path_when_first_is_broken(monkeypatch, tmp
         [str(working_codex), "--version"],
         [str(working_codex), "exec", "--skip-git-repo-check", "--ephemeral", "-"],
     ]
+
+
+def test_ai_summary_expands_tilde_in_configured_command(monkeypatch, tmp_path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    codex = bin_dir / "codex"
+    codex.write_text("#!/bin/sh\n", encoding="utf-8")
+    codex.chmod(0o755)
+    calls: list[list[str]] = []
+
+    class Completed:
+        returncode = 0
+        stdout = "Configured Codex summary\n"
+        stderr = ""
+
+    def fake_run(command, input, text, capture_output, timeout, check, cwd):
+        calls.append(command)
+        return Completed()
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setattr(ai_summary.shutil, "which", lambda command: None)
+    monkeypatch.setattr(ai_summary.subprocess, "run", fake_run)
+
+    result = ai_summary.run_ai_summary(
+        prompt="Summarize this",
+        policy={"provider": "codex", "command": "~/bin/codex exec --ephemeral"},
+    )
+
+    assert result == {
+        "status": "completed",
+        "provider": "codex",
+        "summary": "Configured Codex summary",
+    }
+    assert calls == [
+        [str(codex), "--version"],
+        [str(codex), "exec", "--ephemeral", "-"],
+    ]
+
+
+def test_ai_summary_uses_default_command_for_fallback_provider(monkeypatch, tmp_path) -> None:
+    codex = tmp_path / "codex"
+    claude = tmp_path / "claude"
+    codex.write_text("#!/bin/sh\n", encoding="utf-8")
+    codex.chmod(0o755)
+    calls: list[list[str]] = []
+
+    class Completed:
+        returncode = 0
+        stdout = "Fallback summary\n"
+        stderr = ""
+
+    def fake_run(command, input, text, capture_output, timeout, check, cwd):
+        calls.append(command)
+        if command == [str(codex), "--version"]:
+            raise OSError("broken configured codex")
+        return Completed()
+
+    def fake_which(command: str) -> str | None:
+        if command == "claude":
+            return str(claude)
+        return None
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setattr(ai_summary.shutil, "which", fake_which)
+    monkeypatch.setattr(ai_summary.subprocess, "run", fake_run)
+
+    result = ai_summary.run_ai_summary(
+        prompt="Summarize this",
+        policy={"provider": "codex", "command": "~/codex exec --ephemeral"},
+    )
+
+    assert result == {
+        "status": "completed",
+        "provider": "claude",
+        "summary": "Fallback summary",
+        "fallback_from": "codex",
+    }
+    assert calls == [
+        [str(codex), "--version"],
+        [str(claude), "-p"],
+    ]

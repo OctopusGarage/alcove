@@ -22,7 +22,11 @@ def run_ai_summary(
     selected_command: list[str] | None = None
     availability_errors: list[str] = []
     for candidate_provider in _provider_candidates(provider, policy):
-        command_template = _command(candidate_provider, policy)
+        command_template = _command(
+            candidate_provider,
+            policy,
+            use_configured=candidate_provider == provider,
+        )
         executables = _which_commands(command_template[0])
         if not executables:
             availability_errors.append(f"{command_template[0]} is not available")
@@ -92,6 +96,10 @@ def _provider_candidates(provider: str, policy: dict[str, Any]) -> list[str]:
 
 
 def _which_commands(command: str) -> list[str]:
+    if _is_path_command(command):
+        path = Path(command).expanduser()
+        return [str(path)] if _executable_file(path) else []
+
     candidates: list[str] = []
     executable = shutil.which(command)
     if executable:
@@ -114,6 +122,10 @@ def _executable_file(path: Path) -> bool:
 
 def _path_bin_dirs() -> list[Path]:
     return [Path(value) for value in os.environ.get("PATH", "").split(os.pathsep) if value]
+
+
+def _is_path_command(command: str) -> bool:
+    return command.startswith("~") or os.sep in command or bool(os.altsep and os.altsep in command)
 
 
 def _codex_starts(executable: str) -> bool:
@@ -139,9 +151,9 @@ def _nvm_bin_dirs() -> list[Path]:
     return [path for path in sorted(root.glob("*/bin"), reverse=True) if path.is_dir()]
 
 
-def _command(provider: str, policy: dict[str, Any]) -> list[str]:
+def _command(provider: str, policy: dict[str, Any], *, use_configured: bool = True) -> list[str]:
     configured = str(policy.get("command") or "").strip()
-    if configured:
+    if use_configured and configured:
         command = shlex.split(configured)
     elif provider == "codex":
         command = ["codex", "exec", "--skip-git-repo-check", "--ephemeral", "-"]
