@@ -2741,6 +2741,24 @@ def test_cli_kb_add_rejects_name_that_escapes_registry(tmp_path, capsys):
     assert list(home.paths().knowledge_bases.iterdir()) == []
 
 
+def test_cli_kb_add_rejects_symlinked_registry_destination(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / "home")
+    kb_root = tmp_path / "research_notes"
+    kb_root.mkdir()
+    outside = tmp_path / "outside.yml"
+    outside.write_text("outside data\n", encoding="utf-8")
+    registry_entry = home.paths().knowledge_bases / "research_notes.yml"
+    registry_entry.symlink_to(outside)
+
+    code = main(["kb", "--home", str(home.root), "add", "research_notes", str(kb_root)])
+    captured = capsys.readouterr()
+
+    assert outside.read_text(encoding="utf-8") == "outside data\n"
+    assert code == 2
+    assert "symlink" in captured.err
+    assert registry_entry.is_symlink()
+
+
 def test_cli_registered_kb_name_can_replace_workspace_path(tmp_path, capsys):
     kb_root = tmp_path / "research_notes"
     main(["init", str(kb_root)])

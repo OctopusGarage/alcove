@@ -52,9 +52,9 @@ Alcove refuses to write selected operational state files through symlinks when
 the path is predictable and owned by Alcove, such as registered connector source
 YAML, automation and watcher event logs, dashboard snapshots, dashboard and
 usage telemetry logs, usage rollups, publisher definitions/state/run artifacts,
-radar definitions/runtime artifacts/proposal indexes, and agent workspace
-registry/config YAML. Development link mode for agent entry files is handled separately and
-remains explicit.
+radar definitions/runtime artifacts/proposal indexes, managed KB registry YAML,
+and agent workspace registry/config YAML. Development link mode for agent entry
+files is handled separately and remains explicit.
 
 Agent workspace registry and default entry directories live under Alcove Home:
 

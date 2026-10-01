@@ -122,10 +122,14 @@ class AlcoveHome:
         kb_path = Path(path).expanduser().resolve()
         config_path = paths.knowledge_bases / f"{slug}.yml"
         config = KnowledgeBaseConfig(version=1, name=slug, path=compact_user_path(kb_path))
-        config_path.write_text(
-            yaml.safe_dump(config.model_dump(), sort_keys=False),
-            encoding="utf-8",
-        )
+        if config_path.is_symlink():
+            raise ValueError(
+                f"Refusing to write knowledge base registry through symlink: "
+                f"{compact_user_path(config_path)}"
+            )
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+        with os.fdopen(os.open(config_path, flags, 0o666), "w", encoding="utf-8") as output:
+            output.write(yaml.safe_dump(config.model_dump(), sort_keys=False))
         return KnowledgeBaseRecord(name=slug, path=kb_path, config_path=config_path)
 
     def list_knowledge_bases(self) -> list[KnowledgeBaseRecord]:
