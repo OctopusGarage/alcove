@@ -572,6 +572,7 @@ class AutomationsModule:
     def _unique_id(self, name: str) -> str:
         base = normalize_slug(name) or "automation"
         existing = {job.id for job in self._load_jobs()}
+        existing.update(path.stem for path in self.jobs_root.glob("*.yml"))
         if base not in existing:
             return base
         index = 2

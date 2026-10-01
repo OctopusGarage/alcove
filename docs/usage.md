@@ -31,6 +31,8 @@ alcove global install --default-kb research_notes
 alcove kb install research_notes
 ```
 
+Knowledge base names are single registry names; `/` and `\` are rejected.
+
 Development install mode keeps Alcove-owned skills and commands symlinked to
 the repository templates:
 

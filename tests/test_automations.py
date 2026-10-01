@@ -33,6 +33,21 @@ def test_shell_automation_runs_and_records_state(tmp_path):
     assert list((home.root / "automations/runs").glob("*write-marker.json"))
 
 
+def test_adding_automation_preserves_unreadable_job_file(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    jobs = home.root / "automations" / "jobs"
+    jobs.mkdir(parents=True)
+    existing = jobs / "backup.yml"
+    original = "name: [unfinished\n"
+    existing.write_text(original, encoding="utf-8")
+
+    added = AutomationsModule(home).add_shell(name="backup", command="true")
+
+    assert added["job"]["id"] == "backup-2"
+    assert existing.read_text(encoding="utf-8") == original
+    assert (jobs / "backup-2.yml").is_file()
+
+
 def test_repeated_automation_runs_preserve_distinct_run_records(tmp_path, monkeypatch):
     home = AlcoveHome.init(tmp_path / ".alcove")
     output = tmp_path / "output.txt"
