@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import errno
 import os
 from pathlib import Path
 from typing import Any
@@ -122,13 +123,20 @@ class AlcoveHome:
         kb_path = Path(path).expanduser().resolve()
         config_path = paths.knowledge_bases / f"{slug}.yml"
         config = KnowledgeBaseConfig(version=1, name=slug, path=compact_user_path(kb_path))
+        symlink_error = (
+            "Refusing to write knowledge base registry through symlink: "
+            f"{compact_user_path(config_path)}"
+        )
         if config_path.is_symlink():
-            raise ValueError(
-                f"Refusing to write knowledge base registry through symlink: "
-                f"{compact_user_path(config_path)}"
-            )
+            raise ValueError(symlink_error)
         flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
-        with os.fdopen(os.open(config_path, flags, 0o666), "w", encoding="utf-8") as output:
+        try:
+            fd = os.open(config_path, flags, 0o666)
+        except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                raise ValueError(symlink_error) from exc
+            raise
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
             output.write(yaml.safe_dump(config.model_dump(), sort_keys=False))
         return KnowledgeBaseRecord(name=slug, path=kb_path, config_path=config_path)
 

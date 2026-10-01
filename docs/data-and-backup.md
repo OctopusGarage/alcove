@@ -55,6 +55,8 @@ usage telemetry logs, usage rollups, publisher definitions/state/run artifacts,
 radar definitions/runtime artifacts/proposal indexes, managed KB registry YAML,
 and agent workspace registry/config YAML. Development link mode for agent entry
 files is handled separately and remains explicit.
+If a managed KB registry destination becomes a symlink during registration,
+`alcove kb add` reports an error and leaves the symlink target untouched.
 
 Agent workspace registry and default entry directories live under Alcove Home:
 

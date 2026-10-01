@@ -2759,6 +2759,33 @@ def test_cli_kb_add_rejects_symlinked_registry_destination(tmp_path, capsys):
     assert registry_entry.is_symlink()
 
 
+def test_cli_kb_add_handles_registry_symlink_swapped_after_check(tmp_path, monkeypatch, capsys):
+    home = AlcoveHome.init(tmp_path / "home")
+    kb_root = tmp_path / "research_notes"
+    kb_root.mkdir()
+    outside = tmp_path / "outside.yml"
+    outside.write_text("outside data\n", encoding="utf-8")
+    registry_entry = home.paths().knowledge_bases / "research_notes.yml"
+    original_is_symlink = type(registry_entry).is_symlink
+
+    def swap_after_check(path):
+        result = original_is_symlink(path)
+        if path == registry_entry and not result:
+            registry_entry.symlink_to(outside)
+        return result
+
+    monkeypatch.setattr(type(registry_entry), "is_symlink", swap_after_check)
+
+    code = main(["kb", "--home", str(home.root), "add", "research_notes", str(kb_root)])
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "symlink" in captured.err
+    assert "Traceback" not in captured.err
+    assert outside.read_text(encoding="utf-8") == "outside data\n"
+    assert registry_entry.is_symlink()
+
+
 def test_cli_registered_kb_name_can_replace_workspace_path(tmp_path, capsys):
     kb_root = tmp_path / "research_notes"
     main(["init", str(kb_root)])
