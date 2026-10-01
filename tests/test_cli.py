@@ -2726,6 +2726,21 @@ def test_cli_kb_add_and_list_use_alcove_home_registry(tmp_path, capsys):
     assert json.loads(list_output.out)[0]["path"] == str(kb_root.resolve())
 
 
+def test_cli_kb_add_rejects_name_that_escapes_registry(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / "home")
+    original_config = home.paths().config.read_text(encoding="utf-8")
+    kb_root = tmp_path / "research_notes"
+    kb_root.mkdir()
+
+    code = main(["kb", "--home", str(home.root), "add", "../config", str(kb_root)])
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "Invalid knowledge base name" in captured.err
+    assert home.paths().config.read_text(encoding="utf-8") == original_config
+    assert list(home.paths().knowledge_bases.iterdir()) == []
+
+
 def test_cli_registered_kb_name_can_replace_workspace_path(tmp_path, capsys):
     kb_root = tmp_path / "research_notes"
     main(["init", str(kb_root)])

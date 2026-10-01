@@ -161,4 +161,7 @@ class AlcoveHome:
 
 
 def _slug(value: str) -> str:
-    return str(value or "").strip().lower().replace(" ", "_")
+    slug = str(value or "").strip().lower().replace(" ", "_")
+    if "/" in slug or "\\" in slug:
+        raise ValueError(f"Invalid knowledge base name: {value}")
+    return slug
