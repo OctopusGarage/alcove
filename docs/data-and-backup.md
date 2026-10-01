@@ -53,10 +53,12 @@ the path is predictable and owned by Alcove, such as registered connector source
 YAML, automation and watcher event logs, dashboard snapshots, dashboard and
 usage telemetry logs, usage rollups, publisher definitions/state/run artifacts,
 radar definitions/runtime artifacts/proposal indexes, managed KB registry YAML,
-and agent workspace registry/config YAML. Development link mode for agent entry
-files is handled separately and remains explicit.
+project registry JSON, and agent workspace registry/config YAML. Development
+link mode for agent entry files is handled separately and remains explicit.
 If a managed KB registry destination becomes a symlink during registration,
 `alcove kb add` reports an error and leaves the symlink target untouched.
+Project add and roots-set likewise reject a symlinked `projects/projects.json`
+destination without overwriting its target.
 
 Agent workspace registry and default entry directories live under Alcove Home:
 

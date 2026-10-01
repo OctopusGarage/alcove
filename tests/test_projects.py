@@ -4,6 +4,7 @@ from alcove.home import AlcoveHome
 from alcove.projects import AddProjectRequest, ProjectsModule
 from alcove.search import SearchModule, SearchRequest
 import json
+import pytest
 
 
 def test_project_add_get_find_list_and_remove_use_global_home(tmp_path):
@@ -64,6 +65,44 @@ def test_project_registry_persists_user_paths_with_tilde(tmp_path, monkeypatch):
     assert raw_config["roots"] == ["~/projects"]
     assert added.path == project_root.resolve()
     assert module.get("alcove").path == project_root.resolve()
+
+
+def test_project_add_rejects_registry_symlink_without_overwriting_target(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside data\n", encoding="utf-8")
+    registry = home.paths().projects / "projects.json"
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    registry.symlink_to(outside)
+
+    with pytest.raises(ValueError, match="Refusing to write project registry through symlink"):
+        ProjectsModule(home=home).add(AddProjectRequest(alias="demo", path=str(tmp_path / "demo")))
+
+    assert outside.read_text(encoding="utf-8") == "outside data\n"
+    assert registry.is_symlink()
+
+
+def test_project_roots_rejects_registry_symlink_swapped_after_check(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / "home")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside data\n", encoding="utf-8")
+    registry = home.paths().projects / "projects.json"
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    original_is_symlink = type(registry).is_symlink
+
+    def swap_after_check(path):
+        result = original_is_symlink(path)
+        if path == registry and not result:
+            registry.symlink_to(outside)
+        return result
+
+    monkeypatch.setattr(type(registry), "is_symlink", swap_after_check)
+
+    with pytest.raises(ValueError, match="Refusing to write project registry through symlink"):
+        ProjectsModule(home=home).configure_roots([str(tmp_path / "work")])
+
+    assert outside.read_text(encoding="utf-8") == "outside data\n"
+    assert registry.is_symlink()
 
 
 def test_search_includes_registered_projects(tmp_path):

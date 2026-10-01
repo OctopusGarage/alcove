@@ -3,7 +3,9 @@ from __future__ import annotations
 import builtins
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import errno
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -142,10 +144,21 @@ class ProjectsModule:
 
     def _save(self, data: dict[str, Any]) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
-        self.store_path.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
+        symlink_error = (
+            "Refusing to write project registry through symlink: "
+            f"{compact_user_path(self.store_path)}"
         )
+        if self.store_path.is_symlink():
+            raise ValueError(symlink_error)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+        try:
+            fd = os.open(self.store_path, flags, 0o666)
+        except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                raise ValueError(symlink_error) from exc
+            raise
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
+            output.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
 
     def _record(self, item: dict[str, Any]) -> ProjectRecord:
         path = Path(str(item.get("path") or "")).expanduser()
