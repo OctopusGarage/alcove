@@ -3403,6 +3403,38 @@ def test_cli_export_global_rejects_output_inside_exported_entry(tmp_path, capsys
     assert not (output_dir / "pins" / "recursive-pin.md").exists()
 
 
+def test_cli_export_global_replaces_deleted_source_files_on_repeat(tmp_path, capsys):
+    home_root = tmp_path / "home"
+    home = AlcoveHome.init(home_root)
+    pin = home.paths().pins / "deleted-pin.md"
+    pin.write_text("Delete before the next backup.\n", encoding="utf-8")
+    output_dir = tmp_path / "backup"
+
+    assert main(["export", "--home", str(home_root), "global", str(output_dir)]) == 0
+    capsys.readouterr()
+    pin.unlink()
+    assert main(["export", "--home", str(home_root), "global", str(output_dir)]) == 0
+
+    assert not (output_dir / "pins" / pin.name).exists()
+    manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    pins = next(entry for entry in manifest["entry_details"] if entry["name"] == "pins")
+    assert pins["file_count"] == 0
+
+
+def test_cli_export_global_rejects_home_as_destination_without_deleting_source(tmp_path, capsys):
+    home_root = tmp_path / "home"
+    home = AlcoveHome.init(home_root)
+    pin = home.paths().pins / "keep.md"
+    pin.write_text("Keep source data.\n", encoding="utf-8")
+
+    code = main(["export", "--home", str(home_root), "global", str(home_root), "--json"])
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "inside exported source" in json.loads(captured.out)["error"]["message"]
+    assert pin.read_text(encoding="utf-8") == "Keep source data.\n"
+
+
 def test_cli_export_kb_and_all_copy_managed_kb_without_legacy_dirs(tmp_path, capsys):
     home_root = tmp_path / "home"
     kb_root = tmp_path / "kb"

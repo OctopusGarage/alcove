@@ -161,11 +161,15 @@ class ExportModule:
         copied: list[str] = []
         for name in entries:
             source = source_root / name
+            dest = output / name
+            if dest.is_symlink() or dest.is_file():
+                dest.unlink()
+            elif dest.is_dir():
+                shutil.rmtree(dest)
             if not source.exists():
                 continue
-            dest = output / name
             if source.is_dir():
-                shutil.copytree(source, dest, dirs_exist_ok=True)
+                shutil.copytree(source, dest)
             else:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, dest)
@@ -178,6 +182,10 @@ class ExportModule:
         source_root: Path,
         entries: tuple[str, ...],
     ) -> None:
+        if output == source_root.resolve():
+            raise ValueError(
+                f"Export output directory is inside exported source: {source_root.name}"
+            )
         for name in entries:
             source = (source_root / name).resolve(strict=False)
             if not source.is_dir():
