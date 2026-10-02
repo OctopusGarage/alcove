@@ -187,9 +187,12 @@ alcove export all ~/alcove-backup-all --json
 ```
 
 Exports are useful for migration, restore drills, and point-in-time snapshots.
-Re-exporting a global or single-KB snapshot to the same directory replaces its
-exported entries, so files deleted from the source do not remain in a later
-snapshot. Choose a destination outside the source home or managed knowledge base.
+Re-exporting a snapshot to the same directory replaces its exported entries,
+so files deleted from the source do not remain in a later snapshot. For
+`export all`, this also removes copies of KBs no longer registered in Alcove Home.
+Choose a destination outside the source home and managed knowledge bases.
+Use a dedicated directory: `export all` refuses to replace an existing
+`knowledge-bases/` directory unless it belongs to a prior `export all` snapshot.
 
 ## Recommended Git Backup
 

@@ -3481,6 +3481,85 @@ def test_cli_export_kb_and_all_copy_managed_kb_without_legacy_dirs(tmp_path, cap
     assert all_payload["manifest_excerpt"]["knowledge_bases"][0]["kb"] == "research_notes"
 
 
+def test_cli_export_all_removes_unregistered_kb_from_reused_destination(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / "home")
+    kb_root = tmp_path / "kb"
+    main(["init", str(kb_root)])
+    capsys.readouterr()
+    note = kb_root / "knowledge" / "stale.md"
+    note.write_text("Deleted from backup.\n", encoding="utf-8")
+    main(["kb", "--home", str(home.root), "add", "removed_kb", str(kb_root), "--json"])
+    capsys.readouterr()
+    output = tmp_path / "backup"
+
+    assert main(["export", "--home", str(home.root), "all", str(output), "--json"]) == 0
+    capsys.readouterr()
+    stale_copy = output / "knowledge-bases" / "removed_kb" / "knowledge" / "stale.md"
+    assert stale_copy.is_file()
+
+    (home.paths().knowledge_bases / "removed_kb.yml").unlink()
+    assert main(["export", "--home", str(home.root), "all", str(output), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+
+    assert not stale_copy.exists()
+    assert not (output / "knowledge-bases").exists()
+    assert manifest["knowledge_bases"] == []
+    assert manifest["entries"] == ["global"]
+    assert manifest["summary"]["file_count"] == sum(
+        path.is_file() for path in (output / "global").rglob("*")
+    )
+    assert manifest["summary"]["file_count"] == payload["summary"]["file_count"]
+
+
+def test_cli_export_all_rejects_home_as_destination_without_deleting_registry(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / "home")
+    kb_root = tmp_path / "kb"
+    main(["init", str(kb_root)])
+    capsys.readouterr()
+    registry = home.register_knowledge_base("saved_kb", kb_root).config_path
+
+    code = main(["export", "--home", str(home.root), "all", str(home.root), "--json"])
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "inside exported source" in json.loads(captured.out)["error"]["message"]
+    assert registry.is_file()
+
+
+def test_cli_export_all_preserves_kb_source_inside_destination_tree(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / "home")
+    output = tmp_path / "backup"
+    kb_root = output / "knowledge-bases" / "live"
+    main(["init", str(kb_root)])
+    capsys.readouterr()
+    note = kb_root / "knowledge" / "keep.md"
+    note.write_text("Keep source data.\n", encoding="utf-8")
+    home.register_knowledge_base("live", kb_root)
+
+    code = main(["export", "--home", str(home.root), "all", str(output), "--json"])
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "exported source" in json.loads(captured.out)["error"]["message"]
+    assert note.read_text(encoding="utf-8") == "Keep source data.\n"
+
+
+def test_cli_export_all_preserves_unrelated_existing_directory(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / "home")
+    output = tmp_path / "backup"
+    unrelated = output / "knowledge-bases" / "personal.txt"
+    unrelated.parent.mkdir(parents=True)
+    unrelated.write_text("Not an Alcove export.\n", encoding="utf-8")
+
+    code = main(["export", "--home", str(home.root), "all", str(output), "--json"])
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "existing all-export manifest" in json.loads(captured.out)["error"]["message"]
+    assert unrelated.read_text(encoding="utf-8") == "Not an Alcove export.\n"
+
+
 def test_cli_link_source_promotes_connector_item(tmp_path, capsys):
     main(["init", str(tmp_path)])
     capsys.readouterr()

@@ -110,15 +110,49 @@ class ExportModule:
 
     def export_all(self, output_dir: Path | str) -> dict[str, object]:
         output = Path(output_dir).expanduser().resolve()
+        records = self.home.list_knowledge_bases()
+        self._validate_output(output, self.home.root, GLOBAL_EXPORT_ENTRIES)
+        for record in records:
+            self._validate_output(output, record.path, KB_EXPORT_ENTRIES)
+        kb_output = output / "knowledge-bases"
+        if not kb_output.is_symlink() and kb_output.is_dir():
+            for source_root in (self.home.root, *(record.path for record in records)):
+                if source_root.is_relative_to(kb_output):
+                    raise ValueError(
+                        f"Export output directory contains exported source: {source_root}"
+                    )
+        if kb_output.exists() or kb_output.is_symlink():
+            manifest_path = output / "manifest.json"
+            try:
+                previous = (
+                    json.loads(manifest_path.read_text(encoding="utf-8"))
+                    if not manifest_path.is_symlink()
+                    else {}
+                )
+            except (OSError, ValueError):
+                previous = {}
+            if (
+                not isinstance(previous, dict)
+                or previous.get("export_type") != "all"
+                or not isinstance(previous.get("entries"), list)
+                or "knowledge-bases" not in previous["entries"]
+            ):
+                raise ValueError(
+                    "Export destination contains knowledge-bases without an existing all-export manifest"
+                )
         output.mkdir(parents=True, exist_ok=True)
         global_report = self.export_global(output / "global")
+        if kb_output.is_symlink() or kb_output.is_file():
+            kb_output.unlink()
+        elif kb_output.is_dir():
+            shutil.rmtree(kb_output)
         kb_reports = [
             self.export_workspace(
                 record.path,
                 output / "knowledge-bases" / record.name,
                 kb_name=record.name,
             )
-            for record in self.home.list_knowledge_bases()
+            for record in records
         ]
         entries = ["global"]
         if kb_reports:
