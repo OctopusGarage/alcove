@@ -539,6 +539,19 @@ def test_due_digest_respects_configured_send_time(tmp_path, monkeypatch):
     assert "Timed weekly digest" in sent[0]
 
 
+def test_due_digest_reports_nonmapping_notification_config(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = TasksModule(home=home)
+    config_path = home.paths().tasks / "notifications.yml"
+    config_path.write_text("- digests:\n    weekly:\n      enabled: true\n", encoding="utf-8")
+
+    result = module.run_due_notifications(now=datetime.fromisoformat("2026-07-12T21:00:00+08:00"))
+
+    assert result["status"] == "error"
+    assert "notifications.yml" in result["error"]
+    assert "mapping" in result["error"]
+
+
 def test_due_digest_retries_after_notification_failure(tmp_path, monkeypatch):
     home = AlcoveHome.init(tmp_path / ".alcove")
     module = TasksModule(home=home)

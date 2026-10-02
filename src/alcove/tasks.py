@@ -694,7 +694,14 @@ class TasksModule:
             raise ValueError(
                 f"Invalid task notification config: {self.notification_config_path}"
             ) from exc
-        return payload if isinstance(payload, dict) else {}
+        if payload is None:
+            return {}
+        if not isinstance(payload, dict):
+            raise ValueError(
+                "Invalid task notification config (expected a mapping): "
+                f"{self.notification_config_path}"
+            )
+        return payload
 
     def _load_notification_state(self) -> dict[str, str]:
         if not self.notification_state_path.is_file():
