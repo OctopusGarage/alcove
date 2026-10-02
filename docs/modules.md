@@ -228,6 +228,8 @@ Routines materialize when `task materialize-due`, the matching MCP tool, or the
 local service tick runs. The service can also send configured planner digests.
 Planner notification config lives at `~/.alcove/tasks/notifications.yml`; send
 state lives at `~/.alcove/tasks/notification-state.json`.
+The config must have a YAML mapping at its root. The service reports an error
+for another root type instead of silently skipping scheduled digests.
 
 Example notification config:
 

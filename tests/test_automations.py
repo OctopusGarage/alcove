@@ -1,6 +1,8 @@
 import fcntl
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import threading
 
@@ -492,6 +494,57 @@ def test_git_sync_noop_reports_success(tmp_path, monkeypatch):
     assert result["status"] == "success"
     assert result["changed"] is False
     assert calls[0][1:3] == ["-C", str(repo)]
+
+
+def test_git_sync_pushes_existing_commit_when_worktree_is_clean(tmp_path, monkeypatch):
+    remote = tmp_path / "remote.git"
+    repo = tmp_path / "repo"
+    git = shutil.which("git")
+    assert git is not None
+    for name in os.environ:
+        if name.startswith("GIT_"):
+            monkeypatch.delenv(name)
+
+    def git_run(*args: str) -> str:
+        result = subprocess.run(  # noqa: S603 - fixed git executable and local test paths
+            [git, *args], check=True, capture_output=True, text=True
+        )
+        return result.stdout.strip()
+
+    git_run("init", "--bare", str(remote))
+    git_run("init", str(repo))
+    git_run("-C", str(repo), "config", "user.name", "Alcove Test")
+    git_run("-C", str(repo), "config", "user.email", "test@example.invalid")
+    git_run("-C", str(repo), "remote", "add", "origin", str(remote))
+    (repo / "note.txt").write_text("pending backup\n", encoding="utf-8")
+    git_run("-C", str(repo), "add", "note.txt")
+    git_run("-C", str(repo), "commit", "-m", "pending backup")
+    git_run("-C", str(repo), "push", "-u", "origin", "HEAD")
+    (repo / "note.txt").write_text("new backup\n", encoding="utf-8")
+    git_run("-C", str(repo), "commit", "-am", "new backup")
+
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_git_sync(name="sync repo", repo_path=str(repo), timeout_seconds=5)
+    result = module.run("sync-repo")
+
+    local_head = git_run("-C", str(repo), "rev-parse", "HEAD")
+    remote_head = git_run("--git-dir", str(remote), "rev-parse", "HEAD")
+    assert result["status"] == "success"
+    assert local_head == remote_head
+
+
+def test_run_due_reports_nonmapping_job_yaml_as_failure(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    jobs = home.root / "automations" / "jobs"
+    jobs.mkdir(parents=True)
+    (jobs / "broken.yml").write_text("- not-a-job\n", encoding="utf-8")
+
+    result = AutomationsModule(home).run_due(now="2026-07-12T09:00:00+00:00")
+
+    assert result["failed"] == 1
+    assert result["jobs"][0]["id"] == "broken"
+    assert "mapping" in result["jobs"][0]["error"]
 
 
 def test_git_sync_missing_repo_reports_compact_failure_without_git_calls(tmp_path, monkeypatch):

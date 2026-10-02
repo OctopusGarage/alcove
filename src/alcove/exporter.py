@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import tempfile
 from typing import Any
 
 from alcove.home import AlcoveHome
@@ -50,10 +51,7 @@ class ExportModule:
             "summary": self._summary(entry_details),
             "readback": self._readback(output, copied),
         }
-        (output / "manifest.json").write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        self._write_manifest(output, manifest)
         return {
             "status": "exported",
             "output_dir": str(output),
@@ -92,10 +90,7 @@ class ExportModule:
             "summary": self._summary(entry_details),
             "readback": self._readback(output, copied),
         }
-        (output / "manifest.json").write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        self._write_manifest(output, manifest)
         return {
             "status": "exported",
             "type": "kb",
@@ -110,15 +105,49 @@ class ExportModule:
 
     def export_all(self, output_dir: Path | str) -> dict[str, object]:
         output = Path(output_dir).expanduser().resolve()
+        records = self.home.list_knowledge_bases()
+        self._validate_output(output, self.home.root, GLOBAL_EXPORT_ENTRIES)
+        for record in records:
+            self._validate_output(output, record.path, KB_EXPORT_ENTRIES)
+        kb_output = output / "knowledge-bases"
+        if not kb_output.is_symlink() and kb_output.is_dir():
+            for source_root in (self.home.root, *(record.path for record in records)):
+                if source_root.is_relative_to(kb_output):
+                    raise ValueError(
+                        f"Export output directory contains exported source: {source_root}"
+                    )
+        if kb_output.exists() or kb_output.is_symlink():
+            manifest_path = output / "manifest.json"
+            try:
+                previous = (
+                    json.loads(manifest_path.read_text(encoding="utf-8"))
+                    if not manifest_path.is_symlink()
+                    else {}
+                )
+            except (OSError, ValueError):
+                previous = {}
+            if (
+                not isinstance(previous, dict)
+                or previous.get("export_type") != "all"
+                or not isinstance(previous.get("entries"), list)
+                or "knowledge-bases" not in previous["entries"]
+            ):
+                raise ValueError(
+                    "Export destination contains knowledge-bases without an existing all-export manifest"
+                )
         output.mkdir(parents=True, exist_ok=True)
         global_report = self.export_global(output / "global")
+        if kb_output.is_symlink() or kb_output.is_file():
+            kb_output.unlink()
+        elif kb_output.is_dir():
+            shutil.rmtree(kb_output)
         kb_reports = [
             self.export_workspace(
                 record.path,
                 output / "knowledge-bases" / record.name,
                 kb_name=record.name,
             )
-            for record in self.home.list_knowledge_bases()
+            for record in records
         ]
         entries = ["global"]
         if kb_reports:
@@ -136,10 +165,7 @@ class ExportModule:
             "summary": self._summary(entry_details),
             "readback": self._readback(output, entries),
         }
-        (output / "manifest.json").write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        self._write_manifest(output, manifest)
         return {
             "status": "exported",
             "type": "all",
@@ -152,6 +178,20 @@ class ExportModule:
             "manifest_excerpt": self._manifest_excerpt(manifest),
         }
 
+    def _write_manifest(self, output: Path, manifest: dict[str, Any]) -> None:
+        path = output / "manifest.json"
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=output, prefix=".manifest-", delete=False
+            ) as temp:
+                temp_path = Path(temp.name)
+                temp.write(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+            temp_path.replace(path)
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
+
     def _copy_entries(
         self,
         source_root: Path,
@@ -161,11 +201,15 @@ class ExportModule:
         copied: list[str] = []
         for name in entries:
             source = source_root / name
+            dest = output / name
+            if dest.is_symlink() or dest.is_file():
+                dest.unlink()
+            elif dest.is_dir():
+                shutil.rmtree(dest)
             if not source.exists():
                 continue
-            dest = output / name
             if source.is_dir():
-                shutil.copytree(source, dest, dirs_exist_ok=True)
+                shutil.copytree(source, dest)
             else:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, dest)
@@ -178,6 +222,10 @@ class ExportModule:
         source_root: Path,
         entries: tuple[str, ...],
     ) -> None:
+        if output == source_root.resolve():
+            raise ValueError(
+                f"Export output directory is inside exported source: {source_root.name}"
+            )
         for name in entries:
             source = (source_root / name).resolve(strict=False)
             if not source.is_dir():

@@ -353,7 +353,10 @@ class AutomationsModule:
         if status.returncode != 0:
             return _completed_result(status)
         if not status.stdout.strip():
-            return {"status": "success", "changed": False, "message": "no changes"}
+            push = self._git(repo, ["push"], job.timeout_seconds)
+            result = _completed_result(push)
+            result["changed"] = False
+            return result
         add = self._git(repo, ["add", "-A"], job.timeout_seconds)
         if add.returncode != 0:
             return _completed_result(add)
@@ -432,6 +435,13 @@ class AutomationsModule:
                     jobs.append(self._job(payload))
                 except ValueError as exc:
                     errors.append({"id": path.stem, "error": str(exc)})
+            else:
+                errors.append(
+                    {
+                        "id": path.stem,
+                        "error": f"Invalid automation job: {path}: expected a mapping",
+                    }
+                )
         return jobs, errors
 
     def _get_job(self, job_id: str) -> AutomationJob:
