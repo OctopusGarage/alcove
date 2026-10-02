@@ -54,6 +54,9 @@ path used by `alcove service tick`. Overlapping due checks are serialized so a
 job cannot be selected and executed twice before its latest state is persisted.
 Concurrent explicit runs use atomic run-record creation, so every completed
 execution keeps a distinct audit file even when timestamps match.
+Git-sync jobs also retry the push when the working tree is clean, so a commit
+left local by an earlier push failure can reach the remote on the next run.
+Invalid job files are reported as failures in due-run results.
 
 ## Notifications
 
