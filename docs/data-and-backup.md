@@ -193,6 +193,8 @@ so files deleted from the source do not remain in a later snapshot. For
 Choose a destination outside the source home and managed knowledge bases.
 Use a dedicated directory: `export all` refuses to replace an existing
 `knowledge-bases/` directory unless it belongs to a prior `export all` snapshot.
+An existing `manifest.json` link in the destination is replaced with a
+regular manifest file; its target is not modified.
 
 ## Recommended Git Backup
 

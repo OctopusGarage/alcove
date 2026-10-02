@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import tempfile
 from typing import Any
 
 from alcove.home import AlcoveHome
@@ -50,10 +51,7 @@ class ExportModule:
             "summary": self._summary(entry_details),
             "readback": self._readback(output, copied),
         }
-        (output / "manifest.json").write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        self._write_manifest(output, manifest)
         return {
             "status": "exported",
             "output_dir": str(output),
@@ -92,10 +90,7 @@ class ExportModule:
             "summary": self._summary(entry_details),
             "readback": self._readback(output, copied),
         }
-        (output / "manifest.json").write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        self._write_manifest(output, manifest)
         return {
             "status": "exported",
             "type": "kb",
@@ -170,10 +165,7 @@ class ExportModule:
             "summary": self._summary(entry_details),
             "readback": self._readback(output, entries),
         }
-        (output / "manifest.json").write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        self._write_manifest(output, manifest)
         return {
             "status": "exported",
             "type": "all",
@@ -185,6 +177,20 @@ class ExportModule:
             "manifest": str(output / "manifest.json"),
             "manifest_excerpt": self._manifest_excerpt(manifest),
         }
+
+    def _write_manifest(self, output: Path, manifest: dict[str, Any]) -> None:
+        path = output / "manifest.json"
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=output, prefix=".manifest-", delete=False
+            ) as temp:
+                temp_path = Path(temp.name)
+                temp.write(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+            temp_path.replace(path)
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
 
     def _copy_entries(
         self,

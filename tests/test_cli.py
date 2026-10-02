@@ -3377,6 +3377,38 @@ def test_cli_export_global_home_copies_user_state(tmp_path, capsys):
     assert payload["manifest_excerpt"]["entry_details"][0]["sha256"]
 
 
+@pytest.mark.parametrize("mode", ["global", "kb", "all"])
+@pytest.mark.parametrize("link_type", ["symlink", "hardlink"])
+def test_cli_export_replaces_linked_manifest_without_writing_target(
+    tmp_path, capsys, mode, link_type
+):
+    home = AlcoveHome.init(tmp_path / "home")
+    kb_root = tmp_path / "kb"
+    if mode == "kb":
+        main(["init", str(kb_root)])
+        capsys.readouterr()
+        home.register_knowledge_base("notes", kb_root)
+    output = tmp_path / "backup"
+    output.mkdir()
+    target = tmp_path / "unrelated.txt"
+    target.write_text("Keep this file.\n", encoding="utf-8")
+    manifest_path = output / "manifest.json"
+    if link_type == "symlink":
+        manifest_path.symlink_to(target)
+    else:
+        manifest_path.hardlink_to(target)
+    command = ["export", "--home", str(home.root), mode]
+    if mode == "kb":
+        command.append("notes")
+
+    assert main([*command, str(output), "--json"]) == 0
+
+    assert target.read_text(encoding="utf-8") == "Keep this file.\n"
+    assert not manifest_path.is_symlink()
+    assert not manifest_path.samefile(target)
+    assert json.loads(manifest_path.read_text(encoding="utf-8"))["export_type"] == mode
+
+
 def test_cli_export_global_rejects_output_inside_exported_entry(tmp_path, capsys):
     home_root = tmp_path / "home"
     main(
