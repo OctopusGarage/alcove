@@ -44,19 +44,25 @@ class ServiceMountRefresh:
                 }
 
             report = mount_module.scan()
+            errors = _int_value(report.get("errors"))
             timestamp = now.isoformat(timespec="seconds")
+            refreshed_at = last_refreshed_at if errors else timestamp
             payload = {
                 "status": "checked",
                 "checked": len(mounts),
-                "refreshed": len(mounts),
-                "last_refreshed_at": timestamp,
-                "next_due_at": _next_due_at(timestamp, interval),
+                "refreshed": max(len(mounts) - errors, 0),
+                "last_refreshed_at": refreshed_at,
+                "next_due_at": _next_due_at(refreshed_at, interval),
                 "interval_days": interval,
                 "scanned": _int_value(report.get("scanned")),
                 "skipped": _int_value(report.get("skipped")),
                 "reused": _int_value(report.get("reused")),
+                "errors": errors,
+                "error_items": report.get("error_items", []),
                 "skip_reasons": report.get("skip_reasons", {}),
             }
+            if errors:
+                return payload
             state["mounts"] = {
                 "last_refreshed_at": timestamp,
                 "refresh_interval_days": interval,

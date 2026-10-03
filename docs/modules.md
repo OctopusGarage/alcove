@@ -357,7 +357,9 @@ filesystem watcher. It reuses `alcove mount scan` and its incremental file
 metadata checks, then records the last service refresh in
 `~/.alcove/stats/service-state.json`. Mount refresh and task-health notification
 updates serialize their read-modify-write cycles through the same state lock so
-overlapping service ticks preserve both sections.
+overlapping service ticks preserve both sections. A scan error is reported in
+task health and does not advance the last successful refresh time, so the next
+service tick retries it.
 
 Telegram delivery treats shared task, automation, and service messages as plain
 text, so user-authored `<`, `>`, and `&` characters do not become markup. Radar

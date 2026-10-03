@@ -749,6 +749,37 @@ def test_service_tick_refreshes_mounts_every_two_days(tmp_path):
     assert items[0]["text"] == "# Mounted Docs\n\nUpdated indexed content."
 
 
+def test_service_mount_refresh_retries_after_missing_mount_returns(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    source = tmp_path / "mounted-docs"
+    source.mkdir()
+    note = source / "README.md"
+    note.write_text("Initial content", encoding="utf-8")
+    MountsModule(home=home).add(
+        AddMountRequest(path=str(source), name="Mounted Docs", mount_type="local-folder")
+    )
+    refresh = ServiceMountRefresh(home)
+    first = refresh.run(interval_days=2, today="2026-07-10")
+
+    unavailable = tmp_path / "unavailable"
+    source.rename(unavailable)
+    failed = refresh.run(interval_days=2, today="2026-07-12")
+    unavailable.rename(source)
+    note.write_text("Updated content", encoding="utf-8")
+    retried = refresh.run(interval_days=2, today="2026-07-13")
+
+    assert first["scanned"] == 1
+    assert failed["errors"] == 1
+    assert failed["refreshed"] == 0
+    assert failed["last_refreshed_at"] == "2026-07-10T00:00:00+00:00"
+    assert retried["status"] == "checked"
+    assert retried["errors"] == 0
+    assert retried["scanned"] == 1
+    assert MountsModule(home=home).index_items()[0]["text"] == "Updated content"
+    state = json.loads((home.paths().stats / "service-state.json").read_text(encoding="utf-8"))
+    assert state["mounts"]["last_refreshed_at"] == "2026-07-13T00:00:00+00:00"
+
+
 def test_service_mount_refresh_tolerates_malformed_state_json(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     source = tmp_path / "mounted-docs"
