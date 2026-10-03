@@ -284,6 +284,7 @@ read-only observation surface:
 - derived snapshot: `~/.alcove/dashboard/snapshot.json`,
 - frontend source: `frontend/dashboard/`,
 - served as generated static files through Alcove's local stdlib HTTP server.
+  Static requests cannot follow symlinks outside the generated dashboard directory.
 
 It has a daily workbench home page plus module pages for Pins, Tasks, Knowledge
 Bases, Connectors, Mounts, Activity, Usage, Prompts, and Projects.
