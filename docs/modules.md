@@ -359,7 +359,9 @@ metadata checks, then records the last service refresh in
 updates serialize their read-modify-write cycles through the same state lock so
 overlapping service ticks preserve both sections. A scan error is reported in
 task health and does not advance the last successful refresh time, so the next
-service tick retries it.
+service tick retries it. State updates replace the JSON file only after a
+complete temporary write, preserving the previous state if a tick is interrupted
+during the write.
 
 Telegram delivery treats shared task, automation, and service messages as plain
 text, so user-authored `<`, `>`, and `&` characters do not become markup. Radar

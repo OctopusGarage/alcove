@@ -10,6 +10,7 @@ from typing import Any
 
 from alcove.home import AlcoveHome
 from alcove.mounts import MountsModule
+from alcove.service_state_io import write_service_state
 
 
 DEFAULT_MOUNT_REFRESH_DAYS = 2
@@ -89,9 +90,7 @@ class ServiceMountRefresh:
         return data if isinstance(data, dict) else {}
 
     def _save_state(self, state: dict[str, Any]) -> None:
-        path = self._state_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        write_service_state(self._state_path(), state)
 
     @contextmanager
     def _state_lock(self) -> Iterator[None]:
