@@ -71,7 +71,12 @@ def handle_automation_command(
         )
     else:
         return argument_error(parser, "the following arguments are required: automation_command")
-    return _print_json(payload)
+    _print_json(payload)
+    if args.automation_command == "run":
+        return 1 if payload.get("status") == "failed" else 0
+    if args.automation_command == "run-due":
+        return 1 if payload.get("failed", 0) > 0 else 0
+    return 0
 
 
 def handle_publish_command(
