@@ -11,6 +11,7 @@ from typing import Any
 from alcove.home import AlcoveHome
 from alcove.notification_delivery import combined_notification_status
 from alcove.notifications import send_feishu_message, send_telegram_message
+from alcove.service_state_io import write_service_state
 from alcove.service_task_health import (
     TASK_HEALTH_NOTIFICATION_VERSION,
     task_health_notification_should_send,
@@ -64,9 +65,7 @@ class ServiceTaskHealthNotifier:
         return data if isinstance(data, dict) else {}
 
     def _save_state(self, state: dict[str, Any]) -> None:
-        path = self._state_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        write_service_state(self._state_path(), state)
 
     @contextmanager
     def _state_lock(self) -> Iterator[None]:

@@ -107,6 +107,57 @@ TasksModule(home=AlcoveHome.load(sys.argv[1])).task_cancel(sys.argv[2])
     assert statuses[second.id] == "cancelled"
 
 
+def test_interrupted_task_save_preserves_existing_store(tmp_path):
+    home = AlcoveHome.init(tmp_path / "home")
+    module = TasksModule(home=home)
+    original = module.task_add(AddTaskRequest(title="Existing task"))
+    marker = tmp_path / "store-truncated"
+    script = """
+import sys
+import time
+from pathlib import Path
+from alcove.home import AlcoveHome
+from alcove.tasks import AddTaskRequest, TasksModule
+
+store = Path(sys.argv[2])
+marker = Path(sys.argv[3])
+original_open = Path.open
+
+def pause_after_truncate(path, mode="r", *args, **kwargs):
+    stream = original_open(path, mode, *args, **kwargs)
+    if path == store and mode.startswith("w"):
+        marker.touch()
+        time.sleep(30)
+    return stream
+
+Path.open = pause_after_truncate
+TasksModule(home=AlcoveHome.load(sys.argv[1])).task_add(
+    AddTaskRequest(title="Interrupted task")
+)
+"""
+    proc = subprocess.Popen(  # noqa: S603 - fixed test subprocess with controlled args.
+        [sys.executable, "-c", script, str(home.root), str(module.store_path), str(marker)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while proc.poll() is None and not marker.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if marker.exists():
+            proc.kill()
+        stdout, stderr = proc.communicate(timeout=5)
+        assert proc.returncode in {0, -9}, (stdout, stderr)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate(timeout=5)
+
+    saved = json.loads(module.store_path.read_text(encoding="utf-8"))
+    assert any(task["id"] == original.id for task in saved["tasks"])
+
+
 def test_idea_promote_to_task_marks_idea_and_creates_task(tmp_path):
     workspace = Workspace.init(tmp_path)
     module = TasksModule(workspace)

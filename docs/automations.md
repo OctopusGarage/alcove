@@ -49,6 +49,10 @@ alcove automation run notes --json
 alcove automation run-due --json
 ```
 
+`run` exits with status 1 when its job fails. `run-due` exits with status 1
+when any due job or job definition fails. Both commands still print their JSON
+result, so scripts can inspect the failure details.
+
 `run-due` respects each job's `ttl_hours` and latest `checked_at`. It is the
 path used by `alcove service tick`. Overlapping due checks are serialized so a
 job cannot be selected and executed twice before its latest state is persisted.
