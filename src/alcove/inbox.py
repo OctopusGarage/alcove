@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import json
 from pathlib import Path
 import re
@@ -110,11 +111,44 @@ class InboxModule:
             for item in platform_dir.iterdir():
                 if item.is_dir():
                     entries.append(item)
-        return sorted(entries, key=lambda p: self._sort_key(p.name))
+        return sorted(entries, key=self._sort_key)
 
-    def _sort_key(self, name: str) -> tuple[str, str]:
+    def _sort_key(self, entry: Path) -> tuple[datetime, str, str]:
+        captured_at = self._capture_time(entry)
+        if captured_at is None:
+            captured_at = self._legacy_name_time(entry.name)
+        return (
+            captured_at or datetime.max.replace(tzinfo=UTC),
+            entry.parent.name,
+            entry.name,
+        )
+
+    def _capture_time(self, entry: Path) -> datetime | None:
+        try:
+            metadata = json.loads((entry / "capture.json").read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        if not isinstance(metadata, dict):
+            return None
+        value = metadata.get("captured_at")
+        if not isinstance(value, str) or not value.strip():
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return None
+        return parsed.astimezone(UTC)
+
+    def _legacy_name_time(self, name: str) -> datetime | None:
         match = re.match(r"^(\d{8})(?!\d)", name)
-        return (match.group(1) if match else "99999999", name)
+        if match is None:
+            return None
+        try:
+            return datetime.strptime(match.group(1), "%Y%m%d").replace(tzinfo=UTC)
+        except ValueError:
+            return None
 
     def _find_entry(self, name: str) -> Path:
         platform, item_name = self._parse_identifier(name)

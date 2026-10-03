@@ -58,6 +58,86 @@ def test_peek_returns_oldest_across_platforms(tmp_path):
     assert post.platform == "web"
 
 
+def test_peek_orders_stable_id_bundles_by_capture_time(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    _write_post(
+        tmp_path,
+        "wechat",
+        "wechat-a-lexically-first",
+        {
+            "post.md": "# Later\n\nbody",
+            "capture.json": json.dumps({"captured_at": "2026-07-08T00:00:00Z"}),
+        },
+    )
+    _write_post(
+        tmp_path,
+        "xhs",
+        "xhs-z-lexically-last",
+        {
+            "post.md": "# Earlier\n\nbody",
+            "capture.json": json.dumps({"captured_at": "2026-07-07T23:00:00Z"}),
+        },
+    )
+
+    post = InboxModule(workspace).peek()
+
+    assert post is not None
+    assert post.name == "xhs-z-lexically-last"
+    assert post.platform == "xhs"
+
+
+def test_peek_normalizes_capture_time_offsets(tmp_path):
+    workspace = Workspace.init(tmp_path)
+    _write_post(
+        tmp_path,
+        "wechat",
+        "wechat-later",
+        {
+            "post.md": "# Later\n\nbody",
+            "capture.json": json.dumps({"captured_at": "2026-07-07T00:30:00Z"}),
+        },
+    )
+    _write_post(
+        tmp_path,
+        "xhs",
+        "xhs-earlier",
+        {
+            "post.md": "# Earlier\n\nbody",
+            "capture.json": json.dumps({"captured_at": "2026-07-07T08:00:00+08:00"}),
+        },
+    )
+
+    post = InboxModule(workspace).peek()
+
+    assert post is not None
+    assert post.name == "xhs-earlier"
+
+
+@pytest.mark.parametrize(
+    "capture_json",
+    ["not-json", json.dumps({"captured_at": "not-a-timestamp"})],
+)
+def test_peek_falls_back_to_legacy_dates_for_invalid_capture_metadata(tmp_path, capture_json):
+    workspace = Workspace.init(tmp_path)
+    _write_post(
+        tmp_path,
+        "wechat",
+        "stable-id",
+        {"post.md": "# Invalid metadata\n\nbody", "capture.json": capture_json},
+    )
+    _write_post(
+        tmp_path,
+        "web",
+        "20260706-legacy",
+        {"article.md": "# Legacy\n\nbody"},
+    )
+
+    post = InboxModule(workspace).peek()
+
+    assert post is not None
+    assert post.name == "20260706-legacy"
+
+
 def test_peek_returns_none_when_inbox_empty(tmp_path):
     workspace = Workspace.init(tmp_path)
 
