@@ -706,6 +706,30 @@ def test_cli_automation_add_list_run(tmp_path, capsys):
     assert marker.read_text(encoding="utf-8") == "ok"
 
 
+def test_cli_automation_run_failure_returns_nonzero_with_json(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    AutomationsModule(home).add_shell(name="failing command", command="exit 7")
+
+    code = main(["automation", "run", "--home", str(home.root), "failing-command", "--json"])
+
+    assert code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "failed"
+    assert payload["exit_code"] == 7
+
+
+def test_cli_automation_run_due_failure_returns_nonzero_with_json(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    AutomationsModule(home).add_shell(name="failing command", command="exit 7")
+
+    code = main(["automation", "run-due", "--home", str(home.root), "--json"])
+
+    assert code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["failed"] == 1
+    assert payload["jobs"][0]["status"] == "failed"
+
+
 def test_cli_automation_add_alcove_stores_args(tmp_path, capsys):
     home = tmp_path / ".alcove"
 

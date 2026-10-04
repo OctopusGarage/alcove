@@ -363,6 +363,49 @@ def test_dashboard_server_rejects_browser_origin_when_host_header_is_missing(
     assert snapshot["usage"]["dashboard"]["routes"] == {}
 
 
+def test_dashboard_server_does_not_serve_static_symlinks_outside_dashboard(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / "home")
+    root = DashboardModule(home=home).ensure_static_frontend()
+    private_file = tmp_path / "private.txt"
+    private_file.write_text("private data", encoding="utf-8")
+    (root / "linked-private.txt").symlink_to(private_file)
+    requests = [
+        _http_request("GET", "/linked-private.txt"),
+        _http_request("HEAD", "/linked-private.txt"),
+        _http_request("GET", "/index.html"),
+    ]
+
+    responses = _serve_requests(monkeypatch, home, requests)
+    get_status, _, get_body = _parse_http_response(responses[0])
+    head_status, _, head_body = _parse_http_response(responses[1])
+    index_status, _, index_body = _parse_http_response(responses[2])
+
+    assert get_status.startswith("HTTP/1.0 403 ")
+    assert b"private data" not in get_body
+    assert head_status.startswith("HTTP/1.0 403 ")
+    assert head_body == b""
+    assert index_status == "HTTP/1.0 200 OK"
+    assert b"Alcove" in index_body
+
+
+def test_dashboard_server_does_not_serve_directory_index_symlink_outside_dashboard(
+    tmp_path, monkeypatch
+):
+    home = AlcoveHome.init(tmp_path / "home")
+    root = DashboardModule(home=home).ensure_static_frontend()
+    private_file = tmp_path / "private.txt"
+    private_file.write_text("private data", encoding="utf-8")
+    section = root / "section"
+    section.mkdir()
+    (section / "index.html").symlink_to(private_file)
+
+    response = _serve_requests(monkeypatch, home, [_http_request("GET", "/section/")])[0]
+    status, _, body = _parse_http_response(response)
+
+    assert status.startswith("HTTP/1.0 403 ")
+    assert b"private data" not in body
+
+
 def test_dashboard_server_spa_fallback_serves_index_for_unknown_get(tmp_path, monkeypatch):
     home = AlcoveHome.init(tmp_path / "home")
     requests = [_http_request("GET", "/missing/client/route?tab=tasks")]

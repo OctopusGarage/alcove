@@ -201,6 +201,8 @@ Prompt Pack composition are available through `alcove prompt recommend`,
 ## Tasks, Ideas, and Routines
 
 Ideas, tasks, and routines are stored in `~/.alcove/tasks/tasks.json`.
+Writes replace the task store only after the new JSON is complete, preserving
+the previous store if a write is interrupted.
 Active ideas and pending tasks participate in global search when `--home` is
 provided.
 If `tasks.json` is malformed, read-only planner/dashboard views treat the task
@@ -284,6 +286,7 @@ read-only observation surface:
 - derived snapshot: `~/.alcove/dashboard/snapshot.json`,
 - frontend source: `frontend/dashboard/`,
 - served as generated static files through Alcove's local stdlib HTTP server.
+  Static requests cannot follow symlinks outside the generated dashboard directory.
 
 It has a daily workbench home page plus module pages for Pins, Tasks, Knowledge
 Bases, Connectors, Mounts, Activity, Usage, Prompts, and Projects.
@@ -357,7 +360,11 @@ filesystem watcher. It reuses `alcove mount scan` and its incremental file
 metadata checks, then records the last service refresh in
 `~/.alcove/stats/service-state.json`. Mount refresh and task-health notification
 updates serialize their read-modify-write cycles through the same state lock so
-overlapping service ticks preserve both sections.
+overlapping service ticks preserve both sections. A scan error is reported in
+task health and does not advance the last successful refresh time, so the next
+service tick retries it. State updates replace the JSON file only after a
+complete temporary write, preserving the previous state if a tick is interrupted
+during the write.
 
 Telegram delivery treats shared task, automation, and service messages as plain
 text, so user-authored `<`, `>`, and `&` characters do not become markup. Radar
