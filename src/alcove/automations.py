@@ -432,7 +432,12 @@ class AutomationsModule:
                 continue
             if isinstance(payload, dict):
                 try:
-                    jobs.append(self._job(payload))
+                    job = self._job(payload)
+                    if job.id != path.stem:
+                        raise ValueError(
+                            f"Invalid automation job: {path}: id {job.id!r} does not match filename"
+                        )
+                    jobs.append(job)
                 except ValueError as exc:
                     errors.append({"id": path.stem, "error": str(exc)})
             else:

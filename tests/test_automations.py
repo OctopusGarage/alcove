@@ -547,6 +547,29 @@ def test_run_due_reports_nonmapping_job_yaml_as_failure(tmp_path):
     assert "mapping" in result["jobs"][0]["error"]
 
 
+def test_run_due_rejects_job_id_that_disagrees_with_filename(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    jobs = home.root / "automations" / "jobs"
+    jobs.mkdir(parents=True)
+    marker = tmp_path / "marker.txt"
+    mismatched = jobs / "old-name.yml"
+    mismatched.write_text(
+        yaml.safe_dump(
+            {"id": "new-name", "name": "Renamed", "kind": "shell", "command": f"touch {marker}"}
+        ),
+        encoding="utf-8",
+    )
+
+    result = AutomationsModule(home).run_due(now="2026-07-12T09:00:00+00:00")
+
+    assert result["ran"] == 0
+    assert result["failed"] == 1
+    assert result["jobs"][0]["id"] == "old-name"
+    assert "filename" in result["jobs"][0]["error"]
+    assert not marker.exists()
+    assert not (jobs / "new-name.yml").exists()
+
+
 def test_git_sync_missing_repo_reports_compact_failure_without_git_calls(tmp_path, monkeypatch):
     user_home = tmp_path / "user-home"
     monkeypatch.setenv("HOME", str(user_home))
