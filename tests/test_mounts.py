@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from alcove.cli import main
 from alcove.markdown import MarkdownRepository
 from alcove.mounts import AddMountRequest, MountIndexPolicy, MountsModule
@@ -27,13 +29,22 @@ def test_mount_add_and_list_persists_local_folder_mount(tmp_path):
     assert (workspace.paths().mounts / "mounts.json").is_file()
 
 
-def test_cli_mount_add_preserves_malformed_registry(tmp_path, capsys):
+@pytest.mark.parametrize(
+    "original",
+    [
+        '{"mounts": [broken',
+        "[]",
+        "{}",
+        '{"mounts": {}}',
+    ],
+    ids=["invalid-json", "wrong-root-type", "missing-mounts", "wrong-mounts-type"],
+)
+def test_cli_mount_add_preserves_malformed_registry(tmp_path, capsys, original):
     workspace = Workspace.init(tmp_path / "workspace")
     source = tmp_path / "source-docs"
     source.mkdir()
     registry = workspace.paths().mounts / "mounts.json"
     registry.parent.mkdir(parents=True, exist_ok=True)
-    original = '{"mounts": [broken'
     registry.write_text(original, encoding="utf-8")
 
     code = main(["mount", "--workspace", str(workspace.root), "add", str(source), "--json"])
@@ -41,6 +52,7 @@ def test_cli_mount_add_preserves_malformed_registry(tmp_path, capsys):
     assert code == 2
     assert "error" in json.loads(capsys.readouterr().out)
     assert registry.read_text(encoding="utf-8") == original
+    assert MountsModule(workspace).list() == []
 
 
 def test_mount_scan_indexes_text_files_without_copying_content(tmp_path):
