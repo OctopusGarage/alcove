@@ -333,6 +333,9 @@ alcove mount scan github --dry-run --json
 alcove mount scan github --json
 ```
 
+If `mounts/mounts.json` is malformed, `alcove mount add` fails and leaves the
+registry untouched so it can be repaired before adding another mount.
+
 Mount profiles keep indexes focused:
 
 ```sh

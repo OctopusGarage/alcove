@@ -77,6 +77,51 @@ def test_scheduled_automation_duration_measures_execution_not_schedule_time(
         assert f"Duration: {result['duration_ms']} ms" in notifications[0]
 
 
+def test_due_run_preserves_job_edit_made_during_execution(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="editable job", command="original command", timeout_seconds=5)
+    job_path = home.root / "automations/jobs/editable-job.yml"
+
+    def edit_during_run(command, **_kwargs):
+        assert command == "original command"
+        payload = yaml.safe_load(job_path.read_text(encoding="utf-8"))
+        payload["enabled"] = False
+        payload["command"] = "replacement command"
+        job_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("alcove.automations.subprocess.run", edit_during_run)
+
+    result = module.run_due(now="2026-07-12T09:00:00+00:00")
+
+    job = yaml.safe_load(job_path.read_text(encoding="utf-8"))
+    assert result["ran"] == 1
+    assert job["enabled"] is False
+    assert job["command"] == "replacement command"
+    assert job["checked_at"] == "2026-07-12T09:00:00+00:00"
+    assert job["last_status"] == "success"
+
+
+def test_due_run_does_not_restore_job_deleted_during_execution(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="removed job", command="original command", timeout_seconds=5)
+    job_path = home.root / "automations/jobs/removed-job.yml"
+
+    def delete_during_run(command, **_kwargs):
+        job_path.unlink()
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("alcove.automations.subprocess.run", delete_during_run)
+
+    result = module.run_due(now="2026-07-12T09:00:00+00:00")
+
+    assert result["jobs"][0]["status"] == "success"
+    assert not job_path.exists()
+    assert len(list((home.root / "automations/runs").glob("*removed-job.json"))) == 1
+
+
 def test_adding_automation_preserves_unreadable_job_file(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     jobs = home.root / "automations" / "jobs"
@@ -587,6 +632,29 @@ def test_run_due_reports_nonmapping_job_yaml_as_failure(tmp_path):
     assert result["failed"] == 1
     assert result["jobs"][0]["id"] == "broken"
     assert "mapping" in result["jobs"][0]["error"]
+
+
+def test_run_due_reports_unsupported_job_kind_and_runs_valid_jobs(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    marker = tmp_path / "ran.txt"
+    module.add_shell(name="valid job", command=f"printf ok > {marker}")
+    jobs = home.root / "automations" / "jobs"
+    (jobs / "invalid.yml").write_text(
+        yaml.safe_dump({"id": "invalid", "name": "Invalid", "kind": "unknown"}),
+        encoding="utf-8",
+    )
+
+    result = module.run_due(now="2026-07-12T09:00:00+00:00")
+
+    assert result["ran"] == 1
+    assert result["failed"] == 1
+    assert result["jobs"][0]["id"] == "invalid"
+    assert "Unsupported automation kind" in result["jobs"][0]["error"]
+    assert marker.read_text(encoding="utf-8") == "ok"
+    assert (jobs / "invalid.yml").read_text(encoding="utf-8") == yaml.safe_dump(
+        {"id": "invalid", "name": "Invalid", "kind": "unknown"}
+    )
 
 
 def test_run_due_rejects_job_id_that_disagrees_with_filename(tmp_path):

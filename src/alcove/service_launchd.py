@@ -9,6 +9,7 @@ import subprocess
 import sys
 from typing import Any
 
+from alcove.errors import AlcoveError
 from alcove.home import AlcoveHome
 from alcove.paths import compact_user_path
 
@@ -101,7 +102,9 @@ class ServiceLaunchd:
         targets = self._selected_targets(dashboard=dashboard, scheduler=scheduler)
         actions = []
         for target in targets:
-            self._launchctl("bootout", target, allow_failure=True)
+            result = self._launchctl("bootout", target, allow_failure=True)
+            if result.returncode != 0 and self._is_loaded(target):
+                raise AlcoveError(result.stderr.strip() or "launchctl bootout failed")
             actions.append({"name": target.name, "action": "stopped"})
         return self._payload("stopped", targets, actions)
 
