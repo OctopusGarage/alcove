@@ -181,6 +181,51 @@ def test_service_start_surfaces_kickstart_failure_after_bootstrap_retry(tmp_path
     assert [cmd[1] for cmd in calls] == ["bootstrap", "kickstart"]
 
 
+def test_cli_service_stop_reports_failure_when_launchd_job_remains_loaded(
+    tmp_path, monkeypatch, capsys
+):
+    user_home = tmp_path / "user-home"
+    monkeypatch.setenv("HOME", str(user_home))
+    monkeypatch.setattr("alcove.service_launchd.sys.platform", "darwin")
+    calls: list[str] = []
+
+    def fake_run(cmd, *, text, capture_output, check):
+        calls.append(cmd[1])
+        if cmd[1] == "bootout":
+            return subprocess.CompletedProcess(cmd, 7, stdout="", stderr="operation not permitted")
+        assert cmd[1] == "print"
+        return subprocess.CompletedProcess(cmd, 0, stdout="loaded", stderr="")
+
+    monkeypatch.setattr("alcove.service_launchd.subprocess.run", fake_run)
+
+    code = main(["service", "stop", "--scheduler", "--home", str(user_home / ".alcove"), "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 2
+    assert "operation not permitted" in payload["error"]["message"]
+    assert calls == ["bootout", "print"]
+
+
+def test_service_stop_is_idempotent_when_launchd_job_is_already_unloaded(tmp_path, monkeypatch):
+    user_home = tmp_path / "user-home"
+    monkeypatch.setenv("HOME", str(user_home))
+    monkeypatch.setattr("alcove.service_launchd.sys.platform", "darwin")
+
+    def fake_run(cmd, *, text, capture_output, check):
+        if cmd[1] == "bootout":
+            return subprocess.CompletedProcess(cmd, 3, stdout="", stderr="service not found")
+        assert cmd[1] == "print"
+        return subprocess.CompletedProcess(cmd, 3, stdout="", stderr="service not found")
+
+    monkeypatch.setattr("alcove.service_launchd.subprocess.run", fake_run)
+    home = AlcoveHome.init(user_home / ".alcove")
+
+    result = ServiceModule(home).stop(dashboard=False, scheduler=True)
+
+    assert result["status"] == "stopped"
+    assert result["records"] == [{"name": "scheduler", "action": "stopped"}]
+
+
 def test_service_tick_materializes_routines_and_writes_stats(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     fixture = tmp_path / "radar-items.json"
