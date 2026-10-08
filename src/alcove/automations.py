@@ -438,6 +438,7 @@ class AutomationsModule:
                         raise ValueError(
                             f"Invalid automation job: {path}: id {job.id!r} does not match filename"
                         )
+                    self._validate_job(job)
                     jobs.append(job)
                 except ValueError as exc:
                     errors.append({"id": path.stem, "error": str(exc)})

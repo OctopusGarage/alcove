@@ -589,6 +589,29 @@ def test_run_due_reports_nonmapping_job_yaml_as_failure(tmp_path):
     assert "mapping" in result["jobs"][0]["error"]
 
 
+def test_run_due_reports_unsupported_job_kind_and_runs_valid_jobs(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    marker = tmp_path / "ran.txt"
+    module.add_shell(name="valid job", command=f"printf ok > {marker}")
+    jobs = home.root / "automations" / "jobs"
+    (jobs / "invalid.yml").write_text(
+        yaml.safe_dump({"id": "invalid", "name": "Invalid", "kind": "unknown"}),
+        encoding="utf-8",
+    )
+
+    result = module.run_due(now="2026-07-12T09:00:00+00:00")
+
+    assert result["ran"] == 1
+    assert result["failed"] == 1
+    assert result["jobs"][0]["id"] == "invalid"
+    assert "Unsupported automation kind" in result["jobs"][0]["error"]
+    assert marker.read_text(encoding="utf-8") == "ok"
+    assert (jobs / "invalid.yml").read_text(encoding="utf-8") == yaml.safe_dump(
+        {"id": "invalid", "name": "Invalid", "kind": "unknown"}
+    )
+
+
 def test_run_due_rejects_job_id_that_disagrees_with_filename(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     jobs = home.root / "automations" / "jobs"
