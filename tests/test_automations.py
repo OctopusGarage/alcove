@@ -709,6 +709,87 @@ def test_agent_automation_rejects_unsupported_provider_without_calling_provider(
     assert result["error"] == "unsupported agent provider: unsupported-provider"
 
 
+@pytest.mark.parametrize(
+    ("provider", "allow_agent", "allow_service", "outcome", "expected_command"),
+    [
+        ("claude", True, False, "success", ["claude", "-p", "Summarize inbox"]),
+        ("codex", False, True, "success", ["codex", "exec", "Summarize inbox"]),
+        ("claude", False, True, "error", ["claude", "-p", "Summarize inbox"]),
+        ("codex", True, False, "timeout", ["codex", "exec", "Summarize inbox"]),
+    ],
+)
+def test_allowed_agent_run_due_dispatches_and_records_outcome(
+    tmp_path, monkeypatch, provider, allow_agent, allow_service, outcome, expected_command
+):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    cwd = tmp_path / "agent-work"
+    cwd.mkdir()
+    module = AutomationsModule(home)
+    module.add_agent(
+        name="inbox review",
+        prompt="Summarize inbox",
+        provider=provider,
+        cwd=str(cwd),
+        allow_service=allow_service,
+        timeout_seconds=7,
+    )
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        if outcome == "timeout":
+            raise subprocess.TimeoutExpired(command, 7)
+        return subprocess.CompletedProcess(
+            command,
+            0 if outcome == "success" else 9,
+            "summary\n",
+            "provider failed\n" if outcome == "error" else "",
+        )
+
+    monkeypatch.setattr("alcove.automations.subprocess.run", fake_run)
+    timestamp = "2026-07-12T09:00:00+00:00"
+
+    payload = module.run_due(now=timestamp, allow_agent=allow_agent)
+
+    assert calls == [
+        (
+            expected_command,
+            {
+                "cwd": str(cwd),
+                "text": True,
+                "capture_output": True,
+                "timeout": 7,
+                "check": False,
+            },
+        )
+    ]
+    expected_status = "success" if outcome == "success" else "failed"
+    assert payload["ran"] == 1
+    assert payload["failed"] == (0 if outcome == "success" else 1)
+    result = payload["jobs"][0]
+    assert result["status"] == expected_status
+    if outcome == "timeout":
+        assert result["error"] == "timed out after 7s"
+    else:
+        assert result["exit_code"] == (0 if outcome == "success" else 9)
+        assert result["stdout"] == "summary"
+        if outcome == "error":
+            assert result["error"] == "provider failed"
+
+    job = yaml.safe_load((home.root / "automations/jobs/inbox-review.yml").read_text())
+    assert job["checked_at"] == timestamp
+    assert job["last_run_at"] == timestamp
+    assert job["last_status"] == expected_status
+    assert job["last_error"] == result.get("error", "")
+    run = json.loads(next((home.root / "automations/runs").glob("*inbox-review.json")).read_text())
+    assert run == result
+    event = json.loads((home.root / "automations/events.jsonl").read_text())
+    assert event["timestamp"] == timestamp
+    assert event["job_id"] == "inbox-review"
+    assert event["status"] == expected_status
+    assert event["duration_ms"] == result["duration_ms"]
+
+
 def test_run_due_reports_and_persists_unsupported_provider_failure(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     module = AutomationsModule(home)
