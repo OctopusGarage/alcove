@@ -35,6 +35,48 @@ def test_shell_automation_runs_and_records_state(tmp_path):
     assert list((home.root / "automations/runs").glob("*write-marker.json"))
 
 
+@pytest.mark.parametrize(
+    ("outcome", "expected_status"),
+    [("success", "success"), ("error", "failed"), ("timeout", "failed")],
+)
+def test_scheduled_automation_duration_measures_execution_not_schedule_time(
+    tmp_path, monkeypatch, outcome, expected_status
+):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="timed job", command="test command", timeout_seconds=3, notify=True)
+    scheduled_at = "2020-01-01T00:00:00+00:00"
+    notifications = []
+
+    def fake_run(command, **_kwargs):
+        if outcome == "timeout":
+            raise subprocess.TimeoutExpired(command, 3)
+        return subprocess.CompletedProcess(command, 0 if outcome == "success" else 7, "", "error")
+
+    monkeypatch.setattr("alcove.automations.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "alcove.automations.send_telegram_message",
+        lambda *, home, text: notifications.append(text) or {"status": "sent"},
+    )
+
+    payload = module.run_due(now=scheduled_at)
+
+    assert payload["ran"] == 1
+    result = payload["jobs"][0]
+    assert result["status"] == expected_status
+    assert 0 <= result["duration_ms"] < 5000
+    job = yaml.safe_load((home.root / "automations/jobs/timed-job.yml").read_text())
+    assert job["checked_at"] == scheduled_at
+    run = json.loads(next((home.root / "automations/runs").glob("*timed-job.json")).read_text())
+    assert run["duration_ms"] == result["duration_ms"]
+    event = json.loads((home.root / "automations/events.jsonl").read_text())
+    assert event["timestamp"] == scheduled_at
+    assert event["duration_ms"] == result["duration_ms"]
+    assert len(notifications) == (0 if outcome == "success" else 1)
+    if notifications:
+        assert f"Duration: {result['duration_ms']} ms" in notifications[0]
+
+
 def test_adding_automation_preserves_unreadable_job_file(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     jobs = home.root / "automations" / "jobs"
