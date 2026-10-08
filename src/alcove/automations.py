@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+from time import monotonic
 from typing import Any
 
 import yaml
@@ -262,7 +263,7 @@ class AutomationsModule:
                 "status": "skipped",
                 "reason": "agent job requires --allow-agent or allow_service",
             }
-        result = self._run_job(job, timestamp=timestamp)
+        result = self._run_job(job)
         updated = replace(
             job,
             checked_at=timestamp,
@@ -279,8 +280,8 @@ class AutomationsModule:
             result["notify"] = notify_payload
         return result
 
-    def _run_job(self, job: AutomationJob, *, timestamp: str) -> dict[str, Any]:
-        started = datetime.fromisoformat(timestamp)
+    def _run_job(self, job: AutomationJob) -> dict[str, Any]:
+        started = monotonic()
         try:
             if job.kind == "shell":
                 result = self._run_shell(job)
@@ -297,7 +298,7 @@ class AutomationsModule:
         except Exception as exc:  # pragma: no cover - defensive boundary for user commands
             result = {"status": "failed", "error": str(exc)}
         finished = datetime.now(UTC)
-        duration_ms = int((finished - started).total_seconds() * 1000)
+        duration_ms = int((monotonic() - started) * 1000)
         result.update(
             {
                 "id": job.id,
