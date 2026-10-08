@@ -77,6 +77,51 @@ def test_scheduled_automation_duration_measures_execution_not_schedule_time(
         assert f"Duration: {result['duration_ms']} ms" in notifications[0]
 
 
+def test_due_run_preserves_job_edit_made_during_execution(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="editable job", command="original command", timeout_seconds=5)
+    job_path = home.root / "automations/jobs/editable-job.yml"
+
+    def edit_during_run(command, **_kwargs):
+        assert command == "original command"
+        payload = yaml.safe_load(job_path.read_text(encoding="utf-8"))
+        payload["enabled"] = False
+        payload["command"] = "replacement command"
+        job_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("alcove.automations.subprocess.run", edit_during_run)
+
+    result = module.run_due(now="2026-07-12T09:00:00+00:00")
+
+    job = yaml.safe_load(job_path.read_text(encoding="utf-8"))
+    assert result["ran"] == 1
+    assert job["enabled"] is False
+    assert job["command"] == "replacement command"
+    assert job["checked_at"] == "2026-07-12T09:00:00+00:00"
+    assert job["last_status"] == "success"
+
+
+def test_due_run_does_not_restore_job_deleted_during_execution(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="removed job", command="original command", timeout_seconds=5)
+    job_path = home.root / "automations/jobs/removed-job.yml"
+
+    def delete_during_run(command, **_kwargs):
+        job_path.unlink()
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("alcove.automations.subprocess.run", delete_during_run)
+
+    result = module.run_due(now="2026-07-12T09:00:00+00:00")
+
+    assert result["jobs"][0]["status"] == "success"
+    assert not job_path.exists()
+    assert len(list((home.root / "automations/runs").glob("*removed-job.json"))) == 1
+
+
 def test_adding_automation_preserves_unreadable_job_file(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     jobs = home.root / "automations" / "jobs"

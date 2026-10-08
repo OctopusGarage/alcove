@@ -264,6 +264,10 @@ class AutomationsModule:
                 "reason": "agent job requires --allow-agent or allow_service",
             }
         result = self._run_job(job)
+        try:
+            current_job = self._get_job(job_id)
+        except FileNotFoundError:
+            current_job = None
         updated = replace(
             job,
             checked_at=timestamp,
@@ -272,7 +276,17 @@ class AutomationsModule:
             last_error=str(result.get("error") or ""),
             updated_at=timestamp,
         )
-        self._write_job(updated)
+        if current_job is not None:
+            self._write_job(
+                replace(
+                    current_job,
+                    checked_at=updated.checked_at,
+                    last_run_at=updated.last_run_at,
+                    last_status=updated.last_status,
+                    last_error=updated.last_error,
+                    updated_at=updated.updated_at,
+                )
+            )
         self._write_run(updated, result)
         self._record_event(updated, result, timestamp=timestamp)
         notify_payload = self._maybe_notify(updated, result)
