@@ -442,7 +442,7 @@ class AutomationsModule:
         for path in sorted(self.jobs_root.glob("*.yml")):
             try:
                 payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            except (OSError, yaml.YAMLError) as exc:
+            except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
                 errors.append({"id": path.stem, "error": f"Invalid automation job: {path}: {exc}"})
                 continue
             if isinstance(payload, dict):

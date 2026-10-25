@@ -12,6 +12,7 @@ import time
 
 import pytest
 
+from alcove.automations import AutomationsModule
 from alcove.home import AlcoveHome
 from alcove.cli import main
 from alcove.mounts import AddMountRequest, MountsModule
@@ -693,6 +694,49 @@ def test_service_tick_tolerates_malformed_automation_job_yaml(tmp_path):
     assert result["automations"]["jobs"][0]["status"] == "failed"
     assert "broken.yml" in result["automations"]["jobs"][0]["error"]
     assert (home.root / "dashboard" / "snapshot.json").is_file()
+
+
+def test_service_tick_finalizes_after_invalid_utf8_automation_job(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    marker = tmp_path / "ran.txt"
+    AutomationsModule(home).add_shell(
+        name="healthy", command=f"printf ok > {marker}", timeout_seconds=5
+    )
+    broken = home.root / "automations" / "jobs" / "broken.yml"
+    corrupt_bytes = b"name: broken\ncommand: \xff\n"
+    broken.write_bytes(corrupt_bytes)
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["automations"]["ran"] == 1
+    assert result["automations"]["failed"] == 1
+    jobs = {job["id"]: job for job in result["automations"]["jobs"]}
+    assert jobs["broken"]["status"] == "failed"
+    assert "broken.yml" in jobs["broken"]["error"]
+    assert jobs["healthy"]["status"] == "success"
+    assert marker.read_text(encoding="utf-8") == "ok"
+    assert broken.read_bytes() == corrupt_bytes
+    assert result["publishers"]["status"] == "checked"
+    assert result["okf"]["status"] == "built"
+    assert "health" in result
+    assert "usage" in result
+    assert "prune" in result
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+    assert result["task_health"]["status"] == "failed"
+    automation_health = next(
+        check for check in result["task_health"]["checks"] if check["module"] == "automations"
+    )
+    assert automation_health["status"] == "failed"
+    assert automation_health["error"] == "automations reported failed=1"
 
 
 def test_service_tick_tolerates_malformed_mount_registry_json(tmp_path):
