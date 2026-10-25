@@ -657,6 +657,37 @@ def test_run_due_reports_unsupported_job_kind_and_runs_valid_jobs(tmp_path):
     )
 
 
+@pytest.mark.parametrize("via_cli", [False, True], ids=["module", "cli"])
+def test_run_due_reports_invalid_utf8_and_runs_valid_jobs(tmp_path, capsys, via_cli):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    marker = tmp_path / "ran.txt"
+    module.add_shell(name="healthy", command=f"printf ok > {marker}", timeout_seconds=5)
+    broken = home.root / "automations" / "jobs" / "broken.yml"
+    corrupt_bytes = b"name: broken\ncommand: \xff\n"
+    broken.write_bytes(corrupt_bytes)
+
+    if via_cli:
+        assert main(["automation", "--home", str(home.root), "run-due", "--json"]) == 1
+        result = json.loads(capsys.readouterr().out)
+    else:
+        result = module.run_due(now="2026-07-12T09:00:00+00:00")
+
+    assert result["status"] == "checked"
+    assert result["ran"] == 1
+    assert result["failed"] == 1
+    jobs = {job["id"]: job for job in result["jobs"]}
+    assert jobs["broken"]["status"] == "failed"
+    assert "Invalid automation job" in jobs["broken"]["error"]
+    assert "broken.yml" in jobs["broken"]["error"]
+    assert "utf-8" in jobs["broken"]["error"]
+    assert jobs["healthy"]["status"] == "success"
+    assert marker.read_text(encoding="utf-8") == "ok"
+    assert broken.read_bytes() == corrupt_bytes
+    run = json.loads(next(module.runs_root.glob("*healthy.json")).read_text(encoding="utf-8"))
+    assert run["status"] == "success"
+
+
 def test_run_due_rejects_job_id_that_disagrees_with_filename(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     jobs = home.root / "automations" / "jobs"
