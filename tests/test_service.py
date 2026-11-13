@@ -6,9 +6,13 @@ import os
 import plistlib
 import shutil
 import subprocess
+import sys
 import threading
 import time
 
+import pytest
+
+from alcove.automations import AutomationsModule
 from alcove.home import AlcoveHome
 from alcove.cli import main
 from alcove.mounts import AddMountRequest, MountsModule
@@ -176,6 +180,51 @@ def test_service_start_surfaces_kickstart_failure_after_bootstrap_retry(tmp_path
 
     assert error == "operation not permitted"
     assert [cmd[1] for cmd in calls] == ["bootstrap", "kickstart"]
+
+
+def test_cli_service_stop_reports_failure_when_launchd_job_remains_loaded(
+    tmp_path, monkeypatch, capsys
+):
+    user_home = tmp_path / "user-home"
+    monkeypatch.setenv("HOME", str(user_home))
+    monkeypatch.setattr("alcove.service_launchd.sys.platform", "darwin")
+    calls: list[str] = []
+
+    def fake_run(cmd, *, text, capture_output, check):
+        calls.append(cmd[1])
+        if cmd[1] == "bootout":
+            return subprocess.CompletedProcess(cmd, 7, stdout="", stderr="operation not permitted")
+        assert cmd[1] == "print"
+        return subprocess.CompletedProcess(cmd, 0, stdout="loaded", stderr="")
+
+    monkeypatch.setattr("alcove.service_launchd.subprocess.run", fake_run)
+
+    code = main(["service", "stop", "--scheduler", "--home", str(user_home / ".alcove"), "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 2
+    assert "operation not permitted" in payload["error"]["message"]
+    assert calls == ["bootout", "print"]
+
+
+def test_service_stop_is_idempotent_when_launchd_job_is_already_unloaded(tmp_path, monkeypatch):
+    user_home = tmp_path / "user-home"
+    monkeypatch.setenv("HOME", str(user_home))
+    monkeypatch.setattr("alcove.service_launchd.sys.platform", "darwin")
+
+    def fake_run(cmd, *, text, capture_output, check):
+        if cmd[1] == "bootout":
+            return subprocess.CompletedProcess(cmd, 3, stdout="", stderr="service not found")
+        assert cmd[1] == "print"
+        return subprocess.CompletedProcess(cmd, 3, stdout="", stderr="service not found")
+
+    monkeypatch.setattr("alcove.service_launchd.subprocess.run", fake_run)
+    home = AlcoveHome.init(user_home / ".alcove")
+
+    result = ServiceModule(home).stop(dashboard=False, scheduler=True)
+
+    assert result["status"] == "stopped"
+    assert result["records"] == [{"name": "scheduler", "action": "stopped"}]
 
 
 def test_service_tick_materializes_routines_and_writes_stats(tmp_path):
@@ -647,6 +696,49 @@ def test_service_tick_tolerates_malformed_automation_job_yaml(tmp_path):
     assert (home.root / "dashboard" / "snapshot.json").is_file()
 
 
+def test_service_tick_finalizes_after_invalid_utf8_automation_job(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    marker = tmp_path / "ran.txt"
+    AutomationsModule(home).add_shell(
+        name="healthy", command=f"printf ok > {marker}", timeout_seconds=5
+    )
+    broken = home.root / "automations" / "jobs" / "broken.yml"
+    corrupt_bytes = b"name: broken\ncommand: \xff\n"
+    broken.write_bytes(corrupt_bytes)
+
+    result = ServiceModule(home).tick(
+        refresh_connectors=False,
+        check_watchers=False,
+        check_blogs=False,
+        check_radars=False,
+        refresh_mounts=False,
+        fix_health=False,
+        today="2026-07-12",
+    )
+
+    assert result["status"] == "ok"
+    assert result["automations"]["ran"] == 1
+    assert result["automations"]["failed"] == 1
+    jobs = {job["id"]: job for job in result["automations"]["jobs"]}
+    assert jobs["broken"]["status"] == "failed"
+    assert "broken.yml" in jobs["broken"]["error"]
+    assert jobs["healthy"]["status"] == "success"
+    assert marker.read_text(encoding="utf-8") == "ok"
+    assert broken.read_bytes() == corrupt_bytes
+    assert result["publishers"]["status"] == "checked"
+    assert result["okf"]["status"] == "built"
+    assert "health" in result
+    assert "usage" in result
+    assert "prune" in result
+    assert (home.root / "dashboard" / "snapshot.json").is_file()
+    assert result["task_health"]["status"] == "failed"
+    automation_health = next(
+        check for check in result["task_health"]["checks"] if check["module"] == "automations"
+    )
+    assert automation_health["status"] == "failed"
+    assert automation_health["error"] == "automations reported failed=1"
+
+
 def test_service_tick_tolerates_malformed_mount_registry_json(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     mounts_path = home.paths().mounts / "mounts.json"
@@ -747,6 +839,37 @@ def test_service_tick_refreshes_mounts_every_two_days(tmp_path):
     assert third["mounts"]["scanned"] == 1
     items = MountsModule(home=home).scan(mount.id)["items"]
     assert items[0]["text"] == "# Mounted Docs\n\nUpdated indexed content."
+
+
+def test_service_mount_refresh_retries_after_missing_mount_returns(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    source = tmp_path / "mounted-docs"
+    source.mkdir()
+    note = source / "README.md"
+    note.write_text("Initial content", encoding="utf-8")
+    MountsModule(home=home).add(
+        AddMountRequest(path=str(source), name="Mounted Docs", mount_type="local-folder")
+    )
+    refresh = ServiceMountRefresh(home)
+    first = refresh.run(interval_days=2, today="2026-07-10")
+
+    unavailable = tmp_path / "unavailable"
+    source.rename(unavailable)
+    failed = refresh.run(interval_days=2, today="2026-07-12")
+    unavailable.rename(source)
+    note.write_text("Updated content", encoding="utf-8")
+    retried = refresh.run(interval_days=2, today="2026-07-13")
+
+    assert first["scanned"] == 1
+    assert failed["errors"] == 1
+    assert failed["refreshed"] == 0
+    assert failed["last_refreshed_at"] == "2026-07-10T00:00:00+00:00"
+    assert retried["status"] == "checked"
+    assert retried["errors"] == 0
+    assert retried["scanned"] == 1
+    assert MountsModule(home=home).index_items()[0]["text"] == "Updated content"
+    state = json.loads((home.paths().stats / "service-state.json").read_text(encoding="utf-8"))
+    assert state["mounts"]["last_refreshed_at"] == "2026-07-13T00:00:00+00:00"
 
 
 def test_service_mount_refresh_tolerates_malformed_state_json(tmp_path):
@@ -1283,6 +1406,80 @@ def test_mount_refresh_preserves_notification_state_when_scheduler_ticks_overlap
     state = json.loads((home.paths().stats / "service-state.json").read_text(encoding="utf-8"))
     assert "mounts" in state
     assert "task_health_notifications" in state
+
+
+@pytest.mark.parametrize("writer", ["mount", "notification"])
+def test_interrupted_service_state_write_preserves_previous_state(tmp_path, writer):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    state_path = home.paths().stats / "service-state.json"
+    state = {
+        "mounts": {"last_refreshed_at": "2026-07-29T12:00:00+00:00"},
+        "task_health_notifications": {
+            "2026-07-29": {
+                "status": "sent",
+                "version": 3,
+                "task_health_status": "success",
+            }
+        },
+    }
+    original = json.dumps(state).encode()
+    state_path.write_bytes(original)
+    marker = tmp_path / "write-opened"
+    child_code = """
+from pathlib import Path
+import sys
+import tempfile
+import time
+from alcove.home import AlcoveHome
+from alcove.service_mount_refresh import ServiceMountRefresh
+from alcove.service_task_health_notifications import ServiceTaskHealthNotifier
+
+home = AlcoveHome.load(sys.argv[1])
+state_path = home.paths().stats / "service-state.json"
+marker = Path(sys.argv[2])
+original_open = Path.open
+original_temporary_file = tempfile.NamedTemporaryFile
+
+def pause_after_open(path, *args, **kwargs):
+    stream = original_open(path, *args, **kwargs)
+    mode = args[0] if args else kwargs.get("mode")
+    if path == state_path and mode == "w":
+        marker.write_text("opened", encoding="utf-8")
+        time.sleep(30)
+    return stream
+
+def pause_after_temporary_file(*args, **kwargs):
+    stream = original_temporary_file(*args, **kwargs)
+    if Path(kwargs.get("dir", "")) == state_path.parent:
+        marker.write_text("opened", encoding="utf-8")
+        time.sleep(30)
+    return stream
+
+Path.open = pause_after_open
+tempfile.NamedTemporaryFile = pause_after_temporary_file
+writer = ServiceMountRefresh(home) if sys.argv[3] == "mount" else ServiceTaskHealthNotifier(home)
+with writer._state_lock():
+    writer._save_state({"mounts": {"last_refreshed_at": "2026-07-30T12:00:00+00:00"}})
+"""
+    process = subprocess.Popen(  # noqa: S603
+        [sys.executable, "-c", child_code, str(home.root), str(marker), writer],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not marker.exists() and process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+    finally:
+        if process.poll() is None:
+            process.kill()
+        _stdout, stderr = process.communicate(timeout=5)
+
+    assert marker.exists(), stderr
+    assert state_path.read_bytes() == original
+    assert ServiceMountRefresh(home)._load_state() == state
+    assert ServiceTaskHealthNotifier(home)._load_state() == state
 
 
 def test_cli_service_tick_can_skip_task_health_notification(tmp_path, monkeypatch, capsys):

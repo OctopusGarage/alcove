@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from io import BytesIO
 import json
-from typing import Any
+from pathlib import Path
+from typing import Any, BinaryIO
 from urllib.parse import urlsplit
 
 from alcove.dashboard import DashboardModule
@@ -11,6 +13,7 @@ from alcove.home import AlcoveHome
 
 def serve_dashboard(home: AlcoveHome, host: str = "127.0.0.1", port: int = 8765) -> None:
     root = DashboardModule(home=home).ensure_static_frontend()
+    resolved_root = root.resolve()
 
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -20,6 +23,19 @@ def serve_dashboard(home: AlcoveHome, host: str = "127.0.0.1", port: int = 8765)
             requested = root / self.path.lstrip("/").split("?", 1)[0]
             if self.path not in {"/", ""} and not requested.exists():
                 self.path = "/index.html"
+
+        def send_head(self) -> BytesIO | BinaryIO | None:
+            requested = Path(self.translate_path(self.path))
+            if requested.is_dir():
+                for index in ("index.html", "index.htm"):
+                    candidate = requested / index
+                    if candidate.is_file():
+                        requested = candidate
+                        break
+            if not requested.resolve().is_relative_to(resolved_root):
+                self.send_error(403)
+                return None
+            return super().send_head()
 
         def do_GET(self) -> None:  # noqa: N802
             if self.path.split("?", 1)[0] == "/snapshot.json":

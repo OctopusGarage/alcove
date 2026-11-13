@@ -35,6 +35,93 @@ def test_shell_automation_runs_and_records_state(tmp_path):
     assert list((home.root / "automations/runs").glob("*write-marker.json"))
 
 
+@pytest.mark.parametrize(
+    ("outcome", "expected_status"),
+    [("success", "success"), ("error", "failed"), ("timeout", "failed")],
+)
+def test_scheduled_automation_duration_measures_execution_not_schedule_time(
+    tmp_path, monkeypatch, outcome, expected_status
+):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="timed job", command="test command", timeout_seconds=3, notify=True)
+    scheduled_at = "2020-01-01T00:00:00+00:00"
+    notifications = []
+
+    def fake_run(command, **_kwargs):
+        if outcome == "timeout":
+            raise subprocess.TimeoutExpired(command, 3)
+        return subprocess.CompletedProcess(command, 0 if outcome == "success" else 7, "", "error")
+
+    monkeypatch.setattr("alcove.automations.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "alcove.automations.send_telegram_message",
+        lambda *, home, text: notifications.append(text) or {"status": "sent"},
+    )
+
+    payload = module.run_due(now=scheduled_at)
+
+    assert payload["ran"] == 1
+    result = payload["jobs"][0]
+    assert result["status"] == expected_status
+    assert 0 <= result["duration_ms"] < 5000
+    job = yaml.safe_load((home.root / "automations/jobs/timed-job.yml").read_text())
+    assert job["checked_at"] == scheduled_at
+    run = json.loads(next((home.root / "automations/runs").glob("*timed-job.json")).read_text())
+    assert run["duration_ms"] == result["duration_ms"]
+    event = json.loads((home.root / "automations/events.jsonl").read_text())
+    assert event["timestamp"] == scheduled_at
+    assert event["duration_ms"] == result["duration_ms"]
+    assert len(notifications) == (0 if outcome == "success" else 1)
+    if notifications:
+        assert f"Duration: {result['duration_ms']} ms" in notifications[0]
+
+
+def test_due_run_preserves_job_edit_made_during_execution(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="editable job", command="original command", timeout_seconds=5)
+    job_path = home.root / "automations/jobs/editable-job.yml"
+
+    def edit_during_run(command, **_kwargs):
+        assert command == "original command"
+        payload = yaml.safe_load(job_path.read_text(encoding="utf-8"))
+        payload["enabled"] = False
+        payload["command"] = "replacement command"
+        job_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("alcove.automations.subprocess.run", edit_during_run)
+
+    result = module.run_due(now="2026-07-12T09:00:00+00:00")
+
+    job = yaml.safe_load(job_path.read_text(encoding="utf-8"))
+    assert result["ran"] == 1
+    assert job["enabled"] is False
+    assert job["command"] == "replacement command"
+    assert job["checked_at"] == "2026-07-12T09:00:00+00:00"
+    assert job["last_status"] == "success"
+
+
+def test_due_run_does_not_restore_job_deleted_during_execution(tmp_path, monkeypatch):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="removed job", command="original command", timeout_seconds=5)
+    job_path = home.root / "automations/jobs/removed-job.yml"
+
+    def delete_during_run(command, **_kwargs):
+        job_path.unlink()
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("alcove.automations.subprocess.run", delete_during_run)
+
+    result = module.run_due(now="2026-07-12T09:00:00+00:00")
+
+    assert result["jobs"][0]["status"] == "success"
+    assert not job_path.exists()
+    assert len(list((home.root / "automations/runs").glob("*removed-job.json"))) == 1
+
+
 def test_adding_automation_preserves_unreadable_job_file(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     jobs = home.root / "automations" / "jobs"
@@ -547,6 +634,83 @@ def test_run_due_reports_nonmapping_job_yaml_as_failure(tmp_path):
     assert "mapping" in result["jobs"][0]["error"]
 
 
+def test_run_due_reports_unsupported_job_kind_and_runs_valid_jobs(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    marker = tmp_path / "ran.txt"
+    module.add_shell(name="valid job", command=f"printf ok > {marker}")
+    jobs = home.root / "automations" / "jobs"
+    (jobs / "invalid.yml").write_text(
+        yaml.safe_dump({"id": "invalid", "name": "Invalid", "kind": "unknown"}),
+        encoding="utf-8",
+    )
+
+    result = module.run_due(now="2026-07-12T09:00:00+00:00")
+
+    assert result["ran"] == 1
+    assert result["failed"] == 1
+    assert result["jobs"][0]["id"] == "invalid"
+    assert "Unsupported automation kind" in result["jobs"][0]["error"]
+    assert marker.read_text(encoding="utf-8") == "ok"
+    assert (jobs / "invalid.yml").read_text(encoding="utf-8") == yaml.safe_dump(
+        {"id": "invalid", "name": "Invalid", "kind": "unknown"}
+    )
+
+
+@pytest.mark.parametrize("via_cli", [False, True], ids=["module", "cli"])
+def test_run_due_reports_invalid_utf8_and_runs_valid_jobs(tmp_path, capsys, via_cli):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    marker = tmp_path / "ran.txt"
+    module.add_shell(name="healthy", command=f"printf ok > {marker}", timeout_seconds=5)
+    broken = home.root / "automations" / "jobs" / "broken.yml"
+    corrupt_bytes = b"name: broken\ncommand: \xff\n"
+    broken.write_bytes(corrupt_bytes)
+
+    if via_cli:
+        assert main(["automation", "--home", str(home.root), "run-due", "--json"]) == 1
+        result = json.loads(capsys.readouterr().out)
+    else:
+        result = module.run_due(now="2026-07-12T09:00:00+00:00")
+
+    assert result["status"] == "checked"
+    assert result["ran"] == 1
+    assert result["failed"] == 1
+    jobs = {job["id"]: job for job in result["jobs"]}
+    assert jobs["broken"]["status"] == "failed"
+    assert "Invalid automation job" in jobs["broken"]["error"]
+    assert "broken.yml" in jobs["broken"]["error"]
+    assert "utf-8" in jobs["broken"]["error"]
+    assert jobs["healthy"]["status"] == "success"
+    assert marker.read_text(encoding="utf-8") == "ok"
+    assert broken.read_bytes() == corrupt_bytes
+    run = json.loads(next(module.runs_root.glob("*healthy.json")).read_text(encoding="utf-8"))
+    assert run["status"] == "success"
+
+
+def test_run_due_rejects_job_id_that_disagrees_with_filename(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    jobs = home.root / "automations" / "jobs"
+    jobs.mkdir(parents=True)
+    marker = tmp_path / "marker.txt"
+    mismatched = jobs / "old-name.yml"
+    mismatched.write_text(
+        yaml.safe_dump(
+            {"id": "new-name", "name": "Renamed", "kind": "shell", "command": f"touch {marker}"}
+        ),
+        encoding="utf-8",
+    )
+
+    result = AutomationsModule(home).run_due(now="2026-07-12T09:00:00+00:00")
+
+    assert result["ran"] == 0
+    assert result["failed"] == 1
+    assert result["jobs"][0]["id"] == "old-name"
+    assert "filename" in result["jobs"][0]["error"]
+    assert not marker.exists()
+    assert not (jobs / "new-name.yml").exists()
+
+
 def test_git_sync_missing_repo_reports_compact_failure_without_git_calls(tmp_path, monkeypatch):
     user_home = tmp_path / "user-home"
     monkeypatch.setenv("HOME", str(user_home))
@@ -644,6 +808,87 @@ def test_agent_automation_rejects_unsupported_provider_without_calling_provider(
     assert result["error"] == "unsupported agent provider: unsupported-provider"
 
 
+@pytest.mark.parametrize(
+    ("provider", "allow_agent", "allow_service", "outcome", "expected_command"),
+    [
+        ("claude", True, False, "success", ["claude", "-p", "Summarize inbox"]),
+        ("codex", False, True, "success", ["codex", "exec", "Summarize inbox"]),
+        ("claude", False, True, "error", ["claude", "-p", "Summarize inbox"]),
+        ("codex", True, False, "timeout", ["codex", "exec", "Summarize inbox"]),
+    ],
+)
+def test_allowed_agent_run_due_dispatches_and_records_outcome(
+    tmp_path, monkeypatch, provider, allow_agent, allow_service, outcome, expected_command
+):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    cwd = tmp_path / "agent-work"
+    cwd.mkdir()
+    module = AutomationsModule(home)
+    module.add_agent(
+        name="inbox review",
+        prompt="Summarize inbox",
+        provider=provider,
+        cwd=str(cwd),
+        allow_service=allow_service,
+        timeout_seconds=7,
+    )
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        if outcome == "timeout":
+            raise subprocess.TimeoutExpired(command, 7)
+        return subprocess.CompletedProcess(
+            command,
+            0 if outcome == "success" else 9,
+            "summary\n",
+            "provider failed\n" if outcome == "error" else "",
+        )
+
+    monkeypatch.setattr("alcove.automations.subprocess.run", fake_run)
+    timestamp = "2026-07-12T09:00:00+00:00"
+
+    payload = module.run_due(now=timestamp, allow_agent=allow_agent)
+
+    assert calls == [
+        (
+            expected_command,
+            {
+                "cwd": str(cwd),
+                "text": True,
+                "capture_output": True,
+                "timeout": 7,
+                "check": False,
+            },
+        )
+    ]
+    expected_status = "success" if outcome == "success" else "failed"
+    assert payload["ran"] == 1
+    assert payload["failed"] == (0 if outcome == "success" else 1)
+    result = payload["jobs"][0]
+    assert result["status"] == expected_status
+    if outcome == "timeout":
+        assert result["error"] == "timed out after 7s"
+    else:
+        assert result["exit_code"] == (0 if outcome == "success" else 9)
+        assert result["stdout"] == "summary"
+        if outcome == "error":
+            assert result["error"] == "provider failed"
+
+    job = yaml.safe_load((home.root / "automations/jobs/inbox-review.yml").read_text())
+    assert job["checked_at"] == timestamp
+    assert job["last_run_at"] == timestamp
+    assert job["last_status"] == expected_status
+    assert job["last_error"] == result.get("error", "")
+    run = json.loads(next((home.root / "automations/runs").glob("*inbox-review.json")).read_text())
+    assert run == result
+    event = json.loads((home.root / "automations/events.jsonl").read_text())
+    assert event["timestamp"] == timestamp
+    assert event["job_id"] == "inbox-review"
+    assert event["status"] == expected_status
+    assert event["duration_ms"] == result["duration_ms"]
+
+
 def test_run_due_reports_and_persists_unsupported_provider_failure(tmp_path):
     home = AlcoveHome.init(tmp_path / ".alcove")
     module = AutomationsModule(home)
@@ -704,6 +949,30 @@ def test_cli_automation_add_list_run(tmp_path, capsys):
     assert run_code == 0
     assert json.loads(run_output.out)["status"] == "success"
     assert marker.read_text(encoding="utf-8") == "ok"
+
+
+def test_cli_automation_run_failure_returns_nonzero_with_json(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    AutomationsModule(home).add_shell(name="failing command", command="exit 7")
+
+    code = main(["automation", "run", "--home", str(home.root), "failing-command", "--json"])
+
+    assert code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "failed"
+    assert payload["exit_code"] == 7
+
+
+def test_cli_automation_run_due_failure_returns_nonzero_with_json(tmp_path, capsys):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    AutomationsModule(home).add_shell(name="failing command", command="exit 7")
+
+    code = main(["automation", "run-due", "--home", str(home.root), "--json"])
+
+    assert code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["failed"] == 1
+    assert payload["jobs"][0]["status"] == "failed"
 
 
 def test_cli_automation_add_alcove_stores_args(tmp_path, capsys):

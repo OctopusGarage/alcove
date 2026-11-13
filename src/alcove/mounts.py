@@ -219,7 +219,7 @@ class MountsModule:
         self.okf_writer = DerivedOkfWriter()
 
     def add(self, request: AddMountRequest) -> Mount:
-        data = self._load_mounts()
+        data = self._load_mounts(strict=True)
         source_path = Path(request.path).expanduser().resolve()
         if not source_path.is_dir():
             raise FileNotFoundError(f"Mount path is not a directory: {request.path}")
@@ -430,16 +430,22 @@ class MountsModule:
             public["diagnostics"] = diagnostics
         return public
 
-    def _load_mounts(self) -> dict[str, list[dict]]:
+    def _load_mounts(self, *, strict: bool = False) -> dict[str, list[dict]]:
         if not self.store_path.is_file():
             return {"mounts": []}
         try:
             data = json.loads(self.store_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
+            if strict:
+                raise ValueError(f"Invalid mount registry: {self.store_path}") from None
             return {"mounts": []}
         if not isinstance(data, dict):
+            if strict:
+                raise ValueError(f"Invalid mount registry: {self.store_path}")
             return {"mounts": []}
         mounts = data.get("mounts")
+        if strict and not isinstance(mounts, list):
+            raise ValueError(f"Invalid mount registry: {self.store_path}")
         return {"mounts": mounts if isinstance(mounts, list) else []}
 
     def _save_mounts(self, data: dict[str, list[dict]]) -> None:

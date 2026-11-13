@@ -49,14 +49,23 @@ alcove automation run notes --json
 alcove automation run-due --json
 ```
 
+`run` exits with status 1 when its job fails. `run-due` exits with status 1
+when any due job or job definition fails. Both commands still print their JSON
+result, so scripts can inspect the failure details.
+
 `run-due` respects each job's `ttl_hours` and latest `checked_at`. It is the
 path used by `alcove service tick`. Overlapping due checks are serialized so a
 job cannot be selected and executed twice before its latest state is persisted.
 Concurrent explicit runs use atomic run-record creation, so every completed
 execution keeps a distinct audit file even when timestamps match.
+If a job definition is edited or removed while it runs, the completed run
+retains its audit record without restoring the old definition.
 Git-sync jobs also retry the push when the working tree is clean, so a commit
 left local by an earlier push failure can reach the remote on the next run.
-Invalid job files are reported as failures in due-run results.
+Invalid job files, including files with invalid UTF-8 bytes, are reported as
+per-job failures in due-run results without changing their contents. Other valid
+jobs still run, and the service tick continues through dashboard finalization
+while reporting failed automation task health.
 
 ## Notifications
 

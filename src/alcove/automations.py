@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+from time import monotonic
 from typing import Any
 
 import yaml
@@ -262,7 +263,11 @@ class AutomationsModule:
                 "status": "skipped",
                 "reason": "agent job requires --allow-agent or allow_service",
             }
-        result = self._run_job(job, timestamp=timestamp)
+        result = self._run_job(job)
+        try:
+            current_job = self._get_job(job_id)
+        except FileNotFoundError:
+            current_job = None
         updated = replace(
             job,
             checked_at=timestamp,
@@ -271,7 +276,17 @@ class AutomationsModule:
             last_error=str(result.get("error") or ""),
             updated_at=timestamp,
         )
-        self._write_job(updated)
+        if current_job is not None:
+            self._write_job(
+                replace(
+                    current_job,
+                    checked_at=updated.checked_at,
+                    last_run_at=updated.last_run_at,
+                    last_status=updated.last_status,
+                    last_error=updated.last_error,
+                    updated_at=updated.updated_at,
+                )
+            )
         self._write_run(updated, result)
         self._record_event(updated, result, timestamp=timestamp)
         notify_payload = self._maybe_notify(updated, result)
@@ -279,8 +294,8 @@ class AutomationsModule:
             result["notify"] = notify_payload
         return result
 
-    def _run_job(self, job: AutomationJob, *, timestamp: str) -> dict[str, Any]:
-        started = datetime.fromisoformat(timestamp)
+    def _run_job(self, job: AutomationJob) -> dict[str, Any]:
+        started = monotonic()
         try:
             if job.kind == "shell":
                 result = self._run_shell(job)
@@ -297,7 +312,7 @@ class AutomationsModule:
         except Exception as exc:  # pragma: no cover - defensive boundary for user commands
             result = {"status": "failed", "error": str(exc)}
         finished = datetime.now(UTC)
-        duration_ms = int((finished - started).total_seconds() * 1000)
+        duration_ms = int((monotonic() - started) * 1000)
         result.update(
             {
                 "id": job.id,
@@ -427,12 +442,18 @@ class AutomationsModule:
         for path in sorted(self.jobs_root.glob("*.yml")):
             try:
                 payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            except (OSError, yaml.YAMLError) as exc:
+            except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
                 errors.append({"id": path.stem, "error": f"Invalid automation job: {path}: {exc}"})
                 continue
             if isinstance(payload, dict):
                 try:
-                    jobs.append(self._job(payload))
+                    job = self._job(payload)
+                    if job.id != path.stem:
+                        raise ValueError(
+                            f"Invalid automation job: {path}: id {job.id!r} does not match filename"
+                        )
+                    self._validate_job(job)
+                    jobs.append(job)
                 except ValueError as exc:
                     errors.append({"id": path.stem, "error": str(exc)})
             else:
