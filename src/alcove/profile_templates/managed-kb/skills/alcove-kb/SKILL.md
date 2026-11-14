@@ -54,7 +54,8 @@ use these fallback semantics:
 - Offer `仅归档原文到 <domain>/<topic>` (source only),
   `整理笔记并归档到 <domain>/<topic>` (knowledge plus archive),
   `整理成笔记到 <domain>/<topic>` (discussion/pasted text/ideas; no original
-  required; leave the current post unchanged), `标记 todo <原因>`, `删除`, `跳过`.
+  required; leave the current post unchanged),
+  `标记 todo <原因>`（移出 inbox，保留原文与附件，放入 todo 待处理）, `删除`, `跳过`.
 - `alcove inbox note` already archives; invoke it once without a second archive.
 - Standalone notes use `alcove knowledge add-note`, not `inbox note` or an
   artificial inbox item. Search for duplicates first; clarify material only if

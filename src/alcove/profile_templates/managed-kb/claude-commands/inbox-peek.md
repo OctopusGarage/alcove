@@ -36,7 +36,7 @@ Always display these choices, including the standalone-note reminder:
 - `仅归档原文到 <domain>/<topic>`（保留原文和来源，不额外整理笔记）
 - `整理笔记并归档到 <domain>/<topic>`（生成知识笔记，同时归档原文）
 - `整理成笔记到 <domain>/<topic>`（适用于当前讨论、粘贴内容或零散想法；无需原帖，不自动归档当前帖子）
-- `标记 todo <原因>`
+- `标记 todo <原因>`（移出 inbox，保留原文与附件，放入 todo 待处理）
 - `删除`
 - `跳过`
 
