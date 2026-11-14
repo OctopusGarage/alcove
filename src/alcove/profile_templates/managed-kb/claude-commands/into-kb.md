@@ -42,3 +42,22 @@ Rules:
 ```sh
 alcove validate --json
 ```
+
+## Explicit action semantics
+
+- `仅归档原文到 <domain>/<topic>` means `alcove inbox archive` only.
+- `整理笔记并归档到 <domain>/<topic>` and `记录笔记并归档` mean
+  `alcove inbox note` once. It creates knowledge and archives the original;
+  do not run a second archive operation.
+- `整理成笔记到 <domain>/<topic>` may refer to the current discussion,
+  pasted text, or ideas without an original post. Inspect the requested material,
+  search for duplicates, and use `alcove knowledge add-note <domain/topic>
+  "Title" --summary "..."`. Leave the current inbox item unchanged unless
+  separately authorized. Do not create an artificial inbox item for this request.
+- Continue accepting older archive/note wording, but show the explicit labels
+  when offering choices.
+- Preserve substantive OCR content in notes and retain source references.
+- Choose classification from the durable subject, not incidental OCR words.
+  Reuse a topic only when it fits; otherwise register an appropriate topic with
+  the supported taxonomy workflow before writing. Never silently fall back to
+  an unrelated topic or `misc`.

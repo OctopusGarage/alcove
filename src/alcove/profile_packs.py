@@ -338,86 +338,12 @@ If a listed project skill is unavailable, use the commands above as fallback.
 
 def _managed_kb_inbox_peek_command(kb: str) -> str:
     _ = kb
-    return """---
-description: Peek the oldest Alcove inbox item, summarize it structurally, and wait for an explicit action.
-allowed-tools: Read, Bash
----
-
-Show the oldest pending inbox item without changing files.
-
-Run:
-
-```sh
-alcove inbox peek --json
-```
-
-Then present:
-
-- metadata: platform, title, date, source URL
-- topic: one sentence
-- core content: grouped bullets or a compact table
-- key numbers / quoted short phrases
-- TL;DR: 3-6 bullets
-
-Rules:
-
-- Do not archive, note, delete, todo, or peek the next item.
-- If peek output is truncated, OCR-heavy, or too thin for a defensible summary,
-  run `alcove inbox read <identifier> --full --json` for the same item before
-  presenting the summary.
-- Do not mechanically list image 1/image 2/image 3; synthesize the content.
-- Wait for an explicit user action such as archive, note, todo, delete, or skip.
-- If inbox is empty, say there is no pending item.
-"""
+    return _template_path("managed-kb/claude-commands/inbox-peek.md").read_text(encoding="utf-8")
 
 
 def _managed_kb_into_kb_command(kb: str) -> str:
     _ = kb
-    return """---
-description: Archive the current inbox item into Alcove knowledge as a Source, optionally with a Knowledge Concept.
-allowed-tools: Read, Bash, Glob, Grep
----
-
-Process the inbox item that was just shown by `/inbox-peek`.
-
-Use archive mode when the user says archive, store, or keep only the source:
-
-```sh
-alcove inbox archive <folder> <domain/topic> --summary "..." --json
-```
-
-Use note mode when the user says note, summarize into knowledge, concept, or
-record notes:
-
-```sh
-alcove inbox note <folder> <domain/topic> --summary "..." --json
-```
-
-Optional flags:
-
-```sh
---tags "tag-a,tag-b"
---no-auto-tags
---supersede-similar
---selected-takeaways "1,2,5"
---why "why this is worth keeping"
---connection "how it connects to current work"
---action "small next action"
---personal-note "user's own view"
-```
-
-Rules:
-
-- The user must authorize the action for the current item.
-- Pick a concrete `domain/topic`; do not omit topic.
-- Prefer existing taxonomy topics. Add a new lowercase kebab slug only when no
-  suitable topic exists.
-- Run validation after a mutating operation:
-
-```sh
-alcove validate --json
-```
-"""
+    return _template_path("managed-kb/claude-commands/into-kb.md").read_text(encoding="utf-8")
 
 
 def _managed_kb_notes_search_skill(kb: str) -> str:

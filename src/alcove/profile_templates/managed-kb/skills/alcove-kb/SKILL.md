@@ -41,3 +41,25 @@ alcove validate --json
 ```
 
 Do not save article summaries as prompts. Archive sources and notes into the managed KB unless the user explicitly asks for a reusable prompt.
+
+## Inbox and standalone-note semantics
+
+For inbox review, follow the managed-KB `/inbox-peek` command template at
+`../../claude-commands/inbox-peek.md`; for handling the reviewed item, follow
+`../../claude-commands/into-kb.md`. Resolve these paths relative to this source
+file (including through linked installations). If copied installations do not
+include those files, inspect the installed `.claude/commands/` equivalents or
+use these fallback semantics:
+
+- Offer `仅归档原文到 <domain>/<topic>` (source only),
+  `整理笔记并归档到 <domain>/<topic>` (knowledge plus archive),
+  `整理成笔记到 <domain>/<topic>` (discussion/pasted text/ideas; no original
+  required; leave the current post unchanged), `标记 todo <原因>`, `删除`, `跳过`.
+- `alcove inbox note` already archives; invoke it once without a second archive.
+- Standalone notes use `alcove knowledge add-note`, not `inbox note` or an
+  artificial inbox item. Search for duplicates first; clarify material only if
+  unclear. Require per-item authorization for inbox mutations.
+- Read substantive OCR sidecars before summarizing image text. If needed, use
+  local Clipsmith OCR and verify non-empty text before visual inspection.
+- Classify by the durable subject; do not select a loosely related existing
+  topic merely to avoid adding a suitable topic.
