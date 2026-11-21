@@ -37,7 +37,7 @@ class BlogDiscoveryModule:
         articles = []
         seen: set[str] = set()
         for href, text in parser.links:
-            if not _matches_link_pattern(href, source.discover.link_pattern):
+            if not _is_article_link(source, href):
                 continue
             if href in seen or href.rstrip("/") == source.url.rstrip("/"):
                 continue
@@ -59,7 +59,7 @@ class BlogDiscoveryModule:
             href = str(item.get("url") or "")
             if not href or href in seen:
                 continue
-            if not _matches_link_pattern(href, source.discover.link_pattern):
+            if not _is_article_link(source, href):
                 continue
             title = _clean_title(str(item.get("title") or ""))
             date = _clean_title(str(item.get("date") or ""))
@@ -136,7 +136,7 @@ class BlogDiscoveryModule:
             parsed = urlparse(href)
             if parsed.netloc and parsed.netloc != source_domain:
                 continue
-            if not _matches_link_pattern(href, source.discover.link_pattern):
+            if not _is_article_link(source, href):
                 continue
             seen.add(href)
             lastmod = _element_text(url_node, "{*}lastmod")
@@ -229,6 +229,32 @@ def _element_text(parent: ElementTree.Element, selector: str) -> str:
 
 def _clean_title(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
+
+
+def _is_article_link(source: Any, href: str) -> bool:
+    parsed = urlparse(href)
+    origin = urlparse(source.url)
+    if (origin.scheme != "file" and parsed.netloc != origin.netloc) or parsed.scheme not in {
+        "http",
+        "https",
+        "file",
+    }:
+        return False
+    path = parsed.path.rstrip("/")
+    if path == origin.path.rstrip("/"):
+        return False
+    if parsed.hostname in {"anthropic.com", "www.anthropic.com"}:
+        if path.startswith("/research/team/") or path in {
+            "/news/announcements",
+            "/news/features",
+            "/news/partnerships",
+            "/news/policy",
+            "/news/safeguards",
+            "/research",
+            "/research/team",
+        }:
+            return False
+    return _matches_link_pattern(href, source.discover.link_pattern)
 
 
 def _matches_link_pattern(url: str, pattern: str) -> bool:

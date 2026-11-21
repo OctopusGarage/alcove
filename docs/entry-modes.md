@@ -343,7 +343,7 @@ Blog monitor:
 
 ```sh
 alcove blog add "Anthropic Engineering" https://www.anthropic.com/engineering \
-  --id anthropic --discover playwright --link-pattern /engineering/ \
+  --id anthropic --discover playwright --link-pattern /research/ \
   --kb social_media_posts --inbox-path inbox/anthropic --capture
 alcove blog add "OpenAI Engineering" https://openai.com/news/engineering/ \
   --id openai --discover playwright --link-pattern /index/ \

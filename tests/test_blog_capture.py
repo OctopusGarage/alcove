@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+
+import pytest
+
 from pathlib import Path
 from subprocess import CompletedProcess
 from types import SimpleNamespace
@@ -66,6 +70,8 @@ def test_blog_capture_runs_validate_and_sink_sequence(tmp_path, monkeypatch) -> 
     skill_dir = tmp_path / "skill"
     skill_dir.mkdir()
     bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+    (bundle_dir / "capture.json").write_text(json.dumps({"status": "complete"}))
     sink_dir = tmp_path / "kb" / "inbox" / "openai" / "post"
     commands: list[list[str]] = []
 
@@ -129,6 +135,8 @@ def test_blog_capture_retries_retryable_navigation_failure(tmp_path, monkeypatch
     skill_dir = tmp_path / "skill"
     skill_dir.mkdir()
     bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+    (bundle_dir / "capture.json").write_text(json.dumps({"status": "complete"}))
     sink_dir = tmp_path / "kb" / "inbox" / "openai" / "post"
     commands: list[list[str]] = []
     sleeps: list[int] = []
@@ -175,3 +183,44 @@ def test_blog_capture_retries_retryable_navigation_failure(tmp_path, monkeypatch
     }
     assert sleeps == [2]
     assert [command[:3] for command in commands].count(["npx", "tsx", "scripts/run.ts"]) == 2
+
+
+@pytest.mark.parametrize("status", ["partial", "needs_manual_action", "failed"])
+def test_blog_capture_does_not_sink_incomplete_bundle(tmp_path, monkeypatch, status):
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "capture.json").write_text(json.dumps({"status": status}))
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        if command[0] == "npx":
+            return CompletedProcess(command, 0, stdout=json.dumps({"bundle_dir": str(bundle)}))
+        return CompletedProcess(command, 0, stdout="{}")
+
+    host = SimpleNamespace(
+        home=SimpleNamespace(get_knowledge_base=lambda _: SimpleNamespace(path=tmp_path)),
+        captures_root=tmp_path / "captures",
+        _clipsmith_web_skill_dir=lambda: tmp_path,
+        _run_command=run,
+    )
+    monkeypatch.setattr("alcove.blog_capture.shutil.which", lambda name: "/bin/" + name)
+    result = BlogCaptureModule(host).capture(_source(), _article())
+    assert result["status"] == "failed"
+    assert status in result["error"]
+    assert not any(command[:2] == ["clipsmith", "sink"] for command in commands)
+
+
+def test_blog_capture_does_not_retry_site_verification_challenge(tmp_path, monkeypatch):
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        return CompletedProcess(
+            command, 1, stderr="Manual action required: site verification challenge"
+        )
+
+    host = SimpleNamespace(_run_command=run)
+    result = BlogCaptureModule(host)._run_capture_with_retry(["capture"], tmp_path)
+    assert result.returncode == 1
+    assert len(commands) == 1

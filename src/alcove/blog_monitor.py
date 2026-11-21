@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import tempfile
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -231,36 +230,16 @@ class BlogMonitorModule:
         return BlogDiscoveryModule(self).discover(source)
 
     def _extract_articles_with_playwright(self, source: BlogSource) -> list[dict[str, str]]:
-        node = shutil.which("node")
-        node_path = self._playwright_node_path()
-        if node is None or node_path is None:
-            raise RuntimeError(
-                "Playwright discovery requires node and the clipsmith-web Playwright runtime"
-            )
-        script = self._playwright_discover_script()
-        with tempfile.NamedTemporaryFile(
-            "w", suffix=".cjs", delete=False, encoding="utf-8"
-        ) as handle:
-            handle.write(script)
-            script_path = Path(handle.name)
-        env = os.environ.copy()
-        env["NODE_PATH"] = node_path
-        try:
-            result = subprocess.run(  # noqa: S603
-                [
-                    node,
-                    str(script_path),
-                    source.url,
-                    source.discover.link_pattern,
-                ],
-                text=True,
-                capture_output=True,
-                timeout=60,
-                check=False,
-                env=env,
-            )
-        finally:
-            script_path.unlink(missing_ok=True)
+        skill_dir = self._clipsmith_web_skill_dir()
+        if skill_dir is None or shutil.which("npx") is None:
+            raise RuntimeError("Browser discovery requires the clipsmith-web skill and npx")
+        if not (skill_dir / "scripts/discover.ts").is_file():
+            raise RuntimeError("Update the clipsmith-web skill: scripts/discover.ts is missing")
+        result = self._run_command(
+            ["npx", "tsx", "scripts/discover.ts", source.url, source.discover.link_pattern],
+            cwd=skill_dir,
+            timeout=90,
+        )
         if result.returncode != 0:
             error = result.stderr.strip() or result.stdout.strip()
             raise RuntimeError(error or "Playwright discovery failed")
@@ -327,107 +306,6 @@ class BlogMonitorModule:
             if (path / "scripts" / "run.ts").is_file():
                 return path
         return None
-
-    def _playwright_node_path(self) -> str | None:
-        explicit = os.environ.get("ALCOVE_PLAYWRIGHT_NODE_PATH", "")
-        if explicit and Path(explicit).expanduser().is_dir():
-            return str(Path(explicit).expanduser())
-        skill_dir = self._clipsmith_web_skill_dir()
-        if skill_dir is not None and (skill_dir / "node_modules" / "playwright").is_dir():
-            return str(skill_dir / "node_modules")
-        return None
-
-    def _playwright_discover_script(self) -> str:
-        return r"""
-const { chromium } = require('playwright');
-
-const [url, linkPattern] = process.argv.slice(2);
-
-function hasManualActionText(text) {
-  const normalized = String(text || '').toLowerCase();
-  return [
-    'enable javascript and cookies',
-    'verify you are human',
-    'checking if the site connection is secure',
-    'access denied',
-    'cloudflare',
-  ].some((hint) => normalized.includes(hint));
-}
-
-(async () => {
-  let browser;
-  try {
-    browser = await chromium.launch({
-      headless: true,
-    });
-    const page = await browser.newPage({
-      viewport: { width: 1365, height: 900 },
-      userAgent:
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
-        'Chrome/126.0.0.0 Safari/537.36',
-    });
-    const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-    const status = response ? response.status() : 0;
-    if (status >= 400) {
-      throw new Error(`Navigation failed with HTTP ${status}`);
-    }
-    await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
-    await page.evaluate(async () => {
-      let y = 0;
-      const step = Math.max(300, Math.floor(window.innerHeight * 0.75));
-      while (y < document.body.scrollHeight) {
-        y += step;
-        window.scrollTo(0, y);
-        await new Promise((resolve) => setTimeout(resolve, 80));
-      }
-      window.scrollTo(0, 0);
-    });
-    await page.waitForTimeout(500);
-    const payload = await page.evaluate((pattern) => {
-      const dateRe = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4}\b/;
-      const links = Array.from(document.querySelectorAll('a[href]'));
-      const seen = new Set();
-      const items = [];
-      for (const anchor of links) {
-        const href = new URL(anchor.getAttribute('href') || '', window.location.href).toString();
-        if (pattern && !href.includes(pattern)) continue;
-        if (seen.has(href)) continue;
-        seen.add(href);
-        const card = anchor.closest('article, li, section, [class*="card"], [class*="Card"]') || anchor;
-        const anchorText = (anchor.innerText || anchor.textContent || '').replace(/\s+/g, ' ').trim();
-        const cardText = (card.innerText || card.textContent || anchorText).replace(/\s+/g, ' ').trim();
-        const date = (anchorText.match(dateRe) || cardText.match(dateRe) || [''])[0];
-        let title = anchorText || cardText;
-        if (date && title.includes(date)) {
-          title = title.slice(0, title.indexOf(date)).trim();
-        }
-        title = title.replace(/\b(Engineering|Research|Product|Company|Safety|Security|Business)\s*$/i, '').trim();
-        if (title.length < 6) continue;
-        items.push({ title, url: href, date });
-      }
-      return {
-        title: document.title || '',
-        text: (document.body && document.body.innerText ? document.body.innerText : '').slice(0, 2000),
-        items,
-      };
-    }, linkPattern || '');
-    if (payload.items.length === 0 && hasManualActionText(payload.text)) {
-      console.log(JSON.stringify({
-        manual_action: true,
-        reason: 'Playwright reached a manual action or anti-bot challenge page',
-        items: [],
-      }));
-      return;
-    }
-    console.log(JSON.stringify({ items: payload.items }));
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 1;
-  } finally {
-    if (browser) await browser.close().catch(() => undefined);
-  }
-})();
-"""
 
     def _summarize(
         self,

@@ -199,6 +199,14 @@ class BlogRunModule:
             None,
         )
         if failed_capture is not None:
+            # Preserve completed items so a sibling failure cannot duplicate them on retry.
+            captured_urls = {
+                article.url
+                for article, capture in zip(new_articles, captures, strict=True)
+                if capture.get("status") == "captured"
+            }
+            if captured_urls:
+                self.host._write_seen(source.id, seen | captured_urls, timestamp=timestamp)
             error = str(
                 failed_capture.get("error") or failed_capture.get("reason") or "capture failed"
             )

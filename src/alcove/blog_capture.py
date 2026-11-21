@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import shutil
 import time
 from typing import Any
@@ -84,6 +85,18 @@ class BlogCaptureModule:
                 "adapter": "clipsmith",
                 "bundle_dir": compact_user_path(bundle_dir),
                 "error": validate.stderr.strip() or validate.stdout.strip(),
+            }
+        try:
+            metadata = json.loads((Path(bundle_dir) / "capture.json").read_text())
+            bundle_status = metadata.get("status") if isinstance(metadata, dict) else None
+        except (OSError, ValueError):
+            bundle_status = None
+        if bundle_status != "complete":
+            return {
+                "status": "failed",
+                "adapter": "clipsmith",
+                "bundle_dir": compact_user_path(bundle_dir),
+                "error": f"Capture requires review: bundle status is {bundle_status or 'unknown'}",
             }
         sink = self.host._run_command(
             ["clipsmith", "sink", "directory", bundle_dir, str(target_dir), "--json"],

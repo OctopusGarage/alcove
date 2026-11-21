@@ -960,3 +960,144 @@ def test_cli_blog_parent_home_is_not_overwritten_by_subcommand_defaults(tmp_path
     assert add_code == 0
     assert check_code == 0
     assert '"checked": 1' in check_output.out
+
+
+@pytest.mark.parametrize("method", ["requests", "playwright"])
+def test_anthropic_discovery_excludes_navigation_and_category_pages(tmp_path, monkeypatch, method):
+    module = BlogMonitorModule(AlcoveHome.init(tmp_path / "home"))
+    module.add(
+        name="Engineering",
+        url="https://www.anthropic.com/engineering",
+        source_id="engineering",
+        discover_method=method,
+        link_pattern="/research/",
+    )
+    links = [
+        ("https://www.anthropic.com/research/building-evals", "Building useful evaluations"),
+        ("https://www.anthropic.com/research/team/alignment", "Alignment team"),
+        ("https://outside.example/research/tracker", "External navigation"),
+    ]
+    monkeypatch.setattr(
+        module,
+        "_fetch_text",
+        lambda _url: "".join(f'<a href="{url}">{title}</a>' for url, title in links),
+    )
+    monkeypatch.setattr(
+        module,
+        "_extract_articles_with_playwright",
+        lambda _source: [{"url": url, "title": title} for url, title in links],
+    )
+    source = module._load_sources()[0]
+    assert [article.url for article in module._discover(source)] == [links[0][0]]
+
+
+def test_anthropic_news_discovery_excludes_category_pages(tmp_path, monkeypatch):
+    module = BlogMonitorModule(AlcoveHome.init(tmp_path / "home"))
+    module.add(
+        name="News",
+        url="https://www.anthropic.com/news",
+        source_id="news",
+        discover_method="playwright",
+        link_pattern="/news/",
+    )
+    monkeypatch.setattr(
+        module,
+        "_extract_articles_with_playwright",
+        lambda _source: [
+            {"url": "https://www.anthropic.com/news/announcements", "title": "Announcements"},
+            {"url": "https://www.anthropic.com/news/policy", "title": "Policy news"},
+            {"url": "https://www.anthropic.com/news/new-release", "title": "A useful release"},
+        ],
+    )
+    assert [article.url for article in module._discover(module._load_sources()[0])] == [
+        "https://www.anthropic.com/news/new-release"
+    ]
+
+
+def test_browser_discovery_uses_clipsmith_provider_runtime(tmp_path, monkeypatch):
+    from subprocess import CompletedProcess
+
+    module = BlogMonitorModule(AlcoveHome.init(tmp_path / "home"))
+    module.add(
+        name="Example",
+        url="https://example.com/blog",
+        source_id="example",
+        discover_method="playwright",
+        link_pattern="/post/",
+    )
+    skill = tmp_path / "skill"
+    (skill / "scripts").mkdir(parents=True)
+    (skill / "scripts/discover.ts").write_text("")
+    monkeypatch.setattr(module, "_clipsmith_web_skill_dir", lambda: skill)
+    monkeypatch.setattr("alcove.blog_monitor.shutil.which", lambda name: "/bin/" + name)
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(
+                {
+                    "items": [
+                        {
+                            "url": "https://example.com/post/one",
+                            "title": "Useful article",
+                            "date": "",
+                        }
+                    ]
+                }
+            ),
+        )
+
+    monkeypatch.setattr(module, "_run_command", run)
+    result = module._extract_articles_with_playwright(module._load_sources()[0])
+    assert result[0]["title"] == "Useful article"
+    assert calls[0][0] == [
+        "npx",
+        "tsx",
+        "scripts/discover.ts",
+        "https://example.com/blog",
+        "/post/",
+    ]
+    assert calls[0][1]["cwd"] == skill
+
+
+def test_batch_capture_failure_preserves_successful_articles_seen(tmp_path, monkeypatch):
+    module = BlogMonitorModule(AlcoveHome.init(tmp_path / "home"))
+    kb = tmp_path / "kb"
+    kb.mkdir()
+    module.home.register_knowledge_base("kb", kb)
+    module.add(
+        name="Example",
+        url="https://example.com/blog",
+        source_id="example",
+        discover_method="playwright",
+        link_pattern="/post/",
+        capture_enabled=True,
+        kb="kb",
+    )
+    monkeypatch.setattr(
+        module,
+        "_extract_articles_with_playwright",
+        lambda _source: [
+            {"url": "https://example.com/post/one", "title": "First useful article"},
+            {"url": "https://example.com/post/two", "title": "Second useful article"},
+        ],
+    )
+    captured = []
+
+    def capture(_source, article):
+        captured.append(article.url)
+        return (
+            {"status": "captured"}
+            if article.url.endswith("one")
+            else {"status": "failed", "error": "temporary failure"}
+        )
+
+    monkeypatch.setattr(module, "_capture_article", capture)
+    assert module.check(source_id="example", notify_override=False)["errors"] == 1
+    assert module._load_seen("example") == {"https://example.com/post/one"}
+    module.check(source_id="example", notify_override=False)
+    assert captured.count("https://example.com/post/one") == 1
+    assert captured.count("https://example.com/post/two") == 2

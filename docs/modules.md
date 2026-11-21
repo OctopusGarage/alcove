@@ -478,3 +478,19 @@ definition explicitly enables `ai_summary`. If AI fails and notifications are
 enabled, Alcove sends the deterministic report instead. Notification sinks
 currently support Telegram and Feishu custom bot webhooks. See
 [radars.md](radars.md) for the full contract and runtime behavior.
+
+
+Blog capture accepts only validated `complete` Clipsmith bundles. Partial or
+manual-action bundles remain available as evidence, but are not sunk or marked
+seen. Anthropic discovery excludes team and news-category navigation URLs;
+Engineering articles currently use the `/research/` path.
+
+Browser discovery and capture share the Clipsmith web provider runtime and its
+explicit browser configuration (`scripts/browser.ts get|set|check|reset` in the
+web skill). Normal Chrome reuse retains the existing context. Alcove does not
+launch a second browser strategy or infer a manual blocker from headless failure.
+See the Clipsmith web skill for runtime installation and browser setup.
+
+A failed blog capture batch retains seen URLs for individually successful
+captures. Retrying the source only retries the failed items, avoiding duplicate
+inbox copies after partial batch success.

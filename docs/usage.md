@@ -538,7 +538,7 @@ Monitor blogs for new articles:
 alcove blog add "Anthropic Engineering" https://www.anthropic.com/engineering \
   --id anthropic \
   --discover playwright \
-  --link-pattern /engineering/ \
+  --link-pattern /research/ \
   --kb social_media_posts \
   --inbox-path inbox/anthropic \
   --capture \
