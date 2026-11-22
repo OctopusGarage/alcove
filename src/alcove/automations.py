@@ -255,6 +255,8 @@ class AutomationsModule:
     ) -> dict[str, Any]:
         timestamp = timestamp or now_iso()
         job = self._get_job(job_id)
+        if service and not job.enabled:
+            return {"id": job.id, "status": "skipped", "reason": "job is disabled"}
         if job.status != "active":
             return {"id": job.id, "status": "skipped", "reason": f"job status is {job.status}"}
         if job.kind == "agent" and not (allow_agent or (service and job.allow_service)):
@@ -633,7 +635,7 @@ def _completed_result(completed: subprocess.CompletedProcess[str]) -> dict[str, 
 def _positive_int(value: Any, *, default: int) -> int:
     try:
         parsed = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
     return max(parsed, 1)
 

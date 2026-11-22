@@ -56,6 +56,9 @@ result, so scripts can inspect the failure details.
 `run-due` respects each job's `ttl_hours` and latest `checked_at`. It is the
 path used by `alcove service tick`. Overlapping due checks are serialized so a
 job cannot be selected and executed twice before its latest state is persisted.
+Queued jobs are checked again for `enabled` immediately before scheduled execution,
+so disabling a job while an earlier job runs prevents it from starting. Explicit
+`run` can still execute a disabled job on request.
 Concurrent explicit runs use atomic run-record creation, so every completed
 execution keeps a distinct audit file even when timestamps match.
 If a job definition is edited or removed while it runs, the completed run
@@ -66,6 +69,8 @@ Invalid job files, including files with invalid UTF-8 bytes, are reported as
 per-job failures in due-run results without changing their contents. Other valid
 jobs still run, and the service tick continues through dashboard finalization
 while reporting failed automation task health.
+Nonfinite numeric YAML values (such as `.inf`) use the existing field defaults:
+100 for `order`, 24 for `ttl_hours`, and 600 for `timeout_seconds`.
 
 ## Notifications
 
