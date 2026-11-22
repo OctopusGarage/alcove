@@ -1172,3 +1172,71 @@ def test_automation_run_rejects_run_record_symlink_without_writing_target(tmp_pa
         module.run("run-record-guard", timestamp="2026-07-12T09:00:00+00:00")
 
     assert not target.exists()
+
+
+@pytest.mark.parametrize("outcome", ["success", "error", "timeout"])
+def test_run_due_skips_job_disabled_by_an_earlier_job(tmp_path, monkeypatch, outcome):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="a first", command="disable next")
+    module.add_shell(name="b next", command="must not run")
+    job_path = module.jobs_root / "b-next.yml"
+    calls = []
+
+    def disable_next(command, **_kwargs):
+        calls.append(command)
+        payload = yaml.safe_load(job_path.read_text())
+        payload["enabled"] = False
+        job_path.write_text(yaml.safe_dump(payload))
+        if outcome == "timeout":
+            raise subprocess.TimeoutExpired(command, 600)
+        return subprocess.CompletedProcess(command, 0 if outcome == "success" else 7, "", "")
+
+    monkeypatch.setattr("alcove.automations.subprocess.run", disable_next)
+
+    result = module.run_due(now="2026-07-12T09:00:00+00:00")
+
+    assert calls == ["disable next"]
+    assert result["ran"] == 1
+    assert result["skipped"] == 1
+    assert result["failed"] == (0 if outcome == "success" else 1)
+    assert result["jobs"][1] == {"id": "b-next", "status": "skipped", "reason": "job is disabled"}
+    persisted = yaml.safe_load(job_path.read_text())
+    assert persisted["enabled"] is False
+    assert persisted["checked_at"] == ""
+    assert not list(module.runs_root.glob("*b-next.json"))
+
+
+@pytest.mark.parametrize("field", ["order", "ttl_hours", "timeout_seconds"])
+@pytest.mark.parametrize("value", [".inf", "-.inf"])
+def test_run_due_tolerates_nonfinite_numeric_job_fields(tmp_path, field, value):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    marker = tmp_path / "healthy.txt"
+    module.add_shell(name="healthy", command=f"printf ok > {marker}")
+    (module.jobs_root / "nonfinite.yml").write_text(
+        f"id: nonfinite\nname: Nonfinite\nkind: shell\ncommand: 'true'\n{field}: {value}\n"
+    )
+
+    result = module.run_due(now="2026-07-12T09:00:00+00:00")
+
+    assert result["ran"] == 2
+    assert result["failed"] == 0
+    assert marker.read_text() == "ok"
+    persisted = yaml.safe_load((module.jobs_root / "nonfinite.yml").read_text())
+    assert persisted[field] == {"order": 100, "ttl_hours": 24, "timeout_seconds": 600}[field]
+    assert persisted["last_status"] == "success"
+
+
+def test_explicit_run_can_still_run_a_disabled_job(tmp_path):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    marker = tmp_path / "manual.txt"
+    module.add_shell(name="manual", command=f"printf ok > {marker}")
+    job_path = module.jobs_root / "manual.yml"
+    payload = yaml.safe_load(job_path.read_text())
+    payload["enabled"] = False
+    job_path.write_text(yaml.safe_dump(payload))
+
+    assert module.run("manual")["status"] == "success"
+    assert marker.read_text() == "ok"
