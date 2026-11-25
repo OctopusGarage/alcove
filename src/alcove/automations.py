@@ -254,7 +254,12 @@ class AutomationsModule:
         timestamp: str | None = None,
     ) -> dict[str, Any]:
         timestamp = timestamp or now_iso()
-        job = self._get_job(job_id)
+        try:
+            job = self._get_job(job_id)
+        except FileNotFoundError:
+            if not service:
+                raise
+            return {"id": job_id, "status": "skipped", "reason": "job definition is missing"}
         if service and not job.enabled:
             return {"id": job.id, "status": "skipped", "reason": "job is disabled"}
         if job.status != "active":
@@ -431,7 +436,8 @@ class AutomationsModule:
         current = _parse_time(timestamp)
         if checked_at is None or current is None:
             return True
-        return current >= checked_at + timedelta(hours=max(job.ttl_hours, 1))
+        elapsed_hours = (current - checked_at) // timedelta(hours=1)
+        return elapsed_hours >= max(job.ttl_hours, 1)
 
     def _load_jobs(self) -> list[AutomationJob]:
         return self._load_job_records()[0]

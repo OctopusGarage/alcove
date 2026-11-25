@@ -59,6 +59,10 @@ job cannot be selected and executed twice before its latest state is persisted.
 Queued jobs are checked again for `enabled` immediately before scheduled execution,
 so disabling a job while an earlier job runs prevents it from starting. Explicit
 `run` can still execute a disabled job on request.
+If a queued definition disappears before dispatch, scheduled execution skips it
+with reason `job definition is missing` and continues with other jobs, without
+recreating the definition or recording an execution. Explicit `run` still reports
+a missing-job error.
 Concurrent explicit runs use atomic run-record creation, so every completed
 execution keeps a distinct audit file even when timestamps match.
 If a job definition is edited or removed while it runs, the completed run
@@ -71,6 +75,8 @@ jobs still run, and the service tick continues through dashboard finalization
 while reporting failed automation task health.
 Nonfinite numeric YAML values (such as `.inf`) use the existing field defaults:
 100 for `order`, 24 for `ttl_hours`, and 600 for `timeout_seconds`.
+Finite positive integer TTLs retain their full value, even beyond the datetime
+range. Due checks compare elapsed hours; a future `checked_at` remains not due.
 
 ## Notifications
 
