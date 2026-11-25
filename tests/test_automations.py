@@ -1240,3 +1240,126 @@ def test_explicit_run_can_still_run_a_disabled_job(tmp_path):
 
     assert module.run("manual")["status"] == "success"
     assert marker.read_text() == "ok"
+
+
+@pytest.mark.parametrize("service_tick", [False, True])
+def test_scheduled_removal_keeps_siblings_and_service_finalization_running(
+    tmp_path, monkeypatch, service_tick
+):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    for name in ["a first", "b removed", "c healthy"]:
+        module.add_shell(name=name, command=name)
+    removed = module.jobs_root / "b-removed.yml"
+    calls = []
+
+    def execute(command, **_kwargs):
+        calls.append(command)
+        if command == "a first":
+            removed.unlink()
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("alcove.automations.subprocess.run", execute)
+    if service_tick:
+        tick = ServiceModule(home).tick(
+            refresh_connectors=False,
+            check_watchers=False,
+            check_blogs=False,
+            check_radars=False,
+            run_publishers=False,
+            refresh_mounts=False,
+            fix_health=False,
+            today="2026-07-12",
+        )
+        assert tick["status"] == "ok"
+        assert "usage" in tick and "prune" in tick and "task_health" in tick
+        assert (home.root / "dashboard/snapshot.json").is_file()
+        result = tick["automations"]
+    else:
+        result = module.run_due(now="2026-07-12T09:00:00+00:00")
+
+    assert calls == ["a first", "c healthy"]
+    assert (result["ran"], result["skipped"], result["failed"]) == (2, 1, 0)
+    assert result["jobs"][1] == {
+        "id": "b-removed",
+        "status": "skipped",
+        "reason": "job definition is missing",
+    }
+    assert not removed.exists()
+    assert not list(module.runs_root.glob("*b-removed.json"))
+    events = [json.loads(line) for line in module.events_path.read_text().splitlines()]
+    assert [event["job_id"] for event in events] == ["a-first", "c-healthy"]
+    with pytest.raises(FileNotFoundError, match="Automation job not found: b-removed"):
+        module.run("b-removed")
+
+
+@pytest.mark.parametrize("ttl", [10**20, 10**100])
+def test_huge_finite_ttl_preserves_definition_and_runs_healthy_sibling(tmp_path, ttl):
+    home = AlcoveHome.init(tmp_path / ".alcove")
+    module = AutomationsModule(home)
+    module.add_shell(name="a huge ttl", command="must not execute", ttl_hours=ttl)
+    path = module.jobs_root / "a-huge-ttl.yml"
+    payload = yaml.safe_load(path.read_text())
+    payload["checked_at"] = "2026-07-11T09:00:00+00:00"
+    path.write_text(yaml.safe_dump(payload))
+    original = path.read_bytes()
+    marker = tmp_path / "healthy.txt"
+    module.add_shell(name="b healthy", command=f"printf ok > {marker}", timeout_seconds=5)
+
+    result = module.run_due(now="2026-07-12T09:00:00+00:00")
+
+    assert (result["ran"], result["skipped"], result["failed"]) == (1, 1, 0)
+    assert result["jobs"][0] == {"id": "a-huge-ttl", "status": "skipped", "reason": "not_due"}
+    assert path.read_bytes() == original
+    assert marker.read_text() == "ok"
+
+
+@pytest.mark.parametrize(
+    ("checked_at", "now", "ttl", "due"),
+    [
+        ("2026-07-12T09:00:00Z", "2026-07-12T09:59:59.999999Z", 1, False),
+        ("2026-07-12T09:00:00Z", "2026-07-12T10:00:00Z", 1, True),
+        ("2026-07-12T09:00:00Z", "2026-07-12T10:00:00.000001Z", 1, True),
+        ("2026-07-12T09:00:00Z", "2026-07-12T08:59:59Z", 1, False),
+        ("2026-07-12T09:00:00+08:00", "2026-07-12T02:00:00Z", 1, True),
+        ("2026-07-12T09:00:00+08:00", "2026-07-11T21:59:59-04:00", 1, False),
+        ("2026-07-12T09:00:00", "2026-07-12T10:00:00Z", -1, True),
+        ("2026-07-12T09:00:00Z", "2026-07-12T09:59:59Z", 0, False),
+        ("9999-12-31T23:00:00Z", "9999-12-31T23:59:59Z", 24, False),
+        ("0001-01-01T00:00:00Z", "9999-12-31T23:59:59Z", 10**100, False),
+        ("9999-12-31T23:59:59Z", "0001-01-01T00:00:00Z", 10**100, False),
+    ],
+)
+def test_due_checks_preserve_timestamp_and_positive_ttl_boundaries(
+    tmp_path, checked_at, now, ttl, due
+):
+    module = AutomationsModule(AlcoveHome.init(tmp_path / ".alcove"))
+    module.add_shell(name="boundary", command="true", ttl_hours=ttl, timeout_seconds=5)
+    path = module.jobs_root / "boundary.yml"
+    payload = yaml.safe_load(path.read_text())
+    payload["checked_at"] = checked_at
+    path.write_text(yaml.safe_dump(payload))
+
+    result = module.run_due(now=now)
+
+    assert result["failed"] == 0
+    assert result["ran"] == int(due)
+    assert result["skipped"] == int(not due)
+
+
+@pytest.mark.parametrize("error", [FileNotFoundError("audit write failed"), KeyboardInterrupt()])
+def test_scheduled_execution_errors_propagate_and_release_lock(tmp_path, monkeypatch, error):
+    module = AutomationsModule(AlcoveHome.init(tmp_path / ".alcove"))
+    module.add_shell(name="healthy", command="true", timeout_seconds=5)
+
+    def fail_write(*_args):
+        raise error
+
+    monkeypatch.setattr(module, "_write_run", fail_write)
+
+    with pytest.raises(type(error)):
+        module.run_due(now="2026-07-12T09:00:00Z")
+
+    with (module.root / "run-due.lock").open() as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
